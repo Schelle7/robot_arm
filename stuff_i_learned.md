@@ -80,3 +80,8 @@ Reading the temperature is useful for the low level controller and for gracefull
 a stall/jam is something the servo cannot really handle itself.
 it's a bit like cobots that should slow down before getting close to humans.
 
+
+
+currently my usb sends data every 1ms at 1000Hz
+it might be potentially possible to reach 1/8 m/s but unclear whether it is.
+So 8000Hz might be possible. If necessary at some point I can check.

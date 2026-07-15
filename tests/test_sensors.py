@@ -1,6 +1,6 @@
 import pytest
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
-from robot_arm.sensors import read_registers_naive, read_block
+from robot_arm.read_sensors import read_registers_naive, read_block
 
 # Allowed differences between reads taken ~5ms apart
 TOLERANCES = {

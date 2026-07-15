@@ -2,7 +2,7 @@ import argparse
 import time
 import numpy as np
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
-from robot_arm.sensors import read_block
+from robot_arm.read_sensors import read_block
 
 def time_call(fn, iterations):
     dts = np.empty(iterations)
