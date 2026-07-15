@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Personal control code and experiments for an SO-101 follower arm using LeRobot."
 requires-python = ">=3.12"
 dependencies = [
-    "lerobot[feetech]",
+    "lerobot[feetech, smolvla]",
 ]
 
 [project.optional-dependencies]
