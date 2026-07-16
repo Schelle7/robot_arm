@@ -1,0 +1,6 @@
+# baseline_cuda.yaml
+ppo:
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  device: "cuda"

@@ -64,19 +64,19 @@
     <mesh maxhullvert="64" file="wrist_roll_follower_so101_gripper_part0_v1.stl"/>
     <mesh maxhullvert="64" file="moving_jaw_so101_gripper_part0_v1.stl"/>
     <mesh maxhullvert="64" file="moving_jaw_so101_gripper_part1_v1.stl"/>
-    <material name="base_motor_holder_so101_v1_material" rgba="1 0.82 0.12 1"/>
-    <material name="base_so101_v2_material" rgba="1 0.82 0.12 1"/>
+    <material name="base_motor_holder_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="base_so101_v2_material" rgba="0.95 0.95 0.95 1"/>
     <material name="sts3215_03a_v1_material" rgba="0.1 0.1 0.1 1"/>
-    <material name="waveshare_mounting_plate_so101_v2_material" rgba="1 0.82 0.12 1"/>
-    <material name="motor_holder_so101_base_v1_material" rgba="1 0.82 0.12 1"/>
-    <material name="rotation_pitch_so101_v1_material" rgba="1 0.82 0.12 1"/>
-    <material name="upper_arm_so101_v1_material" rgba="1 0.82 0.12 1"/>
-    <material name="under_arm_so101_v1_material" rgba="1 0.82 0.12 1"/>
-    <material name="motor_holder_so101_wrist_v1_material" rgba="1 0.82 0.12 1"/>
+    <material name="waveshare_mounting_plate_so101_v2_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="motor_holder_so101_base_v1_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="rotation_pitch_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="upper_arm_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="under_arm_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="motor_holder_so101_wrist_v1_material" rgba="0.95 0.95 0.95 1"/>
     <material name="sts3215_03a_no_horn_v1_material" rgba="0.1 0.1 0.1 1.0"/>
-    <material name="wrist_roll_pitch_so101_v2_material" rgba="1 0.82 0.12 1"/>
-    <material name="wrist_roll_follower_so101_v1_material" rgba="1 0.82 0.12 1"/>
-    <material name="moving_jaw_so101_v1_material" rgba="1 0.82 0.12 1"/>
+    <material name="wrist_roll_pitch_so101_v2_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="wrist_roll_follower_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
+    <material name="moving_jaw_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
   </asset>
 
   <worldbody>
@@ -199,7 +199,7 @@
                   pos="-0.0143 0 -0.053"/>
                 <!-- Frame gripperframe -->
                 <site group="3" name="gripperframe" pos="0.012 -0.000218 -0.098127" quat="1 0 1 0"/>
-                <!-- Camera mount -->
+                <!-- Camera mount
                 <body name="camera_mount">
                   <camera name="wrist_cam" mode="fixed" pos="0.0 0.055 -0.045" euler="-0.57 0 0" resolution="1920 1080"
                     sensorsize="0.00576 0.00324" focal="0.0036 0.0036"/>
@@ -210,6 +210,7 @@
                   <geom name="camera_box2" class="collision_gripper" type="box" size="0.021 0.021 0.003"
                     pos="-0.001 0.06 -0.04" euler="-0.55 0 0"/>
                 </body>
+                -->
                 <!-- Link moving_jaw_so101_v1 -->
                 <body name="moving_jaw_so101_v1" pos="0.0202 0.0188 -0.0234" quat="1 1 0 0">
                   <!-- Joint from gripper to moving_jaw_so101_v1 -->

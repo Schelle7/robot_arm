@@ -1,0 +1,6 @@
+defaults:
+  - experiment: baseline_cpu
+
+model_path: "models/so101/scene.xml"
+total_timesteps: 10000
+max_steps: 200

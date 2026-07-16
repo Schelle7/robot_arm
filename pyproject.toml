@@ -9,11 +9,12 @@ description = "Personal control code and experiments for an SO-101 follower arm 
 requires-python = ">=3.12"
 dependencies = [
     "lerobot[feetech, smolvla]",
-]
-
-[project.optional-dependencies]
-dev = [
     "pytest",
+    "mujoco",
+    "gymnasium",
+    "numpy",
+    "stable-baselines3",
+    "hydra-core",
 ]
 
 [tool.setuptools.packages.find]

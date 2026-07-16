@@ -100,8 +100,6 @@ robot_arm/
 
 
 
-
-
 Node	Device	Usable
 video0	ACER HD User Facing (built-in laptop webcam)	yes, 640x480@30
 video1	ACER (metadata node)	no
@@ -113,4 +111,8 @@ video3	Pixel (metadata node)	no
 
 ### 5.
 decide on some vla and then try to run it.
-collect some data and then furtehr train a policy.
+collect some data and then further train a policy.
+
+
+visualize the arm:
+python -m mujoco.viewer --mjcf models/so101/scene.xml
