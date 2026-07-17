@@ -19,7 +19,7 @@ class EpisodeRecorder:
         
         os.makedirs(self.images_dir, exist_ok=True)
         
-    def step(self, step_idx: int, obs: Dict[str, np.ndarray], action: np.ndarray, reward: float, info: Dict[str, Any]):
+    def step(self, step_idx: int, obs: Dict[str, np.ndarray], reward: float, info: Dict[str, Any], instruction: str = ""):
         """
         Record a single transition step in the environment.
         """
@@ -28,6 +28,7 @@ class EpisodeRecorder:
         # Buffer numeric state
         frame_data = {
             "step": step_idx,
+            "instruction": instruction,
             "image_path": image_path,
             "agent_pos": obs["agent_pos"].tolist(),
 
@@ -47,7 +48,8 @@ class EpisodeRecorder:
         image_path = f"images/frame_{step_idx:04d}.jpg"
         abs_image_path = os.path.join(self.episode_dir, image_path)
         
-        img = Image.fromarray(pixels)
+        img_array = pixels
+        img = Image.fromarray(img_array)
         img.save(abs_image_path, format="JPEG", quality=self.jpeg_quality)
         
         return image_path

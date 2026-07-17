@@ -15,6 +15,7 @@ dependencies = [
     "numpy",
     "stable-baselines3",
     "hydra-core",
+    "torch"
 ]
 
 [tool.setuptools.packages.find]
