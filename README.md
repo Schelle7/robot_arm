@@ -116,3 +116,10 @@ collect some data and then further train a policy.
 
 visualize the arm:
 python -m mujoco.viewer --mjcf models/so101/scene.xml
+
+
+
+Long term I want to setup my behavior cloning / RL loop with head that can do inverse kinematics and forward dynamics (does forward dynamics a la MPC with neural net help? Does it fight sim to real gap? and help better understand the timing mismatch?)
+
+
+short term just set up the normal smol VLA with PID.

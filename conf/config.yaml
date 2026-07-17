@@ -4,3 +4,14 @@ defaults:
 model_path: "models/so101/scene.xml"
 total_timesteps: 10000
 max_steps: 200
+
+# Camera resolution
+camera:
+  height: 480
+  width: 640
+  jpeg_quality: 90
+
+# Control frequencies in Hz
+frequencies:
+  high_level: 5   # VLA inference and camera recording rate
+  low_level: 200   # PID/MuJoCo physics stepping rate

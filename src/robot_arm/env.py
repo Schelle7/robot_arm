@@ -10,12 +10,11 @@ from robot_arm.arm import Arm
 class RobotEnv(gym.Env):
     """
     Standard MDP wrapper for the robotic arm. 
-    Task: Reach a random target position configuration in joint space.
     """
     
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, arm: Arm, max_steps: int = 1000):
+    def __init__(self, arm: Arm, max_steps: int, height: int, width: int):
         super().__init__()
         self.arm = arm
         self.max_steps = max_steps
@@ -38,22 +37,34 @@ class RobotEnv(gym.Env):
             low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
         )
         
-        # Obs: 6 current joint pos + 6 target joint pos
-        self.observation_space = spaces.Box(
-            low=-math.pi, high=math.pi, shape=(12,), dtype=np.float32
+        self.observation_space = spaces.Dict(
+            {
+                "pixels": spaces.Box(
+                    low=0, high=255, shape=(height, width, 3), dtype=np.uint8
+                ),
+                "agent_pos": spaces.Box(
+                    low=-math.pi, high=math.pi, shape=(12,), dtype=np.float32
+                ),
+            }
         )
         
         self.target_positions = np.zeros(6, dtype=np.float32)
 
-    def _get_obs(self) -> np.ndarray:
+    def _get_obs(self) -> Dict[str, np.ndarray]:
         state_dict = self.arm.read_state()
         current_pos = np.array([
             state_dict["Present_Position"][m] for m in self.motor_order
         ], dtype=np.float32)
         
-        return np.concatenate([current_pos, self.target_positions])
+        agent_pos = np.concatenate([current_pos, self.target_positions])
+        pixels = self.arm.read_image()
+        
+        return {
+            "pixels": pixels,
+            "agent_pos": agent_pos
+        }
 
-    def reset(self, seed=None, options=None) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def reset(self, seed=None, options=None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         super().reset(seed=seed)
         self.current_step = 0
         
@@ -68,7 +79,7 @@ class RobotEnv(gym.Env):
         obs = self._get_obs()
         return obs, {}
 
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+    def step(self, action: np.ndarray) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
         self.current_step += 1
         
         # 1. Map action vector to dictionary and send to arm
@@ -79,7 +90,7 @@ class RobotEnv(gym.Env):
         
         # 2. Get new observation
         obs = self._get_obs()
-        current_pos = obs[:6]
+        current_pos = obs["agent_pos"][:6]
         
         # 3. Compute reward (negative L2 distance -> max reward is 0)
         distance = float(np.linalg.norm(current_pos - self.target_positions))
@@ -89,4 +100,9 @@ class RobotEnv(gym.Env):
         terminated = distance < 0.1  # Reached goal within 0.1 rad roughly
         truncated = self.current_step >= self.max_steps
         
-        return obs, reward, terminated, truncated, {}
+        info = {
+            "current_pos": current_pos,
+            "action": action
+        }
+        
+        return obs, reward, terminated, truncated, info

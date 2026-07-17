@@ -1,5 +1,6 @@
 from typing import Dict
 import mujoco
+import numpy as np
 
 from robot_arm.arm import Arm
 
@@ -10,9 +11,11 @@ class SimArm(Arm):
     Unit conversion is done higher up the stack.
     """
     
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, height: int, width: int):
         self.model = mujoco.MjModel.from_xml_path(model_path)
         self.data = mujoco.MjData(self.model)
+        
+        self.renderer = mujoco.Renderer(self.model, height=height, width=width)
         
         # Build explicit mappings for actuator and joint indices
         self.actuator_indices = {
@@ -53,3 +56,7 @@ class SimArm(Arm):
                 
         # Advance simulation one step
         mujoco.mj_step(self.model, self.data)
+
+    def read_image(self) -> np.ndarray:
+        self.renderer.update_scene(self.data, camera="pixel_cam")
+        return self.renderer.render()
