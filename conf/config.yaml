@@ -2,8 +2,7 @@ defaults:
   - experiment: baseline_cpu
 
 model_path: "models/so101/scene.xml"
-total_timesteps: 10000
-max_steps: 200
+max_seconds: 10
 
 # Camera resolution
 camera:

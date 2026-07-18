@@ -11,7 +11,7 @@ from robot_arm.runner import execute_episode
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     # Setup Policy
-    instruction = "Reach for the target."
+    instruction = "Grip the red box."
     
     # Initialize the VLA policy wrapper
     policy = SmolVLAPolicyWrapper()

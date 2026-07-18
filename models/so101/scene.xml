@@ -12,6 +12,7 @@
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
       markrgb="0.8 0.8 0.8" width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="matte_red" rgba="1 0.1 0.1 1" specular="0" shininess="0"/>
   </asset>
 
   <worldbody>
@@ -19,13 +20,19 @@
     <geom name="floor" size="0 0 0.05" pos="0 0 0" type="plane" material="groundplane"/>
 
     <!-- Physical camera placeholder to verify placement -->
-    <body name="physical_camera" pos="0.7 0 0.4" xyaxes="0 1 0 -1 0 2">
+    <body name="physical_camera" pos="1 0 0.5" xyaxes="0 1 0 -1 0 4">
       <!-- Camera phone body -->
       <geom type="box" size="0.08 0.04 0.01" rgba="0.1 0.1 0.1 1"/>
       <!-- Lens pointing forward (local -z) -->
       <geom type="cylinder" size="0.015 0.01" pos="0 0 -0.01" rgba="0.8 0.9 1 1"/>
       <!-- Camera fixed to the object -->
       <camera name="pixel_cam" pos="0 0 -0.02" mode="fixed" fovy="45"/>
+    </body>
+
+    <!-- Target Red Box -->
+    <body name="target_box" pos="0.3 0.0 0.05">
+      <freejoint/>
+      <geom type="box" size="0.03 0.03 0.03" material="matte_red" mass="0.1"/>
     </body>
   </worldbody>
 </mujoco>

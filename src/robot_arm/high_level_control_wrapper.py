@@ -2,18 +2,21 @@ import numpy as np
 import gymnasium as gym
 from typing import Dict, Tuple, Any
 
+from robot_arm.controllers import LowLevelController
+
 class HighLevelControlWrapper(gym.Wrapper):
     """
     Wraps the underlying 200Hz RobotEnv to present a 10Hz interface to the VLA.
     Repeats the high-level action over the intermediate steps and buffers the 
     dense physical state to info dict for recording.
     """
-    def __init__(self, env: gym.Env, high_level_hz: int, low_level_hz: int):
+    def __init__(self, env: gym.Env, low_level_controller: LowLevelController, high_level_hz: int, low_level_hz: int):
         super().__init__(env)
         if low_level_hz % high_level_hz != 0:
             raise ValueError(f"low_level_hz ({low_level_hz}) must be divisible by high_level_hz ({high_level_hz})")
             
         self.skip_frames = low_level_hz // high_level_hz
+        self.low_level_controller = low_level_controller
         
     def step(self, high_level_action: np.ndarray) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
         total_reward = 0.0
@@ -27,9 +30,8 @@ class HighLevelControlWrapper(gym.Wrapper):
         
         target_pos = high_level_action
         
-        # Interpolate the low-level actions smoothly over the skip frames
-        # have to repalce it with something more sensible later on / that means a controller that can learn PWM
-        low_level_actions = np.linspace(start_pos, target_pos, self.skip_frames)
+        # Delegate to the low level controller to bridge the hz gap
+        low_level_actions = self.low_level_controller.generate_commands(start_pos, target_pos)
         
         for i in range(self.skip_frames):
             low_level_action = low_level_actions[i]

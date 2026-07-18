@@ -19,11 +19,8 @@ class ReplayPolicy(Policy):
     A simple policy that blindly plays back a pre-generated sequence of actions.
     Useful for testing, hardcoded trajectories, or replaying offline data.
     """
-    def __init__(self, trajectory: np.ndarray):
-        """
-        trajectory: np.ndarray of shape (N, action_dim)
-        """
-        self.trajectory = trajectory
+    def __init__(self, start_pos: np.ndarray, end_pos: np.ndarray, num_steps: int):
+        self.trajectory = np.linspace(start_pos, end_pos, num_steps)
         self.current_step = 0
 
     def get_action(self, obs: Dict[str, np.ndarray], instruction: Optional[str] = None) -> np.ndarray:

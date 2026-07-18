@@ -12,14 +12,16 @@ from robot_arm.runner import execute_episode
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     # 3. Setup Policy
-    instruction = "Move slightly to the side and up."
+    instruction = "Reach for the red box."
     
     # For now, hardcode the ReplayPolicy setup as before. 
     # Later this is decided by hydra config (cfg.policy)
+    # The box is at (x=0.3, y=0.0, z=0.05). Start at 0, target a reach.
     start_pos = np.zeros(6, dtype=np.float32)
-    end_pos = np.array([0.5, 0.5, -0.5, 0.0, 0.0, 0.2], dtype=np.float32)
-    trajectory = np.linspace(start_pos, end_pos, cfg.max_steps)
-    policy = ReplayPolicy(trajectory=trajectory)
+    # Target joint angles: shoulder_pan=0, shoulder_lift=0.6, elbow_flex=1.2, wrist_flex=-0.8, wrist_roll=0, gripper=0
+    end_pos = np.array([0.0, 0.0, 1.2, -0.8, 0.0, 0.0], dtype=np.float32)
+    max_steps_calc = int(cfg.max_seconds * cfg.frequencies.high_level)
+    policy = ReplayPolicy(start_pos=start_pos, end_pos=end_pos, num_steps=max_steps_calc)
 
     # 4. Initialize recorder inside Hydra's output directory
     hydra_cfg = HydraConfig.get()

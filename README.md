@@ -123,3 +123,51 @@ Long term I want to setup my behavior cloning / RL loop with head that can do in
 
 
 short term just set up the normal smol VLA with PID.
+
+
+
+
+
+
+next step probably, add a red box and tell the gripper to grip it.
+check if it does, maybe the camera alignment is wrong or something.
+
+set up a training loop for training based on synthetic and vla trajectories.
+For training it makes sense if I use the lerobot data format
+Then I don't have to handle any of it and can just call the existing training script.
+
+Try a run on the real arm.
+
+
+
+I could actually introduce a safety layer akin to the one for the excavator that decides what actions will be permitted.
+Probably just have to make sure the position decided by the VLA is inside the allowed range.
+Then also not too high a speed?
+And some temperature checks??
+That should make it safe to try out on the real arm.
+
+
+
+maybe I should build an RL world after all sicne so far I dont really have any way to properly program the robot.
+doing inverse kinematics by hand is a bit of a pain.
+
+but maybe still easier?
+6d pose is far easier to obtain + gripper movement.
+
+Therefore I think I am going to try that.
+and then RL and no inverse kinematics.
+
+
+
+tool center point in between the two gripepr parts + end effector pos as the non movimng gripper part?
+aperture can be abgeleitet from the servo position of the gripper and is therefore not needed separately I think.
+
+
+but maybe it is for the high level policy?
+or should high level policy specify that part directly?
+
+
+pinch_point = fixed_finger + 0.5 * (moving_finger - fixed_finger)
+reward
+scaling_vector * (|goal_pose - previous_pose| - |goal_pose - new_pose|)
+
