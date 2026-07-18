@@ -28,6 +28,48 @@ class SimArm(Arm):
             for name in self.actuator_indices
         }
 
+    @property
+    def fixed_finger_tip(self) -> np.ndarray:
+        site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip")
+        return self.data.site_xpos[site_id].copy()
+
+    @property
+    def moving_finger_tip(self) -> np.ndarray:
+        site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "moving_finger_tip")
+        return self.data.site_xpos[site_id].copy()
+
+    @property
+    def pinch_point(self) -> np.ndarray:
+        return (self.fixed_finger_tip + self.moving_finger_tip) / 2.0
+
+    @property
+    def aperture(self) -> float:
+        return float(np.linalg.norm(self.moving_finger_tip - self.fixed_finger_tip))
+
+    @property
+    def gripper_euler(self) -> np.ndarray:
+        site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe")
+        rot_mat = self.data.site_xmat[site_id].copy()
+        
+        # We can extract xyz directly with scipy if we dont want to write it out
+        from scipy.spatial.transform import Rotation
+        euler = Rotation.from_matrix(rot_mat.reshape(3, 3)).as_euler("xyz")
+        
+        return euler.astype(np.float32)
+
+    def get_pinch_point(self) -> np.ndarray:
+        # Get position of TCP
+        pos = self.pinch_point
+        
+        # Get euler angles from the wrist
+        euler = self.gripper_euler
+        
+        # Aperture in radians from the servo itself
+        qpos_idx = self.model.jnt_qposadr[self.joint_indices["gripper"]]
+        gripper_radians = float(self.data.qpos[qpos_idx])
+        
+        return np.array([pos[0], pos[1], pos[2], euler[0], euler[1], euler[2], gripper_radians], dtype=np.float32)
+
     def read_state(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel, ctrl (as a proxy for load) to our expected dictionary format
         state = {

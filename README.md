@@ -167,7 +167,20 @@ but maybe it is for the high level policy?
 or should high level policy specify that part directly?
 
 
-pinch_point = fixed_finger + 0.5 * (moving_finger - fixed_finger)
 reward
 scaling_vector * (|goal_pose - previous_pose| - |goal_pose - new_pose|)
 
+
+lets please assume the high level planner provides a 7 dimensional vector 6d psoe + gripper and an array for teh enxt trajectories of those.
+
+Then we have to set up a reward structure that tells how well the trajectory ahs been acheived.
+one important aspect is that you dont have to necessarily acheive the whole trajectory.
+Achieving teh first 70% of it well is equally good (then teh low level policy has some flexibility)
+
+
+repalce the action head of high level vla by 7d * n trajectory poses
+(7d = 6d pose + gripper)
+apparently smolVLA autoadapts to the size from teh dataset.
+
+
+completely train that and then for the rest probably do lora only.

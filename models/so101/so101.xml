@@ -199,6 +199,8 @@
                   pos="-0.0143 0 -0.053"/>
                 <!-- Frame gripperframe -->
                 <site group="3" name="gripperframe" pos="0.012 -0.000218 -0.098127" quat="1 0 1 0"/>
+                <!-- Reference point for fixed jaw -->
+                <site name="fixed_finger_tip" pos="-0.0081 0.0 -0.09925" size="0.003" rgba="1 0 0 0.5"/>
                 <!-- Camera mount
                 <body name="camera_mount">
                   <camera name="wrist_cam" mode="fixed" pos="0.0 0.055 -0.045" euler="-0.57 0 0" resolution="1920 1080"
@@ -237,6 +239,8 @@
                     pos="-0.0113 -0.076 0.01875"/>
                   <geom name="moving_jaw_box3" class="collision_gripper" type="box" size="0.001 0.005 0.006"
                     pos="-0.0093 -0.067 0.01875"/>
+                  <!-- Reference point for moving jaw -->
+                  <site name="moving_finger_tip" pos="-0.012 -0.076 0.019" size="0.003" rgba="1 0 0 0.5"/>
                 </body>
               </body>
             </body>

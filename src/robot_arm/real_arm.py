@@ -1,4 +1,5 @@
 import math
+import numpy as np
 from typing import Dict
 
 from robot_arm.arm import Arm
@@ -60,6 +61,9 @@ class RealArm(Arm):
         # Note: Velocity and Load remain in raw units (-1000 to 1000) for now. 
         # If policy needs them in rad/s, we need their specific max scale factors.
         return raw_state
+
+    def get_pinch_point(self) -> np.ndarray:
+        raise NotImplementedError("Real arm does not have access to pinch point")
 
     def write_goal(self, positions: Dict[str, float]) -> None:
         raw_positions = {}
