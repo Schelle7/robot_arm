@@ -123,13 +123,20 @@ class RobotEnv(gym.Env):
         ab_sq_safe[ab_sq_safe == 0] = 1.0 
         
         t = np.einsum('ij,ij->i', AP, AB) / ab_sq_safe
-        t = np.clip(t, 0.0, 1.0)
+        
+        t_clipped = np.clip(t, 0.0, 1.0)
+        t_clipped[0] = min(t[0], 1.0) # allow negatives on the first segment
+        # the cliiping might prove to be problematic
+        # the whole path reward might be problematic.
+        # maybe a more complicated progress tracking is required, like deleting reached segments.
 
-        closest_points = A + t[:, np.newaxis] * AB
+        closest_points = A + t_clipped[:, np.newaxis] * AB
         distances = np.linalg.norm(current_point - closest_points, axis=1)
 
+        # Note: Global argmin can cause "shortcut hacks" if the trajectory loops over itself.
+        # For self-intersecting paths, this needs to be constrained to sequential active-segment tracking.
         min_idx = int(np.argmin(distances))
-        return closest_points[min_idx], min_idx, float(t[min_idx])
+        return closest_points[min_idx], min_idx, float(t_clipped[min_idx])
 
     def _compute_path_deviation(self, current_point: np.ndarray, closest_point: np.ndarray) -> float:
         return float(np.linalg.norm(current_point - closest_point))
@@ -151,6 +158,14 @@ class RobotEnv(gym.Env):
         current_progress = t * segment_lengths[segment_idx]
         
         return float(past_progress + current_progress)
+
+    def update_trajectory(self, new_trajectory: np.ndarray):
+        """Called by the high-level controller whenever a new plan is generated."""
+        self.current_trajectory_goal = new_trajectory
+        self.original_agent_pos = self.arm.get_pinch_point()
+        
+        self.previous_deviation = 0.0
+        self.previous_progress = 0.0
 
     def compute_reward(self) -> float:
         try:
