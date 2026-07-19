@@ -101,20 +101,15 @@ class RobotEnv(gym.Env):
         super().reset(seed=seed)
         self.current_step = 0
 
-        if (
-            options is None
-            or "low_level_trajectory_goal" not in options
-            or "original_agent_pos" not in options
-        ):
-            raise ValueError(
-                "Must provide 'low_level_trajectory_goal' and 'original_agent_pos' in reset options."
-            )
-
-        self.current_trajectory_goal = np.array(
-            options["low_level_trajectory_goal"], dtype=np.float32
-        )
+        state_dict = self.arm.read_state()
         self.original_agent_pos = np.array(
-            options["original_agent_pos"], dtype=np.float32
+            [state_dict["Present_Position"][m] for m in self.motor_order],
+            dtype=np.float32,
+        )
+
+        # At reset, there is no trajectory plan yet, so the goal is simply "stay exactly where you are"
+        self.current_trajectory_goal = np.tile(
+            self.original_agent_pos, (self.trajectory_length, 1)
         )
 
         self.previous_deviation = 0.0

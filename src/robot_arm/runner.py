@@ -27,6 +27,9 @@ def execute_episode(
         max_seconds=cfg.max_seconds,
         height=cfg.camera.height,
         width=cfg.camera.width,
+        trajectory_length=cfg.trajectory_length,
+        trajectory_dim=cfg.trajectory_dim,
+        pose_distance_weights=cfg.pose_distance_weights,
     )
 
     skip_frames = cfg.frequencies.low_level // cfg.frequencies.high_level
