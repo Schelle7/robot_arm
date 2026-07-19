@@ -29,3 +29,7 @@ bench-loop:
 
 verify:
 	$(RUN) python -m pytest tests/test_sensors.py -v -s --port $(PORT) --id $(ID)
+
+lint:
+	$(RUN) python -m black src/ tests/ scripts/ benchmarks/
+	$(RUN) python -m ruff check --fix src/ tests/ scripts/ benchmarks/

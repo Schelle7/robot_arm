@@ -31,9 +31,15 @@ def main():
         description="Time reading the full feedback register block vs a single temperature read."
     )
     parser.add_argument("--port", type=str, required=True, help="e.g. /dev/ttyACM0")
-    parser.add_argument("--id", type=str, required=True, help="calibration id, e.g. my_follower")
-    parser.add_argument("--iterations", type=int, required=True, help="timed reads per function")
-    parser.add_argument("--warmup", type=int, required=True, help="untimed reads before timing")
+    parser.add_argument(
+        "--id", type=str, required=True, help="calibration id, e.g. my_follower"
+    )
+    parser.add_argument(
+        "--iterations", type=int, required=True, help="timed reads per function"
+    )
+    parser.add_argument(
+        "--warmup", type=int, required=True, help="untimed reads before timing"
+    )
     args = parser.parse_args()
 
     follower = SO101Follower(SO101FollowerConfig(port=args.port, id=args.id))
@@ -56,8 +62,12 @@ def main():
         report("read_temperature (1)", temperature_dts)
         report("read_block (5 fast)", block_dts)
         print(f"\nregisters read per call = {n_regs}")
-        print(f"ratio (naive / temp) = {registers_dts.mean() / temperature_dts.mean():.2f}x")
-        print(f"ratio (block / temp) = {block_dts.mean() / temperature_dts.mean():.2f}x")
+        print(
+            f"ratio (naive / temp) = {registers_dts.mean() / temperature_dts.mean():.2f}x"
+        )
+        print(
+            f"ratio (block / temp) = {block_dts.mean() / temperature_dts.mean():.2f}x"
+        )
     finally:
         follower.disconnect()
 

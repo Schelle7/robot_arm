@@ -16,7 +16,9 @@ dependencies = [
     "stable-baselines3",
     "hydra-core",
     "torch",
-    "scipy"
+    "scipy",
+    "black",
+    "ruff"
 ]
 
 [tool.setuptools.packages.find]

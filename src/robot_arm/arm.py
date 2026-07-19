@@ -7,7 +7,7 @@ class Arm(abc.ABC):
     """
     Unified interface for hardware and simulation backends.
     """
-    
+
     @abc.abstractmethod
     def read_state(self) -> Dict[str, Dict[str, float]]:
         """
