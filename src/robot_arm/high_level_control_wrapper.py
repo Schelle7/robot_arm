@@ -52,12 +52,14 @@ class HighLevelControlWrapper(gym.Wrapper):
         target_pos = high_level_action
 
         # Prepare tracking boundaries in the low-level environment
-        self.robot_env.update_trajectory(target_pos, start_pos)
+        self.robot_env.update_path(target_pos)
 
         # Delegate to the low level controller to bridge the hz gap
         low_level_actions = self.low_level_controller.generate_commands(
             start_pos, target_pos
         )
+        # should I create a reactive policy instead?
+        # that is somewhat the point is it not
 
         for i in range(self.skip_frames):
             low_level_action = low_level_actions[i]

@@ -5,10 +5,11 @@ import numpy as np
 from robot_arm.arm import Arm
 
 
-class SimArm(Arm):
+class SimBackend(Arm):
     """
     Simulation adapter for the SO-101 using MuJoCo.
     Operates in radians (unlike RealArm which uses raw steps/bits).
+    Includes and manages simulation scene elements (like the target box).
     Unit conversion is done higher up the stack.
     """
 
@@ -65,7 +66,7 @@ class SimArm(Arm):
 
         return euler.astype(np.float32)
 
-    def get_pinch_point(self) -> np.ndarray:
+    def get_end_effector_pose_7d(self) -> np.ndarray:
         # Get position of TCP
         pos = self.pinch_point
 
@@ -78,6 +79,23 @@ class SimArm(Arm):
 
         return np.array(
             [pos[0], pos[1], pos[2], euler[0], euler[1], euler[2], gripper_radians],
+            dtype=np.float32,
+        )
+
+    def get_box_pose_6d(self) -> np.ndarray:
+        # The box is defined as a body named "target_box" in scene.xml
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
+        if body_id == -1:
+            raise KeyError("Body 'target_box' not found in MuJoCo model.")
+            
+        pos = self.data.xpos[body_id]
+        
+        rot_mat = self.data.xmat[body_id].reshape(3, 3)
+        from scipy.spatial.transform import Rotation
+        euler = Rotation.from_matrix(rot_mat).as_euler("xyz")
+        
+        return np.array(
+            [pos[0], pos[1], pos[2], euler[0], euler[1], euler[2]],
             dtype=np.float32,
         )
 
@@ -109,6 +127,27 @@ class SimArm(Arm):
 
         # Advance simulation one step
         mujoco.mj_step(self.model, self.data)
+
+    def reset_sim(self):
+        mujoco.mj_resetData(self.model, self.data)
+
+        # Randomize box placement
+        # Reach is ~60cm. Goal is 25cm-45cm outward (X-axis) and -10cm to 10cm sideways (Y-axis)
+        box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
+        if box_id != -1:
+            dist = np.random.uniform(0.25, 0.45)
+            y_shift = np.random.uniform(-0.10, 0.10)
+            
+            # Directly updating the freejoint associated with the box
+            jnt_idx = self.model.body_jntadr[box_id]
+            if jnt_idx != -1 and self.model.jnt_type[jnt_idx] == mujoco.mjtJoint.mjJNT_FREE:
+                qpos_adr = self.model.jnt_qposadr[jnt_idx]
+                
+                self.data.qpos[qpos_adr] = dist
+                self.data.qpos[qpos_adr + 1] = y_shift
+                # Z explicitly left alone
+
+        mujoco.mj_forward(self.model, self.data)
 
     def read_image(self) -> np.ndarray:
         self.renderer.update_scene(self.data, camera="pixel_cam")

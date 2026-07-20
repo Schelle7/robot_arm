@@ -1,23 +1,26 @@
 from omegaconf import DictConfig
 
-from robot_arm.sim_arm import SimArm
+from robot_arm.sim_arm import SimBackend
 from robot_arm.env import RobotEnv
-from robot_arm.high_level_control_wrapper import HighLevelControlWrapper
-from robot_arm.controllers import LinearInterpolatorController
+from robot_arm.coordinator import Coordinator
 from robot_arm.policies import Policy
 from robot_arm.recorder import EpisodeRecorder
 
 
 def execute_episode(
-    cfg: DictConfig, policy: Policy, recorder: EpisodeRecorder, instruction: str
+    cfg: DictConfig, 
+    policy: Policy, 
+    low_level_policy: Any, 
+    recorder: EpisodeRecorder, 
+    instruction: str
 ):
     """
     Core execution loop for an episode.
     Handles environment initialization (Steps 1 & 2) and the recording loop (Step 5).
     """
     # 1. Initialize backend
-    print("Initializing SimArm...")
-    arm = SimArm(
+    print("Initializing SimBackend...")
+    arm = SimBackend(
         model_path=cfg.model_path, height=cfg.camera.height, width=cfg.camera.width
     )
 
@@ -33,11 +36,11 @@ def execute_episode(
     )
 
     skip_frames = cfg.frequencies.low_level // cfg.frequencies.high_level
-    low_level_controller = LinearInterpolatorController(steps_per_action=skip_frames)
 
-    env = HighLevelControlWrapper(
+    coordinator = Coordinator(
         env=env,
-        low_level_controller=low_level_controller,
+        low_level_policy=low_level_policy,
+        high_level_policy=policy,
         high_level_hz=cfg.frequencies.high_level,
         low_level_hz=cfg.frequencies.low_level,
     )
@@ -49,9 +52,7 @@ def execute_episode(
     print(f"Executing '{instruction}' and recording to {recorder.episode_dir}...")
 
     for step_idx in range(max_steps):
-        action = policy.get_action(obs, instruction=instruction)
-
-        obs, reward, terminated, truncated, info = env.step(action)
+        obs, reward, terminated, truncated, info = coordinator.step(obs, info, instruction)
 
         recorder.step(step_idx, obs, reward=reward, info=info, instruction=instruction)
 

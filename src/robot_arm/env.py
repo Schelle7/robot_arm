@@ -57,6 +57,9 @@ class RobotEnv(gym.Env):
                 "agent_pos": spaces.Box(
                     low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
                 ),
+                "agent_vel": spaces.Box(
+                    low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32
+                ),
                 # The joint positions at the exact moment the VLA generated the trajectory
                 "original_agent_pos": spaces.Box(
                     low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
@@ -79,21 +82,34 @@ class RobotEnv(gym.Env):
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
-    def _get_obs(self) -> Dict[str, np.ndarray]:
+    def _get_obs(self) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         state_dict = self.arm.read_state()
         current_pos = np.array(
             [state_dict["Present_Position"][m] for m in self.motor_order],
             dtype=np.float32,
         )
+        current_vel = np.array(
+            [state_dict["Present_Velocity"][m] for m in self.motor_order],
+            dtype=np.float32,
+        )
 
         pixels = self.arm.read_image()
 
-        return {
+        obs = {
             "pixels": pixels,
             "agent_pos": current_pos,
+            "agent_vel": current_vel,
             "original_agent_pos": self.original_agent_pos.copy(),
             "low_level_trajectory_goal": self.current_trajectory_goal.copy(),
         }
+        
+        info = {}
+        if hasattr(self.arm, "get_end_effector_pose_7d"):
+            info["privileged_end_effector_pose_7d"] = self.arm.get_end_effector_pose_7d()
+        if hasattr(self.arm, "get_box_pose_6d"):
+            info["box_pose_6d"] = self.arm.get_box_pose_6d()
+
+        return obs, info
 
     def reset(
         self, seed=None, options=None
@@ -116,10 +132,12 @@ class RobotEnv(gym.Env):
         self.previous_progress = 0.0
 
         # We don't magically reset the physical arm to zero, we just start observing from where it is
-        # However, for simulation, the SimArm backend handles advancing time
+        # However, for simulation, the SimBackend handles advancing time and scene resets
+        if hasattr(self.arm, "reset_sim"):
+            self.arm.reset_sim()
 
-        obs = self._get_obs()
-        return obs, {}
+        obs, info = self._get_obs()
+        return obs, info
 
     def _get_closest_path_point(
         self, current_point: np.ndarray, path: np.ndarray
@@ -191,7 +209,7 @@ class RobotEnv(gym.Env):
 
         return float(past_progress + current_progress)
 
-    def update_trajectory(self, new_trajectory: np.ndarray):
+    def update_path(self, new_trajectory: np.ndarray):
         """Called by the high-level controller whenever a new plan is generated."""
         self.current_trajectory_goal = new_trajectory
         self.original_agent_pos = self.arm.get_pinch_point()
@@ -235,8 +253,14 @@ class RobotEnv(gym.Env):
         self.arm.write_goal(action_dict)
 
         # 2. Get new observation
-        obs = self._get_obs()
-        current_pos = obs["agent_pos"][:6]
+        obs, info = self._get_obs()
+
+        reward = self.compute_reward()
+
+        terminated = False
+        truncated = False
+
+        return obs, reward, terminated, truncated, info
 
         # 3. Environment logic for VLA / behavior cloning
         reward = self.compute_reward()
