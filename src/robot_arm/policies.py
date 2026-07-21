@@ -105,20 +105,19 @@ class SmolVLAPolicyWrapper(Policy):
 
 class WaypointPolicy(Policy):
     """
-    A policy that takes a sequence of 7D waypoints and generates chunks of deltas.
+    A policy that follows pre-defined waypoints to grab a target box.
     It moves towards the current waypoint at a fixed speed per step.
     Once a waypoint is reached, it automatically targets the next one.
     """
 
-    def __init__(self, waypoints: list[np.ndarray], chunk_size: int, speed: float):
-        """
-        waypoints: List of 7D target poses [x, y, z, roll, pitch, yaw, gripper]
-        chunk_size: Number of future steps to project in each chunk
-        speed: Maximum 7D distance to move per chunk step
-        """
-        self.waypoints = [np.array(wp, dtype=np.float32) for wp in waypoints]
-        self.chunk_size = chunk_size
+    def __init__(
+        self,
+        trajectory_length: int,
+        speed: float,
+    ):
+        self.chunk_size = trajectory_length
         self.speed = speed
+        self.waypoints = []
         self.current_wp_idx = 0
 
     def get_action(

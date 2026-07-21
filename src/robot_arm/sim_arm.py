@@ -47,6 +47,10 @@ class SimBackend(Arm):
     @property
     def tcp(self) -> np.ndarray:
         return (self.fixed_finger_tip + self.moving_finger_tip) / 2.0
+    
+    def get_tcp(self):
+        # this is obviously kinda stupid but Ill leave it for now
+        return self.tcp
 
     @property
     def aperture(self) -> float:
@@ -82,7 +86,7 @@ class SimBackend(Arm):
             dtype=np.float32,
         )
 
-    def get_box_pose_6d(self) -> np.ndarray:
+    def get_privileged_box_pose_6d(self) -> np.ndarray:
         # The box is defined as a body named "target_box" in scene.xml
         body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
         if body_id == -1:

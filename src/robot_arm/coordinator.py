@@ -26,10 +26,12 @@ class Coordinator:
             )
 
         self.env = env
-        self.skip_frames = low_level_hz // high_level_hz
+        self.chunk_size = low_level_hz // high_level_hz
         self.low_level_policy = low_level_policy
         self.high_level_policy = high_level_policy
         self.training = training
+
+        self.global_step = 0
 
     def step(
         self, obs: Dict[str, np.ndarray], info: Dict[str, Any], instruction: str
@@ -48,7 +50,7 @@ class Coordinator:
         self.env.update_path(high_level_action)
 
         # 3. Step physics using the reactive RL agent
-        for step_idx in range(self.skip_frames):
+        for step_idx in range(self.chunk_size):
 
             low_level_action, _ = self.low_level_policy.predict(obs)
 
@@ -68,6 +70,21 @@ class Coordinator:
                     actual_terminated,
                     [info],
                 )
+                
+                self.global_step += 1
+                
+                # Check bounds and train exactly as stable-baselines intends
+                if (
+                    self.global_step > self.low_level_policy.learning_starts
+                    and self.global_step % self.low_level_policy.train_freq.frequency == 0
+                ):
+                    self.low_level_policy.train(
+                        gradient_steps=self.low_level_policy.gradient_steps,
+                        batch_size=self.low_level_policy.batch_size,
+                    )
+                    # Tell SB3 logger to dump logs at standard intervals
+                    if self.global_step % 1000 == 0:
+                        self.low_level_policy.logger.dump(step=self.global_step)
 
             obs = next_obs
             dense_trajectory.append(

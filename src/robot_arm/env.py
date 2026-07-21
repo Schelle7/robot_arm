@@ -27,10 +27,12 @@ class RobotEnv(gym.Env):
         super().__init__()
         self.arm = arm
         self.max_seconds = max_seconds
-        
+
         if low_level_hz % high_level_hz != 0:
-            raise ValueError(f"low_level_hz ({low_level_hz}) must be cleanly divisible by high_level_hz ({high_level_hz})")
-        
+            raise ValueError(
+                f"low_level_hz ({low_level_hz}) must be cleanly divisible by high_level_hz ({high_level_hz})"
+            )
+
         self.chunk_size = low_level_hz // high_level_hz
         self.step_in_chunk = 0
 
@@ -109,7 +111,9 @@ class RobotEnv(gym.Env):
             "joint_velocities": current_vel,
             "start_joint_positions": self.start_joint_positions.copy(),
             "high_level_action": self.current_trajectory_goal.copy(),
-            "time_left": np.array([self.chunk_size - self.step_in_chunk - 1], dtype=np.float32),
+            "time_left": np.array(
+                [self.chunk_size - self.step_in_chunk - 1], dtype=np.float32
+            ),
         }
 
         info = {}
@@ -117,8 +121,8 @@ class RobotEnv(gym.Env):
             info["privileged_end_effector_pose_7d"] = (
                 self.arm.get_end_effector_pose_7d()
             )
-        if hasattr(self.arm, "get_box_pose_6d"):
-            info["box_pose_6d"] = self.arm.get_box_pose_6d()
+        if hasattr(self.arm, "get_privileged_box_pose_6d"):
+            info["privileged_box_pose_6d"] = self.arm.get_privileged_box_pose_6d()
 
         return obs, info
 
@@ -223,9 +227,9 @@ class RobotEnv(gym.Env):
 
     def update_path(self, new_trajectory: np.ndarray):
         """Called by the high-level controller whenever a new plan is generated."""
-        self.chunk_start_tcp = self.arm.get_tcp()
+        self.chunk_start_pose = self.arm.get_end_effector_pose_7d()
         self.current_trajectory_goal = new_trajectory
-        
+
         # We start a new high level instruction chunk, reset chunk time
         self.step_in_chunk = 0
         self.previous_deviation = 0.0
@@ -233,21 +237,19 @@ class RobotEnv(gym.Env):
 
     def compute_reward(self) -> float:
         try:
-            current_tcp = self.arm.get_tcp() * self.pose_distance_weights
+            current_pose = self.arm.get_end_effector_pose_7d() * self.pose_distance_weights
 
             # The trajectory goal is local deltas.
             # We must map our current position relative to where the chunk started.
-            relative_tcp = current_tcp - (
-                self.chunk_start_tcp * self.pose_distance_weights
-            )
-            trajectory = self.current_trajectory_goal * self.pose_distance_weights
+            weighted_relative_pose = (self.arm.get_end_effector_pose_7d() - self.chunk_start_pose) * self.pose_distance_weights
+            weighted_trajectory = self.current_trajectory_goal * self.pose_distance_weights
 
             closest_pt, seg_idx, t = self._get_closest_path_point(
-                relative_tcp, trajectory
+                weighted_relative_pose, weighted_trajectory
             )
 
-            current_deviation = self._compute_path_deviation(relative_tcp, closest_pt)
-            current_progress = self._compute_path_progress(trajectory, seg_idx, t)
+            current_deviation = self._compute_path_deviation(weighted_relative_pose, closest_pt)
+            current_progress = self._compute_path_progress(weighted_trajectory, seg_idx, t)
 
             # Improvement math
             dev_reward = self.previous_deviation - current_deviation
