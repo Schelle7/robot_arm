@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import numpy as np
 
 
@@ -10,12 +10,16 @@ class Policy(ABC):
 
     @abstractmethod
     def get_action(
-        self, obs: Dict[str, np.ndarray], info: Dict[str, Any], instruction: Optional[str] = None
+        self,
+        obs: Dict[str, np.ndarray],
+        info: Dict[str, Any],
+        instruction: Optional[str] = None,
     ) -> np.ndarray:
         """
         Given the current observation, privileged info, and optional language instruction, output an action.
         """
         pass
+
 
 class ReplayPolicy(Policy):
     """
@@ -28,11 +32,15 @@ class ReplayPolicy(Policy):
         self.current_step = 0
 
     def get_action(
-        self, obs: Dict[str, np.ndarray], info: Dict[str, Any], instruction: Optional[str] = None
+        self,
+        obs: Dict[str, np.ndarray],
+        info: Dict[str, Any],
+        instruction: Optional[str] = None,
     ) -> np.ndarray:
         action = self.trajectory[self.current_step]
         self.current_step += 1
         return action
+
 
 class SmolVLAPolicyWrapper(Policy):
     """
@@ -54,7 +62,10 @@ class SmolVLAPolicyWrapper(Policy):
         )
 
     def get_action(
-        self, obs: Dict[str, np.ndarray], info: Dict[str, Any], instruction: Optional[str] = None
+        self,
+        obs: Dict[str, np.ndarray],
+        info: Dict[str, Any],
+        instruction: Optional[str] = None,
     ) -> np.ndarray:
         import torch
 
@@ -63,7 +74,7 @@ class SmolVLAPolicyWrapper(Policy):
 
         # Build raw unbatched transition data expected by lerobot pipelines
         raw_obs = {
-            "observation.state": obs["agent_pos"].astype(np.float32),
+            "observation.state": obs["joint_positions"].astype(np.float32),
             "observation.images.camera1": img_chw,
         }
         if instruction is not None:
@@ -111,7 +122,10 @@ class WaypointPolicy(Policy):
         self.current_wp_idx = 0
 
     def get_action(
-        self, obs: Dict[str, np.ndarray], info: Dict[str, Any], instruction: Optional[str] = None
+        self,
+        obs: Dict[str, np.ndarray],
+        info: Dict[str, Any],
+        instruction: Optional[str] = None,
     ) -> np.ndarray:
         # We need the 7D pose from the privileged info dict
         current_pose = info["privileged_end_effector_pose_7d"]

@@ -45,7 +45,7 @@ class SimBackend(Arm):
         return self.data.site_xpos[site_id].copy()
 
     @property
-    def pinch_point(self) -> np.ndarray:
+    def tcp(self) -> np.ndarray:
         return (self.fixed_finger_tip + self.moving_finger_tip) / 2.0
 
     @property
@@ -68,7 +68,7 @@ class SimBackend(Arm):
 
     def get_end_effector_pose_7d(self) -> np.ndarray:
         # Get position of TCP
-        pos = self.pinch_point
+        pos = self.tcp
 
         # Get euler angles from the wrist
         euler = self.gripper_euler
@@ -87,13 +87,14 @@ class SimBackend(Arm):
         body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
         if body_id == -1:
             raise KeyError("Body 'target_box' not found in MuJoCo model.")
-            
+
         pos = self.data.xpos[body_id]
-        
+
         rot_mat = self.data.xmat[body_id].reshape(3, 3)
         from scipy.spatial.transform import Rotation
+
         euler = Rotation.from_matrix(rot_mat).as_euler("xyz")
-        
+
         return np.array(
             [pos[0], pos[1], pos[2], euler[0], euler[1], euler[2]],
             dtype=np.float32,
@@ -137,12 +138,15 @@ class SimBackend(Arm):
         if box_id != -1:
             dist = np.random.uniform(0.25, 0.45)
             y_shift = np.random.uniform(-0.10, 0.10)
-            
+
             # Directly updating the freejoint associated with the box
             jnt_idx = self.model.body_jntadr[box_id]
-            if jnt_idx != -1 and self.model.jnt_type[jnt_idx] == mujoco.mjtJoint.mjJNT_FREE:
+            if (
+                jnt_idx != -1
+                and self.model.jnt_type[jnt_idx] == mujoco.mjtJoint.mjJNT_FREE
+            ):
                 qpos_adr = self.model.jnt_qposadr[jnt_idx]
-                
+
                 self.data.qpos[qpos_adr] = dist
                 self.data.qpos[qpos_adr + 1] = y_shift
                 # Z explicitly left alone

@@ -17,6 +17,24 @@ frequencies:
   low_level: 200   # PID/MuJoCo physics stepping rate
 
 # Trajectory parameters
-trajectory_length: 2
+trajectory_length: 50
 trajectory_dim: 7
 pose_distance_weights: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0]
+
+# Training parameters for the low-level SAC controller
+training:
+  num_episodes: 1000
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  learning_starts: 10000
+  batch_size: 256
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: 1
+  save_freq: 1000
+
+  # Waypoint generation
+  lift_height: 0.15
+  gripper_open: 1.0
+  gripper_closed: 0.0
+  waypoint_speed: 0.005

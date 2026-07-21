@@ -41,11 +41,11 @@ class EpisodeRecorder:
             "step": step_idx,
             "instruction": instruction,
             "image_path": image_path,
-            "agent_pos": obs["agent_pos"].tolist(),
+            "joint_positions": obs["joint_positions"].tolist(),
             "reward": float(reward),
             "dense_trajectory": [
                 {
-                    "agent_pos": step["agent_pos"].tolist(),
+                    "joint_positions": step["joint_positions"].tolist(),
                     "action": step["action"].tolist(),
                 }
                 for step in info.get("dense_trajectory", [])

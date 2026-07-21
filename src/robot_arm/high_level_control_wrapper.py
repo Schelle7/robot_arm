@@ -69,7 +69,7 @@ class HighLevelControlWrapper(gym.Wrapper):
             # Buffer the dense state and the low level action inside info
             dense_trajectory.append(
                 {
-                    "agent_pos": obs["agent_pos"].copy(),
+                    "joint_positions": obs["joint_positions"].copy(),
                     "action": low_level_action.copy(),
                 }
             )

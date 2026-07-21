@@ -38,7 +38,13 @@ def main(cfg: DictConfig):
 
     # 5. Execute
     # We pass None for low_level_policy temporarily until the RL model is trained and loaded here
-    execute_episode(cfg=cfg, policy=policy, low_level_policy=None, recorder=recorder, instruction=instruction)
+    execute_episode(
+        cfg=cfg,
+        policy=policy,
+        low_level_policy=None,
+        recorder=recorder,
+        instruction=instruction,
+    )
 
 
 if __name__ == "__main__":

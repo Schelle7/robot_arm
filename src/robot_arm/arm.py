@@ -17,7 +17,7 @@ class Arm(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_pinch_point(self) -> np.ndarray:
+    def get_tcp(self) -> np.ndarray:
         """
         Returns the Tool Center Point (TCP) pose as a 7D array:
         [x, y, z, roll, pitch, yaw, aperture]

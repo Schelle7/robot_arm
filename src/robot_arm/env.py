@@ -18,8 +18,6 @@ class RobotEnv(gym.Env):
         self,
         arm: Arm,
         max_seconds: float,
-        height: int,
-        width: int,
         trajectory_length: int,
         trajectory_dim: int,
         pose_distance_weights: np.ndarray,
@@ -51,25 +49,25 @@ class RobotEnv(gym.Env):
 
         self.observation_space = spaces.Dict(
             {
-                "pixels": spaces.Box(
-                    low=0, high=255, shape=(height, width, 3), dtype=np.uint8
-                ),
-                "agent_pos": spaces.Box(
+                "joint_positions": spaces.Box(
                     low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
                 ),
-                "agent_vel": spaces.Box(
+                "joint_velocities": spaces.Box(
                     low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32
                 ),
                 # The joint positions at the exact moment the VLA generated the trajectory
-                "original_agent_pos": spaces.Box(
+                "start_joint_positions": spaces.Box(
                     low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
                 ),
-                "low_level_trajectory_goal": spaces.Box(
-                    # array of future waypoints from the VLA.
+                "high_level_action": spaces.Box(
+                    # array of future relative waypoints from the VLA.
                     low=-1.0,
                     high=1.0,
                     shape=(trajectory_length, trajectory_dim),
                     dtype=np.float32,
+                ),
+                "time_left": spaces.Box(
+                    low=0.0, high=np.inf, shape=(1,), dtype=np.float32
                 ),
             }
         )
@@ -77,35 +75,39 @@ class RobotEnv(gym.Env):
         self.current_trajectory_goal = np.zeros(
             (trajectory_length, trajectory_dim), dtype=np.float32
         )
-        self.original_agent_pos = np.zeros(6, dtype=np.float32)
+        self.start_joint_positions = np.zeros(6, dtype=np.float32)
 
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
-    def _get_obs(self) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    @property
+    def current_joint_angles(self) -> np.ndarray:
         state_dict = self.arm.read_state()
-        current_pos = np.array(
+        return np.array(
             [state_dict["Present_Position"][m] for m in self.motor_order],
             dtype=np.float32,
         )
+
+    def _get_obs(self) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+        state_dict = self.arm.read_state()
+        current_pos = self.current_joint_angles
         current_vel = np.array(
             [state_dict["Present_Velocity"][m] for m in self.motor_order],
             dtype=np.float32,
         )
 
-        pixels = self.arm.read_image()
-
         obs = {
-            "pixels": pixels,
-            "agent_pos": current_pos,
-            "agent_vel": current_vel,
-            "original_agent_pos": self.original_agent_pos.copy(),
-            "low_level_trajectory_goal": self.current_trajectory_goal.copy(),
+            "joint_positions": current_pos,
+            "joint_velocities": current_vel,
+            "start_joint_positions": self.start_joint_positions.copy(),
+            "high_level_action": self.current_trajectory_goal.copy(),
         }
-        
+
         info = {}
         if hasattr(self.arm, "get_end_effector_pose_7d"):
-            info["privileged_end_effector_pose_7d"] = self.arm.get_end_effector_pose_7d()
+            info["privileged_end_effector_pose_7d"] = (
+                self.arm.get_end_effector_pose_7d()
+            )
         if hasattr(self.arm, "get_box_pose_6d"):
             info["box_pose_6d"] = self.arm.get_box_pose_6d()
 
@@ -118,14 +120,14 @@ class RobotEnv(gym.Env):
         self.current_step = 0
 
         state_dict = self.arm.read_state()
-        self.original_agent_pos = np.array(
+        self.start_joint_positions = np.array(
             [state_dict["Present_Position"][m] for m in self.motor_order],
             dtype=np.float32,
         )
 
-        # At reset, there is no trajectory plan yet, so the goal is simply "stay exactly where you are"
-        self.current_trajectory_goal = np.tile(
-            self.original_agent_pos, (self.trajectory_length, 1)
+        # At reset, there is no trajectory plan yet, so the goal is simply zero relative deltas
+        self.current_trajectory_goal = np.zeros(
+            (self.trajectory_length, self.trajectory_dim), dtype=np.float32
         )
 
         self.previous_deviation = 0.0
@@ -212,21 +214,27 @@ class RobotEnv(gym.Env):
     def update_path(self, new_trajectory: np.ndarray):
         """Called by the high-level controller whenever a new plan is generated."""
         self.current_trajectory_goal = new_trajectory
-        self.original_agent_pos = self.arm.get_pinch_point()
+        self.chunk_start_tcp = self.arm.get_tcp()
 
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
     def compute_reward(self) -> float:
         try:
-            current_pinch = self.arm.get_pinch_point() * self.pose_distance_weights
+            current_tcp = self.arm.get_tcp() * self.pose_distance_weights
+
+            # The trajectory goal is local deltas.
+            # We must map our current position relative to where the chunk started.
+            relative_tcp = current_tcp - (
+                self.chunk_start_tcp * self.pose_distance_weights
+            )
             trajectory = self.current_trajectory_goal * self.pose_distance_weights
 
             closest_pt, seg_idx, t = self._get_closest_path_point(
-                current_pinch, trajectory
+                relative_tcp, trajectory
             )
 
-            current_deviation = self._compute_path_deviation(current_pinch, closest_pt)
+            current_deviation = self._compute_path_deviation(relative_tcp, closest_pt)
             current_progress = self._compute_path_progress(trajectory, seg_idx, t)
 
             # Improvement math
@@ -259,14 +267,5 @@ class RobotEnv(gym.Env):
 
         terminated = False
         truncated = False
-
-        return obs, reward, terminated, truncated, info
-
-        # 3. Environment logic for VLA / behavior cloning
-        reward = self.compute_reward()
-        terminated = False  # VLA episodes run until max_seconds is hit, handled by caller loop boundary
-        truncated = False
-
-        info = {"current_pos": current_pos, "action": action}
 
         return obs, reward, terminated, truncated, info

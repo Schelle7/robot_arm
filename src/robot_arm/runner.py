@@ -1,4 +1,5 @@
 from omegaconf import DictConfig
+from typing import Any
 
 from robot_arm.sim_arm import SimBackend
 from robot_arm.env import RobotEnv
@@ -8,11 +9,11 @@ from robot_arm.recorder import EpisodeRecorder
 
 
 def execute_episode(
-    cfg: DictConfig, 
-    policy: Policy, 
-    low_level_policy: Any, 
-    recorder: EpisodeRecorder, 
-    instruction: str
+    cfg: DictConfig,
+    policy: Policy,
+    low_level_policy: Any,
+    recorder: EpisodeRecorder,
+    instruction: str,
 ):
     """
     Core execution loop for an episode.
@@ -28,14 +29,10 @@ def execute_episode(
     env = RobotEnv(
         arm=arm,
         max_seconds=cfg.max_seconds,
-        height=cfg.camera.height,
-        width=cfg.camera.width,
         trajectory_length=cfg.trajectory_length,
         trajectory_dim=cfg.trajectory_dim,
         pose_distance_weights=cfg.pose_distance_weights,
     )
-
-    skip_frames = cfg.frequencies.low_level // cfg.frequencies.high_level
 
     coordinator = Coordinator(
         env=env,
@@ -52,7 +49,9 @@ def execute_episode(
     print(f"Executing '{instruction}' and recording to {recorder.episode_dir}...")
 
     for step_idx in range(max_steps):
-        obs, reward, terminated, truncated, info = coordinator.step(obs, info, instruction)
+        obs, reward, terminated, truncated, info = coordinator.step(
+            obs, info, instruction
+        )
 
         recorder.step(step_idx, obs, reward=reward, info=info, instruction=instruction)
 

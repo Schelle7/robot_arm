@@ -40,42 +40,33 @@ class Coordinator:
             obs, info, instruction=instruction
         )
 
-        # 2. Update MDP configuration for the 200Hz steps
-        current_pos_dict = self.env.arm.read_state()
-        start_pos = np.array(
-            [current_pos_dict["Present_Position"][m] for m in self.env.motor_order],
-            dtype=np.float32,
-        )
+        start_pos = self.env.current_joint_angles
 
         # later on I will have to make this parallel.
         # for now I'll just start getting it to run at all.
 
-        target_pos = high_level_action
-
-        self.env.update_path(target_pos)
+        self.env.update_path(high_level_action)
 
         # 3. Step physics using the reactive RL agent
         for step_idx in range(self.skip_frames):
             time_left = self.skip_frames - step_idx - 1
-            
+
             # Format the observation for the SAC policy
             rl_obs = {
-                "agent_pos": obs["agent_pos"],
-                "agent_vel": obs["agent_vel"],
-                "low_level_trajectory_goal": obs["low_level_trajectory_goal"].flatten(),
+                "start_joint_positions": start_pos,
+                "current_joint_positions": self.env.current_joint_angles,
+                "high_level_action": high_level_action,
                 "time_left": np.array([time_left], dtype=np.float32),
             }
-            
-            # TODO: Uncomment when SAC policy is hooked up
-            # low_level_action, _ = self.low_level_policy.predict(rl_obs, deterministic=True)
-            low_level_action = np.zeros(6, dtype=np.float32) # Temporary fallback
-            
+
+            low_level_action, _ = self.low_level_policy.predict(rl_obs)
+
             obs, reward, terminated, truncated, info = self.env.step(low_level_action)
             total_reward += reward
 
             dense_trajectory.append(
                 {
-                    "agent_pos": obs["agent_pos"].copy(),
+                    "joint_positions": obs["joint_positions"].copy(),
                     "action": low_level_action.copy(),
                 }
             )
