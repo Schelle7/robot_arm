@@ -228,6 +228,7 @@ class RobotEnv(gym.Env):
 
     def update_path(self, new_trajectory: np.ndarray):
         """Called by the high-level controller whenever a new plan is generated."""
+        
         self.chunk_start_pose = self.arm.get_end_effector_pose_7d()
         self.current_trajectory_goal = new_trajectory
 
@@ -235,6 +236,10 @@ class RobotEnv(gym.Env):
         self.step_in_chunk = 0
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
+
+    def get_privileged_box_pose_6d(self) -> np.ndarray:
+        """Helper method so SubprocVecEnv can unpack this without pickling the Arm."""
+        return self.arm.get_privileged_box_pose_6d()
 
     def compute_reward(self, requested_action: Dict[str, float], safe_action: Dict[str, float]) -> float:
         try:
