@@ -47,7 +47,7 @@ class SimBackend(Arm):
     @property
     def tcp(self) -> np.ndarray:
         return (self.fixed_finger_tip + self.moving_finger_tip) / 2.0
-    
+
     def get_tcp(self):
         # this is obviously kinda stupid but Ill leave it for now
         return self.tcp

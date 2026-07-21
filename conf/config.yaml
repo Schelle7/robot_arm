@@ -16,6 +16,12 @@ frequencies:
   high_level: 5   # VLA inference and camera recording rate
   low_level: 200   # PID/MuJoCo physics stepping rate
 
+# Safety constraints
+safety:
+  max_position_radians: 3.10
+  min_position_radians: -3.10
+  violation_penalty_factor: 10.0
+  
 # Trajectory parameters
 trajectory_length: 50
 trajectory_dim: 7

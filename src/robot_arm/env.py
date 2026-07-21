@@ -23,10 +23,14 @@ class RobotEnv(gym.Env):
         pose_distance_weights: np.ndarray,
         high_level_hz: int,
         low_level_hz: int,
+        delta_action_scale: float,
+        violation_penalty_factor: float,
     ):
         super().__init__()
         self.arm = arm
         self.max_seconds = max_seconds
+        self.delta_action_scale = delta_action_scale
+        self.violation_penalty_factor = violation_penalty_factor
 
         if low_level_hz % high_level_hz != 0:
             raise ValueError(
@@ -50,12 +54,9 @@ class RobotEnv(gym.Env):
             "gripper",
         ]
 
-        # Rough joint limits in radians (from the MJCF / hardware limits)
-        # We use symmetric pi for simplicity in normalized action spaces,
-        # but could clamp exactly to the specific mechanical limits if needed.
-        self.action_space = spaces.Box(
-            low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
-        )
+        # Normalized action space for delta control: [-1.0, 1.0].
+        # The agent outputs a proportion of the maximum delta_action_scale per step.
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
 
         self.observation_space = spaces.Dict(
             {
@@ -235,21 +236,27 @@ class RobotEnv(gym.Env):
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
-    def compute_reward(self) -> float:
+    def compute_reward(self, requested_action: Dict[str, float], safe_action: Dict[str, float]) -> float:
         try:
-            current_pose = self.arm.get_end_effector_pose_7d() * self.pose_distance_weights
-
             # The trajectory goal is local deltas.
             # We must map our current position relative to where the chunk started.
-            weighted_relative_pose = (self.arm.get_end_effector_pose_7d() - self.chunk_start_pose) * self.pose_distance_weights
-            weighted_trajectory = self.current_trajectory_goal * self.pose_distance_weights
+            weighted_relative_pose = (
+                self.arm.get_end_effector_pose_7d() - self.chunk_start_pose
+            ) * self.pose_distance_weights
+            weighted_trajectory = (
+                self.current_trajectory_goal * self.pose_distance_weights
+            )
 
             closest_pt, seg_idx, t = self._get_closest_path_point(
                 weighted_relative_pose, weighted_trajectory
             )
 
-            current_deviation = self._compute_path_deviation(weighted_relative_pose, closest_pt)
-            current_progress = self._compute_path_progress(weighted_trajectory, seg_idx, t)
+            current_deviation = self._compute_path_deviation(
+                weighted_relative_pose, closest_pt
+            )
+            current_progress = self._compute_path_progress(
+                weighted_trajectory, seg_idx, t
+            )
 
             # Improvement math
             dev_reward = self.previous_deviation - current_deviation
@@ -258,7 +265,14 @@ class RobotEnv(gym.Env):
             self.previous_deviation = current_deviation
             self.previous_progress = current_progress
 
-            return float(dev_reward + prog_reward)
+            # Safety penalty
+            safety_penalty = 0.0
+            for motor in requested_action:
+                diff = abs(requested_action[motor] - safe_action[motor])
+                if diff > 0:
+                    safety_penalty -= diff * self.violation_penalty_factor
+
+            return float(dev_reward + prog_reward + safety_penalty)
 
         except NotImplementedError:
             return np.nan
@@ -269,16 +283,22 @@ class RobotEnv(gym.Env):
         self.current_step += 1
         self.step_in_chunk += 1
 
-        # 1. Map action vector to dictionary and send to arm
-        action_dict = {
-            motor: float(action[i]) for i, motor in enumerate(self.motor_order)
-        }
-        self.arm.write_goal(action_dict)
+        # 1. Unscale delta action and add to current joint angles
+        delta = action * self.delta_action_scale
+        target_positions = self.current_joint_angles + delta
 
-        # 2. Get new observation
+        # 2. Map target positions vector to dictionary and send to arm
+        action_dict = {
+            motor: float(pos) for motor, pos in zip(self.motor_order, target_positions)
+        }
+        
+        # 3. Apply safe action through the wrapper
+        safe_action_dict = self.arm.write_goal(action_dict)
+
+        # 4. Get new observation
         obs, info = self._get_obs()
 
-        reward = self.compute_reward()
+        reward = self.compute_reward(requested_action=action_dict, safe_action=safe_action_dict)
 
         terminated = False
         truncated = False

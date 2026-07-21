@@ -70,13 +70,14 @@ class Coordinator:
                     actual_terminated,
                     [info],
                 )
-                
+
                 self.global_step += 1
-                
+
                 # Check bounds and train exactly as stable-baselines intends
                 if (
                     self.global_step > self.low_level_policy.learning_starts
-                    and self.global_step % self.low_level_policy.train_freq.frequency == 0
+                    and self.global_step % self.low_level_policy.train_freq.frequency
+                    == 0
                 ):
                     self.low_level_policy.train(
                         gradient_steps=self.low_level_policy.gradient_steps,

@@ -184,3 +184,18 @@ apparently smolVLA autoadapts to the size from teh dataset.
 
 
 completely train that and then for the rest probably do lora only.
+
+
+
+
+
+
+
+later on I want to add pwm including considering temperature and velocity.
+for now it is just position.
+
+
+Regarding the LeRobot calibration file: the calibration limits are usually saved heavily nested inside your huggingface cache or dot config (e.g., ~/.cache/huggingface/lerobot/ or ~/.lerobot/ usually under a .json configuration linking motor IDs to their exact hardware tick offsets).
+
+For now, passing the basic hardcoded defaults in the yaml works exactly as intended until you map the real dynamic parsing!
+need to setup a safety wrapper before palcing it on the real arm.

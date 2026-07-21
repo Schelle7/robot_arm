@@ -12,6 +12,7 @@ from robot_arm.sim_arm import SimBackend
 from robot_arm.env import RobotEnv
 from robot_arm.policies import WaypointPolicy
 from robot_arm.coordinator import Coordinator
+from robot_arm.safety import SafeArmWrapper
 
 log = logging.getLogger(__name__)
 
@@ -21,18 +22,25 @@ def train_low_level(cfg: DictConfig):
     # 1. Initialize Backend and Env
     log.info("Initializing Simulation...")
     sim_backend = SimBackend(
-        model_path=cfg.model_path,
-        height=cfg.camera.height,
-        width=cfg.camera.width
+        model_path=cfg.model_path, height=cfg.camera.height, width=cfg.camera.width
     )
+    
+    safe_backend = SafeArmWrapper(
+        backend_arm=sim_backend,
+        min_pos=cfg.safety.min_position_radians,
+        max_pos=cfg.safety.max_position_radians
+    )
+    
     env = RobotEnv(
-        arm=sim_backend,
+        arm=safe_backend,
         max_seconds=cfg.max_seconds,
         trajectory_length=cfg.trajectory_length,
         trajectory_dim=cfg.trajectory_dim,
         pose_distance_weights=np.array(cfg.pose_distance_weights, dtype=np.float32),
         high_level_hz=cfg.frequencies.high_level,
         low_level_hz=cfg.frequencies.low_level,
+        delta_action_scale=cfg.training.waypoint_speed / cfg.frequencies.low_level,
+        violation_penalty_factor=cfg.safety.violation_penalty_factor,
     )
 
     # 2. Get device
@@ -55,16 +63,17 @@ def train_low_level(cfg: DictConfig):
         verbose=1,
         device=device,
     )
-    
+
     # Initialize the SB3 logger explicitly since we are hijacking the training loop
     hydra_cfg = HydraConfig.get()
     from stable_baselines3.common.logger import configure
+
     logger = configure(hydra_cfg.runtime.output_dir, ["stdout", "csv"])
     model.set_logger(logger)
 
     # 4. Initialize synthetic Waypoint Policy
     log.info("Initializing Waypoint Policy...")
-    
+
     high_level_policy = WaypointPolicy(
         trajectory_length=cfg.trajectory_length,
         speed=cfg.training.waypoint_speed,
@@ -88,6 +97,7 @@ def train_low_level(cfg: DictConfig):
         truncated = False
 
         from robot_arm.waypoints import generate_grab_waypoints
+
         high_level_policy.waypoints = generate_grab_waypoints(
             box_pose_6d=info["privileged_box_pose_6d"],
             lift_height=cfg.training.lift_height,
@@ -107,7 +117,11 @@ def train_low_level(cfg: DictConfig):
                 hydra_cfg = HydraConfig.get()
                 output_dir = os.path.join(hydra_cfg.runtime.output_dir, "checkpoints")
                 os.makedirs(output_dir, exist_ok=True)
-                model.save(os.path.join(output_dir, f"sac_manual_step_{coordinator.global_step}"))
+                model.save(
+                    os.path.join(
+                        output_dir, f"sac_manual_step_{coordinator.global_step}"
+                    )
+                )
 
         log.info(
             f"Episode {episode} | Reward: {episode_reward:.2f} | Steps: {coordinator.global_step}"
