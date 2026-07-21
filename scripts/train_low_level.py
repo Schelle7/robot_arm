@@ -88,6 +88,12 @@ def train_low_level(cfg: DictConfig):
         training=True,
     )
 
+    def save_checkpoint(step_name):
+        hydra_cfg = HydraConfig.get()
+        output_dir = os.path.join(hydra_cfg.runtime.output_dir, "checkpoints")
+        os.makedirs(output_dir, exist_ok=True)
+        model.save(os.path.join(output_dir, f"sac_manual_step_{step_name}"))
+
     log.info(f"Starting training for {cfg.training.num_episodes} episodes...")
 
     for episode in range(cfg.training.num_episodes):
@@ -105,6 +111,7 @@ def train_low_level(cfg: DictConfig):
             gripper_closed=cfg.training.gripper_closed,
         )
         high_level_policy.current_wp_idx = 0
+        high_level_step = 0
 
         while not (terminated or truncated):
             # Coordinator naturally executes training bounds natively
@@ -112,21 +119,19 @@ def train_low_level(cfg: DictConfig):
                 obs, info, instruction="grab the box"
             )
             episode_reward += reward
+            high_level_step += 1
 
-            if coordinator.global_step % cfg.training.save_freq == 0:
-                hydra_cfg = HydraConfig.get()
-                output_dir = os.path.join(hydra_cfg.runtime.output_dir, "checkpoints")
-                os.makedirs(output_dir, exist_ok=True)
-                model.save(
-                    os.path.join(
-                        output_dir, f"sac_manual_step_{coordinator.global_step}"
-                    )
-                )
+            if high_level_step >= cfg.max_seconds * cfg.frequencies.high_level:
+                break
 
         log.info(
             f"Episode {episode} | Reward: {episode_reward:.2f} | Steps: {coordinator.global_step}"
         )
+        
+        if (episode + 1) % cfg.training.save_episodes_freq == 0:
+            save_checkpoint(f"ep_{episode + 1}")
 
+    save_checkpoint(f"final_{coordinator.global_step}")
 
 if __name__ == "__main__":
     train_low_level()

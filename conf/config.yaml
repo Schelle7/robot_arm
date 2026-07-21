@@ -3,7 +3,7 @@ defaults:
   - experiment: baseline_cpu
 
 model_path: "models/so101/scene.xml"
-max_seconds: 10
+max_seconds: 1
 
 # Camera resolution
 camera:
@@ -29,7 +29,7 @@ pose_distance_weights: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0]
 
 # Training parameters for the low-level SAC controller
 training:
-  num_episodes: 1000
+  num_episodes: 2
   learning_rate: 0.0003
   buffer_size: 1000000
   learning_starts: 10000
@@ -37,7 +37,7 @@ training:
   tau: 0.005
   train_freq: 1
   gradient_steps: 1
-  save_freq: 1000
+  save_episodes_freq: 20
 
   # Waypoint generation
   lift_height: 0.15
