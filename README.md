@@ -198,4 +198,9 @@ for now it is just position.
 Regarding the LeRobot calibration file: the calibration limits are usually saved heavily nested inside your huggingface cache or dot config (e.g., ~/.cache/huggingface/lerobot/ or ~/.lerobot/ usually under a .json configuration linking motor IDs to their exact hardware tick offsets).
 
 For now, passing the basic hardcoded defaults in the yaml works exactly as intended until you map the real dynamic parsing!
-need to setup a safety wrapper before palcing it on the real arm.
+need to setup a safety wrapper before placing it on the real arm.
+
+
+
+I really have to consider jax once again since its insanely slow with the current setup.
+Or otherwise at least parallelize the existing stuff and not use the dummyVecEnv
