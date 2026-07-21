@@ -18,6 +18,7 @@ class Coordinator:
         high_level_policy: Policy,
         high_level_hz: int,
         low_level_hz: int,
+        training: bool,
     ):
         if low_level_hz % high_level_hz != 0:
             raise ValueError(
@@ -28,6 +29,7 @@ class Coordinator:
         self.skip_frames = low_level_hz // high_level_hz
         self.low_level_policy = low_level_policy
         self.high_level_policy = high_level_policy
+        self.training = training
 
     def step(
         self, obs: Dict[str, np.ndarray], info: Dict[str, Any], instruction: str
@@ -40,8 +42,6 @@ class Coordinator:
             obs, info, instruction=instruction
         )
 
-        start_pos = self.env.current_joint_angles
-
         # later on I will have to make this parallel.
         # for now I'll just start getting it to run at all.
 
@@ -49,21 +49,27 @@ class Coordinator:
 
         # 3. Step physics using the reactive RL agent
         for step_idx in range(self.skip_frames):
-            time_left = self.skip_frames - step_idx - 1
 
-            # Format the observation for the SAC policy
-            rl_obs = {
-                "start_joint_positions": start_pos,
-                "current_joint_positions": self.env.current_joint_angles,
-                "high_level_action": high_level_action,
-                "time_left": np.array([time_left], dtype=np.float32),
-            }
+            low_level_action, _ = self.low_level_policy.predict(obs)
 
-            low_level_action, _ = self.low_level_policy.predict(rl_obs)
-
-            obs, reward, terminated, truncated, info = self.env.step(low_level_action)
+            next_obs, reward, terminated, truncated, info = self.env.step(
+                low_level_action
+            )
             total_reward += reward
 
+            if self.training:
+                # time_left is natively part of the obs now.
+                actual_terminated = terminated or (obs["time_left"] == 0)
+                self.low_level_policy.replay_buffer.add(
+                    obs,
+                    next_obs,
+                    low_level_action,
+                    reward,
+                    actual_terminated,
+                    [info],
+                )
+
+            obs = next_obs
             dense_trajectory.append(
                 {
                     "joint_positions": obs["joint_positions"].copy(),

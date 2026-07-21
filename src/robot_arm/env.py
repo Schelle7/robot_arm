@@ -21,11 +21,19 @@ class RobotEnv(gym.Env):
         trajectory_length: int,
         trajectory_dim: int,
         pose_distance_weights: np.ndarray,
+        high_level_hz: int,
+        low_level_hz: int,
     ):
         super().__init__()
         self.arm = arm
         self.max_seconds = max_seconds
-        self.current_step = 0
+        
+        if low_level_hz % high_level_hz != 0:
+            raise ValueError(f"low_level_hz ({low_level_hz}) must be cleanly divisible by high_level_hz ({high_level_hz})")
+        
+        self.chunk_size = low_level_hz // high_level_hz
+        self.step_in_chunk = 0
+
         self.trajectory_length = trajectory_length
         self.trajectory_dim = trajectory_dim
         self.pose_distance_weights = np.array(pose_distance_weights, dtype=np.float32)
@@ -101,6 +109,7 @@ class RobotEnv(gym.Env):
             "joint_velocities": current_vel,
             "start_joint_positions": self.start_joint_positions.copy(),
             "high_level_action": self.current_trajectory_goal.copy(),
+            "time_left": np.array([self.chunk_size - self.step_in_chunk - 1], dtype=np.float32),
         }
 
         info = {}
@@ -132,6 +141,7 @@ class RobotEnv(gym.Env):
 
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
+        self.step_in_chunk = 0
 
         # We don't magically reset the physical arm to zero, we just start observing from where it is
         # However, for simulation, the SimBackend handles advancing time and scene resets
@@ -213,9 +223,11 @@ class RobotEnv(gym.Env):
 
     def update_path(self, new_trajectory: np.ndarray):
         """Called by the high-level controller whenever a new plan is generated."""
-        self.current_trajectory_goal = new_trajectory
         self.chunk_start_tcp = self.arm.get_tcp()
-
+        self.current_trajectory_goal = new_trajectory
+        
+        # We start a new high level instruction chunk, reset chunk time
+        self.step_in_chunk = 0
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
@@ -253,6 +265,7 @@ class RobotEnv(gym.Env):
         self, action: np.ndarray
     ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
         self.current_step += 1
+        self.step_in_chunk += 1
 
         # 1. Map action vector to dictionary and send to arm
         action_dict = {
