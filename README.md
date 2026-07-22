@@ -110,95 +110,27 @@ video3	Pixel (metadata node)	no
 
 
 ### 5.
-decide on some vla and then try to run it.
-collect some data and then further train a policy.
+smolvla + custom 7d pose to motor commands adapter
+currently the adapter outputs delta positions which then get converted to position targets.
+Later on I want to output PWM values.
 
 
 visualize the arm:
 python -m mujoco.viewer --mjcf models/so101/scene.xml
 
 
-
-Long term I want to setup my behavior cloning / RL loop with head that can do inverse kinematics and forward dynamics (does forward dynamics a la MPC with neural net help? Does it fight sim to real gap? and help better understand the timing mismatch?)
-
-
-short term just set up the normal smol VLA with PID.
-
-
-
-
-
-
-next step probably, add a red box and tell the gripper to grip it.
-check if it does, maybe the camera alignment is wrong or something.
-
-set up a training loop for training based on synthetic and vla trajectories.
+set up a training loop for vla training based on synthetic and real trajectories.
 For training it makes sense if I use the lerobot data format
 Then I don't have to handle any of it and can just call the existing training script.
 
-Try a run on the real arm.
 
+The safety layer checks the commands and decides what to execute.
+Does the command respect the defined boundaries?
 
+What is the current velocity of the motor?
+What is its current temperature?
 
-I could actually introduce a safety layer akin to the one for the excavator that decides what actions will be permitted.
-Probably just have to make sure the position decided by the VLA is inside the allowed range.
-Then also not too high a speed?
-And some temperature checks??
-That should make it safe to try out on the real arm.
-
-
-
-maybe I should build an RL world after all sicne so far I dont really have any way to properly program the robot.
-doing inverse kinematics by hand is a bit of a pain.
-
-but maybe still easier?
-6d pose is far easier to obtain + gripper movement.
-
-Therefore I think I am going to try that.
-and then RL and no inverse kinematics.
-
-
-
-tool center point in between the two gripepr parts + end effector pos as the non movimng gripper part?
-aperture can be abgeleitet from the servo position of the gripper and is therefore not needed separately I think.
-
-
-but maybe it is for the high level policy?
-or should high level policy specify that part directly?
-
-
-reward
-scaling_vector * (|goal_pose - previous_pose| - |goal_pose - new_pose|)
-
-
-lets please assume the high level planner provides a 7 dimensional vector 6d psoe + gripper and an array for teh enxt trajectories of those.
-
-Then we have to set up a reward structure that tells how well the trajectory ahs been acheived.
-one important aspect is that you dont have to necessarily acheive the whole trajectory.
-Achieving teh first 70% of it well is equally good (then teh low level policy has some flexibility)
-
-
-repalce the action head of high level vla by 7d * n trajectory poses
-(7d = 6d pose + gripper)
-apparently smolVLA autoadapts to the size from teh dataset.
-
-
-completely train that and then for the rest probably do lora only.
-
-
-
-
-
-
-
-later on I want to add pwm including considering temperature and velocity.
-for now it is just position.
-
-
-Regarding the LeRobot calibration file: the calibration limits are usually saved heavily nested inside your huggingface cache or dot config (e.g., ~/.cache/huggingface/lerobot/ or ~/.lerobot/ usually under a .json configuration linking motor IDs to their exact hardware tick offsets).
-
-For now, passing the basic hardcoded defaults in the yaml works exactly as intended until you map the real dynamic parsing!
-need to setup a safety wrapper before placing it on the real arm.
+(at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)
 
 
 
