@@ -29,10 +29,10 @@ pose_distance_weights: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0]
 
 # Training parameters for the low-level SAC controller
 training:
-  num_episodes: 15
+  total_training_steps: 20000
   learning_rate: 0.0003
   buffer_size: 100000
-  learning_starts: 10000
+  learning_starts: 0
   batch_size: 256
   tau: 0.005
   train_freq: 1

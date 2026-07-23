@@ -136,3 +136,7 @@ What is its current temperature?
 
 I really have to consider jax once again since its insanely slow with the current setup.
 Or otherwise at least parallelize the existing stuff and not use the dummyVecEnv
+
+
+I don't think the 15 episodes really works.
+It does make training proportionally longer though.
