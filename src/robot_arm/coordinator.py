@@ -38,55 +38,38 @@ class Coordinator:
     ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
         total_reward = 0.0
         dense_trajectory = []
+        low_level_transitions = [] # Collect transitions for the training buffer
 
         # 1. High Level Inference at 10Hz
         high_level_action = self.high_level_policy.get_action(
             obs, info, instruction=instruction
         )
 
-        # later on I will have to make this parallel.
-        # for now I'll just start getting it to run at all.
-
         self.env.update_path(high_level_action)
 
         # 3. Step physics using the reactive RL agent
         for step_idx in range(self.chunk_size):
 
-            low_level_action, _ = self.low_level_policy.predict(obs)
+            low_level_action, _ = self.low_level_policy.predict(obs, deterministic=not self.training)
 
             next_obs, reward, terminated, truncated, info = self.env.step(
                 low_level_action
             )
             total_reward += reward
+            
+            actual_terminated = terminated or (obs["time_left"] == 0)
 
-            if self.training:
-                # time_left is natively part of the obs now.
-                actual_terminated = terminated or (obs["time_left"] == 0)
-                self.low_level_policy.replay_buffer.add(
-                    obs,
-                    next_obs,
-                    low_level_action,
-                    reward,
-                    actual_terminated,
-                    [info],
-                )
+            # Record transition decoupled from the SB3 replay buffer directly
+            low_level_transitions.append((
+                obs,
+                next_obs,
+                low_level_action,
+                reward,
+                actual_terminated,
+                info
+            ))
 
-                self.global_step += 1
-
-                # Check bounds and train exactly as stable-baselines intends
-                if (
-                    self.global_step > self.low_level_policy.learning_starts
-                    and self.global_step % self.low_level_policy.train_freq.frequency
-                    == 0
-                ):
-                    self.low_level_policy.train(
-                        gradient_steps=self.low_level_policy.gradient_steps,
-                        batch_size=self.low_level_policy.batch_size,
-                    )
-                    # Tell SB3 logger to dump logs at standard intervals
-                    if self.global_step % 1000 == 0:
-                        self.low_level_policy.logger.dump(step=self.global_step)
-
+            self.global_step += 1
             obs = next_obs
             dense_trajectory.append(
                 {
@@ -100,5 +83,11 @@ class Coordinator:
 
         info["dense_trajectory"] = dense_trajectory
         info["high_level_action"] = high_level_action.copy()
+        
+        # Add transitions array to info for extraction by external learner loop
+        info["low_level_transitions"] = low_level_transitions
+
+        if obs["time_left"] <= 0:
+            truncated = True
 
         return obs, total_reward, terminated, truncated, info

@@ -5,6 +5,7 @@ import logging
 from omegaconf import DictConfig
 import numpy as np
 import torch
+import multiprocessing as mp
 
 from stable_baselines3 import SAC
 
@@ -17,20 +18,22 @@ from robot_arm.safety import SafeArmWrapper
 log = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path="../conf", config_name="config")
-def train_low_level(cfg: DictConfig):
-    # 1. Initialize Backend and Env
-    log.info("Initializing Simulation...")
+def worker_process(worker_id, cfg, transition_queue, weights_dict):
+    """
+    Subprocess isolated execution: Initializes env, coordinator, and an inference-only model.
+    Steps physics and places transition chunks onto the queue.
+    """
+    torch.set_num_threads(1)
+    
+    log.info(f"Worker {worker_id}: Initializing Simulation...")
     sim_backend = SimBackend(
         model_path=cfg.model_path, height=cfg.camera.height, width=cfg.camera.width
     )
-    
     safe_backend = SafeArmWrapper(
         backend_arm=sim_backend,
         min_pos=cfg.safety.min_position_radians,
         max_pos=cfg.safety.max_position_radians
     )
-    
     env = RobotEnv(
         arm=safe_backend,
         max_seconds=cfg.max_seconds,
@@ -43,37 +46,10 @@ def train_low_level(cfg: DictConfig):
         violation_penalty_factor=cfg.safety.violation_penalty_factor,
     )
 
-    # 2. Get device
-    device = torch.device(cfg.experiment.device)
-
-    # 3. Setup SAC agent
-    log.info("Initializing SAC...")
-
-    model = SAC(
-        "MultiInputPolicy",
-        env,
-        learning_rate=cfg.training.learning_rate,
-        buffer_size=cfg.training.buffer_size,
-        learning_starts=cfg.training.learning_starts,
-        batch_size=cfg.training.batch_size,
-        tau=cfg.training.tau,
-        train_freq=cfg.training.train_freq,
-        gradient_steps=cfg.training.gradient_steps,
-        gamma=1.0,  # gamma=1.0 because our task is finite horizon (the chunk)
-        verbose=1,
-        device=device,
-    )
-
-    # Initialize the SB3 logger explicitly since we are hijacking the training loop
-    hydra_cfg = HydraConfig.get()
-    from stable_baselines3.common.logger import configure
-
-    logger = configure(hydra_cfg.runtime.output_dir, ["stdout", "csv"])
-    model.set_logger(logger)
-
-    # 4. Initialize synthetic Waypoint Policy
-    log.info("Initializing Waypoint Policy...")
-
+    # Initialize a dummy SAC agent simply to build the actor architecture for inference
+    # Buffer size 1 on workers to save memory, they do not train so they don't need a buffer
+    model = SAC("MultiInputPolicy", env, buffer_size=1, device="cpu")
+    
     high_level_policy = WaypointPolicy(
         trajectory_length=cfg.trajectory_length,
         speed=cfg.training.waypoint_speed,
@@ -88,21 +64,17 @@ def train_low_level(cfg: DictConfig):
         training=True,
     )
 
-    def save_checkpoint(step_name):
-        hydra_cfg = HydraConfig.get()
-        output_dir = os.path.join(hydra_cfg.runtime.output_dir, "checkpoints")
-        os.makedirs(output_dir, exist_ok=True)
-        model.save(os.path.join(output_dir, f"sac_manual_step_{step_name}"))
+    from robot_arm.waypoints import generate_grab_waypoints
+    
+    # Continuous episodes loop
+    while True:
+        # 1. Sync weights before episode starts
+        if "weights" in weights_dict:
+            model.policy.load_state_dict(weights_dict["weights"])
 
-    log.info(f"Starting training for {cfg.training.num_episodes} episodes...")
-
-    for episode in range(cfg.training.num_episodes):
         obs, info = env.reset()
-        episode_reward = 0.0
         terminated = False
         truncated = False
-
-        from robot_arm.waypoints import generate_grab_waypoints
 
         high_level_policy.waypoints = generate_grab_waypoints(
             box_pose_6d=info["privileged_box_pose_6d"],
@@ -114,24 +86,123 @@ def train_low_level(cfg: DictConfig):
         high_level_step = 0
 
         while not (terminated or truncated):
-            # Coordinator naturally executes training bounds natively
+            # Coordinator natively chunks inside
             obs, reward, terminated, truncated, info = coordinator.step(
                 obs, info, instruction="grab the box"
             )
-            episode_reward += reward
+            
+            # Send the completed chunk to the learner thread
+            transition_queue.put(info["low_level_transitions"])
+            
             high_level_step += 1
-
             if high_level_step >= cfg.max_seconds * cfg.frequencies.high_level:
                 break
 
-        log.info(
-            f"Episode {episode} | Reward: {episode_reward:.2f} | Steps: {coordinator.global_step}"
-        )
-        
-        if (episode + 1) % cfg.training.save_episodes_freq == 0:
-            save_checkpoint(f"ep_{episode + 1}")
 
-    save_checkpoint(f"final_{coordinator.global_step}")
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
+def train_low_level(cfg: DictConfig):
+    leave_computer_working = 4  # CPUs reserved for OS/Desktop usage
+    # Leave 2 for OS, and subtract 1 more for the Main Learner Process pulling transitions
+    num_workers = cfg.experiment.get("num_workers", max(1, mp.cpu_count() - leave_computer_working - 1))
+    device = torch.device(cfg.experiment.device)
+    log.info(f"Initializing central learner with {num_workers} parallel workers on {device}...")
+
+    # Set parallel method to spawn (required for torch/CUDA safety in multiprocessing)
+    mp.set_start_method("spawn", force=True)
+    
+    manager = mp.Manager()
+    weights_dict = manager.dict()
+    transition_queue = mp.Queue(maxsize=1000)
+
+    # 1. Spawn Workers
+    workers = []
+    for i in range(num_workers):
+        p = mp.Process(target=worker_process, args=(i, cfg, transition_queue, weights_dict))
+        p.daemon = True
+        p.start()
+        workers.append(p)
+
+    # 2. Main Learner Model Setup (We init one Env briefly just to map action bounds, then delete)
+    dummy_backend = SimBackend(model_path=cfg.model_path, height=10, width=10)
+    dummy_env = RobotEnv(
+        arm=dummy_backend,
+        max_seconds=1,
+        trajectory_length=cfg.trajectory_length,
+        trajectory_dim=cfg.trajectory_dim,
+        pose_distance_weights=np.array(cfg.pose_distance_weights, dtype=np.float32),
+        high_level_hz=cfg.frequencies.high_level,
+        low_level_hz=cfg.frequencies.low_level,
+        delta_action_scale=cfg.training.waypoint_speed / cfg.frequencies.low_level,
+        violation_penalty_factor=cfg.safety.violation_penalty_factor,
+    )
+
+    # 3. Setup central SAC agent
+    model = SAC(
+        "MultiInputPolicy",
+        dummy_env,
+        learning_rate=cfg.training.learning_rate,
+        buffer_size=cfg.training.buffer_size,
+        learning_starts=cfg.training.learning_starts,
+        batch_size=cfg.training.batch_size,
+        tau=cfg.training.tau,
+        train_freq=cfg.training.train_freq,
+        gradient_steps=cfg.training.gradient_steps,
+        gamma=1.0,  
+        verbose=1,
+        device=device,
+    )
+
+    hydra_cfg = HydraConfig.get()
+    from stable_baselines3.common.logger import configure
+    logger = configure(hydra_cfg.runtime.output_dir, ["stdout", "csv"])
+    model.set_logger(logger)
+
+    def save_checkpoint(step_name):
+        output_dir = os.path.join(hydra_cfg.runtime.output_dir, "checkpoints")
+        os.makedirs(output_dir, exist_ok=True)
+        model.save(os.path.join(output_dir, f"sac_manual_step_{step_name}"))
+
+    # Initial weights sync
+    weights_dict["weights"] = model.policy.to("cpu").state_dict()
+    model.policy.to(device)
+
+    log.info("Starting central learning loop...")
+    
+    global_step = 0
+    target_total_steps = cfg.training.num_episodes * (cfg.max_seconds * cfg.frequencies.low_level)
+    
+    try:
+        while global_step < target_total_steps:
+            # 1. Blocks until worker chunks arrive
+            chunk = transition_queue.get()
+            
+            # 2. Add raw transitions to central buffer
+            for t_obs, t_next_obs, t_action, t_reward, t_done, t_info in chunk:
+                model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done, [t_info])
+                global_step += 1
+                
+                # 3. Perform learning identically to how SB3 behaves
+                if global_step > model.learning_starts and global_step % model.train_freq.frequency == 0:
+                    model.train(gradient_steps=model.gradient_steps, batch_size=model.batch_size)
+                    
+                    if global_step % 1000 == 0:
+                        model.logger.dump(step=global_step)
+                        
+                        # Sync weights occasionally during heavy training (safely to CPU)
+                        cpu_state_dict = {k: v.cpu() for k, v in model.policy.state_dict().items()}
+                        weights_dict["weights"] = cpu_state_dict
+                        
+            # Intermediate saving logic equivalent
+            if global_step % 10000 == 0:
+                save_checkpoint(f"step_{global_step}")
+
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt, shutting down workers...")
+
+    save_checkpoint(f"final_{global_step}")
+    
+    for w in workers:
+        w.terminate()
 
 if __name__ == "__main__":
     train_low_level()
