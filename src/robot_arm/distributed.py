@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 from stable_baselines3 import SAC
 
-from robot_arm.factory import make_env
+from robot_arm.envs.factory import make_env
 from robot_arm.policies import WaypointPolicy
 from robot_arm.coordinator import Coordinator
 

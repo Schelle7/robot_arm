@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Dict
-from robot_arm.arm import Arm
+from robot_arm.backends.arm import Arm
 
 class SafeArmWrapper(Arm):
     """

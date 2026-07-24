@@ -2,7 +2,7 @@ import numpy as np
 from typing import Dict, Tuple, Any
 
 from robot_arm.policies import Policy
-from robot_arm.env import RobotEnv
+from robot_arm.envs.env import RobotEnv
 
 
 class Coordinator:

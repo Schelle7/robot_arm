@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Dict, Tuple, Any
 
-from robot_arm.arm import Arm
+from robot_arm.backends.arm import Arm
 
 
 class RobotEnv(gym.Env):

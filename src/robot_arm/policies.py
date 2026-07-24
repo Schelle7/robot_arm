@@ -21,27 +21,6 @@ class Policy(ABC):
         pass
 
 
-class ReplayPolicy(Policy):
-    """
-    A simple policy that blindly plays back a pre-generated sequence of actions.
-    Useful for testing, hardcoded trajectories, or replaying offline data.
-    """
-
-    def __init__(self, start_pos: np.ndarray, end_pos: np.ndarray, num_steps: int):
-        self.trajectory = np.linspace(start_pos, end_pos, num_steps)
-        self.current_step = 0
-
-    def get_action(
-        self,
-        obs: Dict[str, np.ndarray],
-        info: Dict[str, Any],
-        instruction: Optional[str] = None,
-    ) -> np.ndarray:
-        action = self.trajectory[self.current_step]
-        self.current_step += 1
-        return action
-
-
 class SmolVLAPolicyWrapper(Policy):
     """
     Wrapper for the lerobot SmolVLAPolicy.

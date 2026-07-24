@@ -2,7 +2,7 @@ from typing import Dict
 import mujoco
 import numpy as np
 
-from robot_arm.arm import Arm
+from robot_arm.backends.arm import Arm
 
 
 class SimBackend(Arm):

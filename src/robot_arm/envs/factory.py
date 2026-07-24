@@ -2,9 +2,9 @@ import numpy as np
 import logging
 from omegaconf import DictConfig
 
-from robot_arm.sim_arm import SimBackend
-from robot_arm.env import RobotEnv
-from robot_arm.safety import SafeArmWrapper
+from robot_arm.backends.sim_arm import SimBackend
+from robot_arm.envs.env import RobotEnv
+from robot_arm.envs.safety import SafeArmWrapper
 
 log = logging.getLogger(__name__)
 

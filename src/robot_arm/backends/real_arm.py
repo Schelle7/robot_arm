@@ -2,8 +2,8 @@ import math
 import numpy as np
 from typing import Dict
 
-from robot_arm.arm import Arm
-from robot_arm.read_sensors import read_block
+from robot_arm.backends.arm import Arm
+from robot_arm.backends.read_sensors import read_block
 
 
 class RealArm(Arm):

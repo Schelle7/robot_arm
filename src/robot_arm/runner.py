@@ -1,8 +1,8 @@
 from omegaconf import DictConfig
 from typing import Any
 
-from robot_arm.sim_arm import SimBackend
-from robot_arm.env import RobotEnv
+from robot_arm.backends.sim_arm import SimBackend
+from robot_arm.envs.env import RobotEnv
 from robot_arm.coordinator import Coordinator
 from robot_arm.policies import Policy
 from robot_arm.recorder import EpisodeRecorder
