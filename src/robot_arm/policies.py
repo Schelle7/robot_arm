@@ -49,7 +49,7 @@ class SmolVLAPolicyWrapper(Policy):
         import torch
 
         # Convert HWC image to CHW directly natively.
-        img_chw = np.transpose(obs["pixels"].astype(np.float32), (2, 0, 1))
+        img_chw = np.transpose(info["image"].astype(np.float32), (2, 0, 1))
 
         # Build raw unbatched transition data expected by lerobot pipelines
         raw_obs = {
@@ -135,3 +135,35 @@ class WaypointPolicy(Policy):
             chunk[i] = step_vector * (i + 1)
 
         return chunk
+
+def load_latest_low_level_policy():
+    """
+    Loads the most recent low-level SAC policy from the outputs/ directory.
+    Searches the directory structure for the newest final checkpoint.
+    """
+    # TODO I might have to check the cfgs match in the relevant fields
+    import os
+    import glob
+    from stable_baselines3 import SAC
+    
+    outputs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "outputs"))
+    if not os.path.exists(outputs_dir):
+        raise FileNotFoundError(f"Outputs directory not found at {outputs_dir}.")
+
+    # Search for all "sac_manual_step_final_*.zip" checkpoints inside checkpoints directories
+    search_pattern = os.path.join(outputs_dir, "*", "*", "checkpoints", "sac_manual_step_final_*.zip")
+    checkpoints = glob.glob(search_pattern)
+
+    if not checkpoints:
+        raise FileNotFoundError("No final low-level policy checkpoints found in any outputs directory.")
+
+    # Sort by the YYYY-MM-DD and HH-MM-SS folder names implicitly found in the path
+    # Path structure: .../outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/sac...zip
+    def extract_datetime_key(filepath):
+        parts = filepath.split(os.sep)
+        return (parts[-4], parts[-3])
+
+    latest_checkpoint = max(checkpoints, key=extract_datetime_key)
+    
+    print(f"Loading latest low level policy from: {latest_checkpoint}")
+    return SAC.load(latest_checkpoint)

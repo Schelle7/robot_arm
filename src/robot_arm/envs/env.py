@@ -99,7 +99,7 @@ class RobotEnv(gym.Env):
             dtype=np.float32,
         )
 
-    def _get_obs(self) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def _get_obs(self, called_by_reset=False) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         state_dict = self.arm.read_state()
         current_pos = self.current_joint_angles
         current_vel = np.array(
@@ -124,6 +124,9 @@ class RobotEnv(gym.Env):
             )
         if hasattr(self.arm, "get_privileged_box_pose_6d"):
             info["privileged_box_pose_6d"] = self.arm.get_privileged_box_pose_6d()
+
+        if obs["time_left"] <= 0 or called_by_reset:
+            info["image"] = self.arm.read_camera()
 
         return obs, info
 
@@ -153,7 +156,7 @@ class RobotEnv(gym.Env):
         if hasattr(self.arm, "reset_sim"):
             self.arm.reset_sim()
 
-        obs, info = self._get_obs()
+        obs, info = self._get_obs(called_by_reset=True)
         return obs, info
 
     def _get_closest_path_point(

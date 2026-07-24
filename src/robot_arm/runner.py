@@ -1,8 +1,7 @@
 from omegaconf import DictConfig
 from typing import Any
 
-from robot_arm.backends.sim_arm import SimBackend
-from robot_arm.envs.env import RobotEnv
+from robot_arm.envs.factory import make_env
 from robot_arm.coordinator import Coordinator
 from robot_arm.policies import Policy
 from robot_arm.recorder import EpisodeRecorder
@@ -19,20 +18,9 @@ def execute_episode(
     Core execution loop for an episode.
     Handles environment initialization (Steps 1 & 2) and the recording loop (Step 5).
     """
-    # 1. Initialize backend
-    print("Initializing SimBackend...")
-    arm = SimBackend(
-        model_path=cfg.model_path, height=cfg.camera.height, width=cfg.camera.width
-    )
-
-    # 2. Track steps for this trajectory
-    env = RobotEnv(
-        arm=arm,
-        max_seconds=cfg.max_seconds,
-        trajectory_length=cfg.trajectory_length,
-        trajectory_dim=cfg.trajectory_dim,
-        pose_distance_weights=cfg.pose_distance_weights,
-    )
+    # 1. & 2. Initialize exactly using the shared factory
+    print("Initializing Environment...")
+    env = make_env(cfg)
 
     coordinator = Coordinator(
         env=env,
@@ -40,6 +28,7 @@ def execute_episode(
         high_level_policy=policy,
         high_level_hz=cfg.frequencies.high_level,
         low_level_hz=cfg.frequencies.low_level,
+        training=False,
     )
 
     max_steps = int(cfg.max_seconds * cfg.frequencies.high_level)

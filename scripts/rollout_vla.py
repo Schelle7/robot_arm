@@ -4,7 +4,7 @@ from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 
 from robot_arm.recorder import EpisodeRecorder
-from robot_arm.policies import SmolVLAPolicyWrapper
+from robot_arm.policies import SmolVLAPolicyWrapper, load_latest_low_level_policy
 from robot_arm.runner import execute_episode
 
 
@@ -13,8 +13,11 @@ def main(cfg: DictConfig):
     # Setup Policy
     instruction = "Grip the red box."
 
-    # Initialize the VLA policy wrapper
+    # Initialize the high-level policy wrapper
     policy = SmolVLAPolicyWrapper()
+    
+    # Load the latest trained low-level RL model
+    low_level_policy = load_latest_low_level_policy()
 
     # Initialize recorder inside Hydra's output directory
     hydra_cfg = HydraConfig.get()
@@ -27,11 +30,10 @@ def main(cfg: DictConfig):
     )
 
     # Execute
-    # We pass None for low_level_policy temporarily until the RL model is trained and loaded here
     execute_episode(
         cfg=cfg,
         policy=policy,
-        low_level_policy=None,
+        low_level_policy=low_level_policy,
         recorder=recorder,
         instruction=instruction,
     )

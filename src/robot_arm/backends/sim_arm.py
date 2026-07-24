@@ -157,6 +157,6 @@ class SimBackend(Arm):
 
         mujoco.mj_forward(self.model, self.data)
 
-    def read_image(self) -> np.ndarray:
+    def read_camera(self) -> np.ndarray:
         self.renderer.update_scene(self.data, camera="pixel_cam")
         return self.renderer.render()

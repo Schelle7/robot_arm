@@ -34,7 +34,7 @@ class EpisodeRecorder:
         """
         Record a single transition step in the environment.
         """
-        image_path = self._save_image(step_idx, obs["pixels"])
+        image_path = self._save_image(step_idx, info["image"])
 
         # Buffer numeric state
         frame_data = {
