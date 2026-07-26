@@ -13,6 +13,7 @@ def execute_episode(
     low_level_policy: Any,
     recorder: EpisodeRecorder,
     instruction: str,
+    generate_waypoints: bool,
 ):
     """
     Core execution loop for an episode.
@@ -35,6 +36,15 @@ def execute_episode(
 
     # 5. Execute and record loop
     obs, info = env.reset()
+    
+    if generate_waypoints:
+        policy.generate_grab_waypoints(
+            box_pose_6d=info["privileged_box_pose_6d"],
+            lift_height=cfg.training.lift_height,
+            gripper_open=cfg.training.gripper_open,
+            gripper_closed=cfg.training.gripper_closed,
+        )
+
     print(f"Executing '{instruction}' and recording to {recorder.episode_dir}...")
 
     for step_idx in range(max_steps):

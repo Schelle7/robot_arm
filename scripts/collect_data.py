@@ -4,18 +4,19 @@ from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 
 from robot_arm.recorder import EpisodeRecorder
-from robot_arm.policies import SmolVLAPolicyWrapper, load_latest_low_level_policy
+from robot_arm.policies import WaypointPolicy, load_latest_low_level_policy
 from robot_arm.runner import execute_episode
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
-    # Setup Policy
     instruction = "Grip the red box."
 
-    # Initialize the high-level policy wrapper
-    # TODO instead load a version that outputs 7 dim vectors
-    policy = SmolVLAPolicyWrapper()
+    # Initialize the Waypoint Policy (Data generator)
+    policy = WaypointPolicy(
+        trajectory_length=cfg.trajectory_length,
+        speed=cfg.training.waypoint_speed,
+    )
     
     # Load the latest trained low-level RL model
     low_level_policy = load_latest_low_level_policy()
@@ -27,7 +28,7 @@ def main(cfg: DictConfig):
     recorder = EpisodeRecorder(
         output_dir=output_dir,
         jpeg_quality=cfg.camera.jpeg_quality,
-        episode_name="vla_run_01",
+        episode_name="waypoint_dataset_01",
     )
 
     # Execute
@@ -37,7 +38,7 @@ def main(cfg: DictConfig):
         low_level_policy=low_level_policy,
         recorder=recorder,
         instruction=instruction,
-        generate_waypoints=False,
+        generate_waypoints=True,
     )
 
 

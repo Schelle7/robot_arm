@@ -99,13 +99,38 @@ class WaypointPolicy(Policy):
         self.waypoints = []
         self.current_wp_idx = 0
 
+    def generate_grab_waypoints(
+        self,
+        box_pose_6d: np.ndarray,
+        lift_height: float,
+        gripper_open: float,
+        gripper_closed: float,
+    ) -> None:
+        """
+        Generates a generic 3-waypoint sequence for grasping a given 6D pose:
+        1. Move to the target with the gripper completely open.
+        2. Close the gripper while remaining in place.
+        3. Move straight up along the Z-axis with the gripper closed.
+        """
+        wp1 = np.zeros(7, dtype=np.float32)
+        wp1[:6] = box_pose_6d
+        wp1[6] = gripper_open
+
+        wp2 = wp1.copy()
+        wp2[6] = gripper_closed
+
+        wp3 = wp2.copy()
+        wp3[2] += lift_height
+
+        self.waypoints = [wp1, wp2, wp3]
+        self.current_wp_idx = 0
+
     def get_action(
         self,
         obs: Dict[str, np.ndarray],
         info: Dict[str, Any],
         instruction: Optional[str] = None,
     ) -> np.ndarray:
-        # We need the 7D pose from the privileged info dict
         current_pose = info["privileged_end_effector_pose_7d"]
         chunk = np.zeros((self.chunk_size, 7), dtype=np.float32)
 

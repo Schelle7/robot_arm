@@ -41,8 +41,6 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
         training=True,
     )
 
-    from robot_arm.waypoints import generate_grab_waypoints
-    
     # Continuous episodes loop
     while True:
         # 1. Sync weights before episode starts
@@ -52,13 +50,12 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
         terminated = False
         truncated = False
 
-        high_level_policy.waypoints = generate_grab_waypoints(
+        high_level_policy.generate_grab_waypoints(
             box_pose_6d=info["privileged_box_pose_6d"],
             lift_height=cfg.training.lift_height,
             gripper_open=cfg.training.gripper_open,
             gripper_closed=cfg.training.gripper_closed,
         )
-        high_level_policy.current_wp_idx = 0
         high_level_step = 0
 
         while not (terminated or truncated):
