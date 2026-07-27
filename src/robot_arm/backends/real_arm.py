@@ -1,4 +1,5 @@
 import math
+import time
 import numpy as np
 from typing import Dict
 
@@ -56,6 +57,7 @@ class RealArm(Arm):
 
     def read_state(self) -> Dict[str, Dict[str, float]]:
         raw_state = read_block(self.bus)
+        raw_state["python_recording_time"] = time.time()
 
         # Convert positions from raw ticks to radians
         for name, tick in raw_state["Present_Position"].items():

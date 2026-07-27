@@ -133,10 +133,14 @@ What is its current temperature?
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)
 
 
+The rl loop for low level 7d to 6d is set up and training converges.
+collect data can collect a single episode now and save the camera poses.
 
-I really have to consider jax once again since its insanely slow with the current setup.
-Or otherwise at least parallelize the existing stuff and not use the dummyVecEnv
+I do have to look at the lerobot data format now in detail and define my schema.
+Also it would probably be a good idea to combine the run episode and worker process more.
+And only split the parts that actually need splitting.
 
-
-I don't think the 15 episodes really works.
-It does make training proportionally longer though.
+once that is completed I can prepare everything for a deployment on the robot.
+Alternatively I could try a deployment already now with the low level controller.
+And then only start the training afterwards.
+for that i need to work on the safety wrapper.

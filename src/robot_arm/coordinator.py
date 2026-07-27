@@ -57,7 +57,7 @@ class Coordinator:
             )
             total_reward += reward
             
-            actual_terminated = terminated or (obs["time_left"] == 0)
+            chunk_terminated = terminated or (obs["time_left"] == 0)
 
             # Record transition decoupled from the SB3 replay buffer directly
             low_level_transitions.append((
@@ -65,7 +65,7 @@ class Coordinator:
                 next_obs,
                 low_level_action,
                 reward,
-                actual_terminated,
+                chunk_terminated,
                 info
             ))
 
@@ -86,8 +86,5 @@ class Coordinator:
         
         # Add transitions array to info for extraction by external learner loop
         info["low_level_transitions"] = low_level_transitions
-
-        if obs["time_left"] <= 0:
-            truncated = True
 
         return obs, total_reward, terminated, truncated, info
