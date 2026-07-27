@@ -23,6 +23,30 @@ class EpisodeRecorder:
 
         os.makedirs(self.images_dir, exist_ok=True)
 
+    def record_reset(
+        self,
+        obs: Dict[str, np.ndarray],
+        info: Dict[str, Any],
+        instruction: str = "",
+    ):
+        """
+        Record the initial state immediately after resetting the environment.
+        """
+        step_idx = -1
+        image_path = self._save_image(step_idx, info["image"])
+
+        frame_data = {
+            "step": step_idx,
+            "instruction": instruction,
+            "image_path": image_path,
+            "joint_positions": obs["joint_positions"].copy(),
+            "privileged_end_effector_pose_7d": info["privileged_end_effector_pose_7d"].copy(),
+            "high_level_action": np.array([]), # No action taken yet
+            "reward": 0.0,
+            "dense_trajectory": [],
+        }
+        self.frames.append(frame_data)
+
     def step(
         self,
         step_idx: int,
@@ -41,14 +65,18 @@ class EpisodeRecorder:
             "step": step_idx,
             "instruction": instruction,
             "image_path": image_path,
-            "joint_positions": obs["joint_positions"].tolist(),
+            "joint_positions": obs["joint_positions"].copy(),
+            "privileged_end_effector_pose_7d": info["privileged_end_effector_pose_7d"].copy(),
+            "high_level_action": info["high_level_action"].copy(),
             "reward": float(reward),
             "dense_trajectory": [
                 {
-                    "joint_positions": step["joint_positions"].tolist(),
-                    "action": step["action"].tolist(),
+                    "global_step": step["global_step"],
+                    "chunk_step": step["chunk_step"],
+                    "joint_positions": step["joint_positions"].copy(),
+                    "action": step["action"].copy(),
                 }
-                for step in info.get("dense_trajectory", [])
+                for step in info["dense_trajectory"]
             ],
         }
         self.frames.append(frame_data)
@@ -66,9 +94,19 @@ class EpisodeRecorder:
 
     def save(self):
         """
-        Write the buffered metadata to disk to complete the episode.
+        Write the buffered data to disk as a compressed .npz archive.
         """
-        metadata_path = os.path.join(self.episode_dir, "metadata.jsonl")
-        with open(metadata_path, "w") as f:
-            for frame in self.frames:
-                f.write(json.dumps(frame) + "\n")
+        episode_path = os.path.join(self.episode_dir, "episode.npz")
+        
+        data_dict = {
+            "step": np.array([f["step"] for f in self.frames], dtype=np.int32),
+            "instruction": np.array([f["instruction"] for f in self.frames], dtype=str),
+            "image_path": np.array([f["image_path"] for f in self.frames], dtype=str),
+            "joint_positions": np.array([f["joint_positions"] for f in self.frames], dtype=np.float32),
+            "privileged_end_effector_pose_7d": np.array([f["privileged_end_effector_pose_7d"] for f in self.frames], dtype=np.float32),
+            "high_level_action": np.array([f["high_level_action"] for f in self.frames], dtype=object),
+            "reward": np.array([f["reward"] for f in self.frames], dtype=np.float32),
+            "dense_trajectory": np.array([f["dense_trajectory"] for f in self.frames], dtype=object),
+        }
+        
+        np.savez_compressed(episode_path, **data_dict)

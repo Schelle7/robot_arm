@@ -176,7 +176,7 @@ def load_latest_low_level_policy():
         raise FileNotFoundError(f"Outputs directory not found at {outputs_dir}.")
 
     # Search for all "sac_manual_step_final_*.zip" checkpoints inside checkpoints directories
-    search_pattern = os.path.join(outputs_dir, "*", "*", "checkpoints", "sac_manual_step_final_*.zip")
+    search_pattern = os.path.join(outputs_dir, "train_low_level", "*", "*", "checkpoints", "sac_manual_step_final_*.zip")
     checkpoints = glob.glob(search_pattern)
 
     if not checkpoints:

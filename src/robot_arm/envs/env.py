@@ -39,6 +39,7 @@ class RobotEnv(gym.Env):
 
         self.chunk_size = low_level_hz // high_level_hz
         self.step_in_chunk = 0
+        self.global_low_level_step = 0
 
         self.trajectory_length = trajectory_length
         self.trajectory_dim = trajectory_dim
@@ -134,7 +135,6 @@ class RobotEnv(gym.Env):
         self, seed=None, options=None
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         super().reset(seed=seed)
-        self.current_step = 0
 
         state_dict = self.arm.read_state()
         self.start_joint_positions = np.array(
@@ -150,6 +150,7 @@ class RobotEnv(gym.Env):
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
         self.step_in_chunk = 0
+        self.global_low_level_step = 0
 
         # We don't magically reset the physical arm to zero, we just start observing from where it is
         # However, for simulation, the SimBackend handles advancing time and scene resets
@@ -283,8 +284,6 @@ class RobotEnv(gym.Env):
     def step(
         self, action: np.ndarray
     ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
-        self.current_step += 1
-        self.step_in_chunk += 1
 
         # 1. Unscale delta action and add to current joint angles
         delta = action * self.delta_action_scale
@@ -300,6 +299,12 @@ class RobotEnv(gym.Env):
 
         # 4. Get new observation
         obs, info = self._get_obs()
+
+        info["global_low_level_step"] = self.global_low_level_step
+        info["step_in_chunk"] = self.step_in_chunk
+        
+        self.step_in_chunk += 1
+        self.global_low_level_step += 1
 
         reward = self.compute_reward(requested_action=action_dict, safe_action=safe_action_dict)
 

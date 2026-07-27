@@ -36,6 +36,7 @@ def execute_episode(
 
     # 5. Execute and record loop
     obs, info = env.reset()
+    recorder.record_reset(obs, info, instruction)
     
     if generate_waypoints:
         policy.generate_grab_waypoints(

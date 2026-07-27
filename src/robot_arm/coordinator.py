@@ -73,6 +73,8 @@ class Coordinator:
             obs = next_obs
             dense_trajectory.append(
                 {
+                    "global_step": info["global_low_level_step"],
+                    "chunk_step": info["step_in_chunk"],
                     "joint_positions": obs["joint_positions"].copy(),
                     "action": low_level_action.copy(),
                 }

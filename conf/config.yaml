@@ -2,6 +2,10 @@ defaults:
   - _self_
   - experiment: baseline_cuda
 
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
 model_path: "models/so101/scene.xml"
 max_seconds: 10
 

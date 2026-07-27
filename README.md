@@ -144,3 +144,6 @@ once that is completed I can prepare everything for a deployment on the robot.
 Alternatively I could try a deployment already now with the low level controller.
 And then only start the training afterwards.
 for that i need to work on the safety wrapper.
+
+
+I started a bit with the lerobot conversion but its vibecoded garbage so might have to do it again.
