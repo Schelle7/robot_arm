@@ -134,6 +134,10 @@ Does the command respect the defined boundaries?
 What is the current velocity of the motor?
 What is its current temperature?
 
+check whether the servos support a shutdown or an immediate pwm = 0 mode switch from position to pwm mode.
+
+after that do the suggested conversion to standard units gemini suggested.
+
 
 
 

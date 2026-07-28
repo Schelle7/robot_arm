@@ -133,6 +133,10 @@ class SimBackend(Arm):
         # Advance simulation one step
         mujoco.mj_step(self.model, self.data)
 
+    def disconnect(self):
+        """Simulation doesn't need to physically disconnect power."""
+        pass
+
     def reset_sim(self):
         mujoco.mj_resetData(self.model, self.data)
 

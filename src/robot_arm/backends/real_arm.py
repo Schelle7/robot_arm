@@ -63,7 +63,11 @@ class RealArm(Arm):
         for name, tick in raw_state["Present_Position"].items():
             raw_state["Present_Position"][name] = self._tick_to_rad(name, tick)
 
-        # Note: Velocity and Load remain in raw units (-1000 to 1000) for now.
+        # Convert load from raw ticks (-1000 to 1000) to normalized float (-1.0 to 1.0)
+        for name, load_tick in raw_state["Present_Load"].items():
+            raw_state["Present_Load"][name] = load_tick / 1000.0
+
+        # Note: Velocity remains in raw units for now.
         # If policy needs them in rad/s, we need their specific max scale factors.
         return raw_state
 
@@ -79,5 +83,28 @@ class RealArm(Arm):
         self.bus.sync_write("Goal_Position", raw_positions)
 
     def disconnect(self):
-        # Implementation assumes the real arm bus has a disconnect or torque-off feature
-        self.bus.disconnect()
+        # Immediate hardware emergency stop broadcast packet for Feetech servos
+        # Packet breakdown:
+        # \xFF\xFF : Standard 2-byte header
+        # \xFE     : Broadcast ID (targets all servos simultaneously)
+        # \x04     : Length of remaining bytes
+        # \x03     : Instruction (WRITE Data)
+        # \x29     : Register Address 41 (Torque Enable)
+        # \x00     : Data value 0 (Disable)
+        # \xD1     : Checksum (~(0xFE + 0x04 + 0x03 + 0x29 + 0x00) & 0xFF)
+        estop_packet = b'\xFF\xFF\xFE\x04\x03\x29\x00\xD1'
+        
+        try:
+            # 1. Blindly spam the fast broadcast command first to instantly drop torque
+            serial_port = self.bus.port
+            for _ in range(3):
+                serial_port.write(estop_packet)
+                serial_port.flush()
+                time.sleep(0.002)
+                
+            # 2. Follow up with the official API cleanup ensuring internal state matches
+            # The follower object holds the disconnect method in our specific initialization chain
+            self.bus.robot.disconnect()
+        except Exception as e:
+            # If serial completely died, re-raise so outer layers know the port crashed
+            raise RuntimeError(f"Failed to execute emergency stop on hardware: {e}")
