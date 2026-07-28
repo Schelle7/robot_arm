@@ -20,8 +20,11 @@ class RealArm(Arm):
             )
 
         self.bus = bus
-        self.max_res = 4095  # STS3215 specific
+        self.max_res = 4096  # STS3215 specific (12-bit encoder)
         self.deg_to_rad = math.pi / 180.0
+        self.velocity_scale = (
+            2.0 * math.pi / 4096.0
+        )  # units are ticks/sec, so 1 tick/sec is (2*pi/4096) rad/s
 
         # Precompute the tick-to-radian conversion offsets per motor
         self.tick_midpoints = {}
@@ -67,8 +70,9 @@ class RealArm(Arm):
         for name, load_tick in raw_state["Present_Load"].items():
             raw_state["Present_Load"][name] = load_tick / 1000.0
 
-        # Note: Velocity remains in raw units for now.
-        # If policy needs them in rad/s, we need their specific max scale factors.
+        for name, vel_tick in raw_state["Present_Velocity"].items():
+            raw_state["Present_Velocity"][name] = vel_tick * self.velocity_scale
+
         return raw_state
 
     def get_tcp(self) -> np.ndarray:
@@ -92,8 +96,8 @@ class RealArm(Arm):
         # \x29     : Register Address 41 (Torque Enable)
         # \x00     : Data value 0 (Disable)
         # \xD1     : Checksum (~(0xFE + 0x04 + 0x03 + 0x29 + 0x00) & 0xFF)
-        estop_packet = b'\xFF\xFF\xFE\x04\x03\x29\x00\xD1'
-        
+        estop_packet = b"\xff\xff\xfe\x04\x03\x29\x00\xd1"
+
         try:
             # 1. Blindly spam the fast broadcast command first to instantly drop torque
             serial_port = self.bus.port
@@ -101,7 +105,7 @@ class RealArm(Arm):
                 serial_port.write(estop_packet)
                 serial_port.flush()
                 time.sleep(0.002)
-                
+
             # 2. Follow up with the official API cleanup ensuring internal state matches
             # The follower object holds the disconnect method in our specific initialization chain
             self.bus.robot.disconnect()
