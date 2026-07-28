@@ -100,7 +100,9 @@ class RobotEnv(gym.Env):
             dtype=np.float32,
         )
 
-    def _get_obs(self, called_by_reset=False) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def _get_obs(
+        self, called_by_reset=False
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         state_dict = self.arm.read_state()
         current_pos = self.current_joint_angles
         current_vel = np.array(
@@ -240,7 +242,9 @@ class RobotEnv(gym.Env):
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
-    def compute_reward(self, requested_action: Dict[str, float], safe_action: Dict[str, float]) -> float:
+    def compute_reward(
+        self, requested_action: Dict[str, float], safe_action: Dict[str, float]
+    ) -> float:
         try:
             # The trajectory goal is local deltas.
             # We must map our current position relative to where the chunk started.
@@ -293,7 +297,7 @@ class RobotEnv(gym.Env):
         action_dict = {
             motor: float(pos) for motor, pos in zip(self.motor_order, target_positions)
         }
-        
+
         # 3. Apply safe action through the wrapper
         safe_action_dict = self.arm.write_goal(action_dict)
 
@@ -302,11 +306,13 @@ class RobotEnv(gym.Env):
 
         info["global_low_level_step"] = self.global_low_level_step
         info["step_in_chunk"] = self.step_in_chunk
-        
+
         self.step_in_chunk += 1
         self.global_low_level_step += 1
 
-        reward = self.compute_reward(requested_action=action_dict, safe_action=safe_action_dict)
+        reward = self.compute_reward(
+            requested_action=action_dict, safe_action=safe_action_dict
+        )
 
         terminated = False
         truncated = False

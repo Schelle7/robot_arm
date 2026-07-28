@@ -1,5 +1,4 @@
 import os
-import json
 import numpy as np
 from typing import Dict, List, Any
 from PIL import Image
@@ -40,8 +39,10 @@ class EpisodeRecorder:
             "instruction": instruction,
             "image_path": image_path,
             "joint_positions": obs["joint_positions"].copy(),
-            "privileged_end_effector_pose_7d": info["privileged_end_effector_pose_7d"].copy(),
-            "high_level_action": np.array([]), # No action taken yet
+            "privileged_end_effector_pose_7d": info[
+                "privileged_end_effector_pose_7d"
+            ].copy(),
+            "high_level_action": np.array([]),  # No action taken yet
             "reward": 0.0,
             "dense_trajectory": [],
         }
@@ -66,7 +67,9 @@ class EpisodeRecorder:
             "instruction": instruction,
             "image_path": image_path,
             "joint_positions": obs["joint_positions"].copy(),
-            "privileged_end_effector_pose_7d": info["privileged_end_effector_pose_7d"].copy(),
+            "privileged_end_effector_pose_7d": info[
+                "privileged_end_effector_pose_7d"
+            ].copy(),
             "high_level_action": info["high_level_action"].copy(),
             "reward": float(reward),
             "dense_trajectory": [
@@ -97,16 +100,25 @@ class EpisodeRecorder:
         Write the buffered data to disk as a compressed .npz archive.
         """
         episode_path = os.path.join(self.episode_dir, "episode.npz")
-        
+
         data_dict = {
             "step": np.array([f["step"] for f in self.frames], dtype=np.int32),
             "instruction": np.array([f["instruction"] for f in self.frames], dtype=str),
             "image_path": np.array([f["image_path"] for f in self.frames], dtype=str),
-            "joint_positions": np.array([f["joint_positions"] for f in self.frames], dtype=np.float32),
-            "privileged_end_effector_pose_7d": np.array([f["privileged_end_effector_pose_7d"] for f in self.frames], dtype=np.float32),
-            "high_level_action": np.array([f["high_level_action"] for f in self.frames], dtype=object),
+            "joint_positions": np.array(
+                [f["joint_positions"] for f in self.frames], dtype=np.float32
+            ),
+            "privileged_end_effector_pose_7d": np.array(
+                [f["privileged_end_effector_pose_7d"] for f in self.frames],
+                dtype=np.float32,
+            ),
+            "high_level_action": np.array(
+                [f["high_level_action"] for f in self.frames], dtype=object
+            ),
             "reward": np.array([f["reward"] for f in self.frames], dtype=np.float32),
-            "dense_trajectory": np.array([f["dense_trajectory"] for f in self.frames], dtype=object),
+            "dense_trajectory": np.array(
+                [f["dense_trajectory"] for f in self.frames], dtype=object
+            ),
         }
-        
+
         np.savez_compressed(episode_path, **data_dict)

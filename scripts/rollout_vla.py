@@ -16,7 +16,7 @@ def main(cfg: DictConfig):
     # Initialize the high-level policy wrapper
     # TODO instead load a version that outputs 7 dim vectors
     policy = SmolVLAPolicyWrapper()
-    
+
     # Load the latest trained low-level RL model
     low_level_policy = load_latest_low_level_policy()
 

@@ -5,7 +5,11 @@ import numpy as np
 
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 
-from robot_arm.backends.read_sensors import read_registers_naive, read_temperature, read_block
+from robot_arm.backends.read_sensors import (
+    read_registers_naive,
+    read_temperature,
+    read_block,
+)
 
 
 def time_call(fn, iterations):

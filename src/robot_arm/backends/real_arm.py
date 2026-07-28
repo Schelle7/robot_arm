@@ -77,3 +77,7 @@ class RealArm(Arm):
 
         # sync_write handles the broadcast automatically if the bus is capable
         self.bus.sync_write("Goal_Position", raw_positions)
+
+    def disconnect(self):
+        # Implementation assumes the real arm bus has a disconnect or torque-off feature
+        self.bus.disconnect()

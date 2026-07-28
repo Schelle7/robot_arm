@@ -12,13 +12,14 @@ from robot_arm.coordinator import Coordinator
 
 log = logging.getLogger(__name__)
 
+
 def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
     """
     Subprocess isolated execution: Initializes env, coordinator, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
     """
     torch.set_num_threads(1)
-    
+
     log.info(f"Worker {worker_id}: Initializing Simulation...")
     # Workers do not need camera visual fidelity during low-level positional training
     env = make_env(cfg, minimize_visuals=True)
@@ -26,7 +27,7 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
     # Initialize a dummy SAC agent simply to build the actor architecture for inference
     # Buffer size 1 on workers to save memory, they do not train so they don't need a buffer
     model = SAC("MultiInputPolicy", env, buffer_size=1, device="cpu")
-    
+
     high_level_policy = WaypointPolicy(
         trajectory_length=cfg.trajectory_length,
         speed=cfg.training.waypoint_speed,
@@ -63,10 +64,10 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
             obs, reward, terminated, truncated, info = coordinator.step(
                 obs, info, instruction="grab the box"
             )
-            
+
             # Send the completed chunk to the learner thread
             transition_queue.put(info["low_level_transitions"])
-            
+
             high_level_step += 1
             if high_level_step >= cfg.max_seconds * cfg.frequencies.high_level:
                 break
@@ -74,18 +75,22 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
 
 def run_distributed_training(cfg: DictConfig, device: torch.device):
     """
-    Spawns worker processes to collect data using inference, while the main process 
-    updates a central target model and distributes updated weights. 
+    Spawns worker processes to collect data using inference, while the main process
+    updates a central target model and distributes updated weights.
     """
     leave_computer_working = 4  # CPUs reserved for OS/Desktop usage
     # Leave 2 for OS, and subtract 1 more for the Main Learner Process pulling transitions
-    num_workers = cfg.experiment.get("num_workers", max(1, mp.cpu_count() - leave_computer_working - 1))
-    
-    log.info(f"Initializing central learner with {num_workers} parallel workers on {device}...")
+    num_workers = cfg.experiment.get(
+        "num_workers", max(1, mp.cpu_count() - leave_computer_working - 1)
+    )
+
+    log.info(
+        f"Initializing central learner with {num_workers} parallel workers on {device}..."
+    )
 
     # Set parallel method to spawn (required for torch/CUDA safety in multiprocessing)
     mp.set_start_method("spawn", force=True)
-    
+
     weights_dict_server = mp.Manager().dict()
     transition_queue = mp.Queue(maxsize=1000)
 
@@ -103,13 +108,14 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
         tau=cfg.training.tau,
         train_freq=cfg.training.train_freq,
         gradient_steps=cfg.training.gradient_steps,
-        gamma=1.0,  
+        gamma=1.0,
         verbose=1,
         device=device,
     )
 
     hydra_cfg = HydraConfig.get()
     from stable_baselines3.common.logger import configure
+
     logger = configure(hydra_cfg.runtime.output_dir, ["stdout", "csv"])
     model.set_logger(logger)
 
@@ -125,37 +131,48 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     # 3. Spawn Workers
     workers = []
     for i in range(num_workers):
-        p = mp.Process(target=worker_process, args=(i, cfg, transition_queue, weights_dict_server))
+        p = mp.Process(
+            target=worker_process, args=(i, cfg, transition_queue, weights_dict_server)
+        )
         p.daemon = True
         p.start()
         workers.append(p)
 
     log.info("Starting central learning loop...")
-    
+
     global_step = 0
     target_total_steps = cfg.training.total_training_steps
-    
+
     try:
         while global_step < target_total_steps:
             # 1. Blocks until worker chunks arrive
             chunk = transition_queue.get()
-            
+
             # 2. Add raw transitions to central buffer
             for t_obs, t_next_obs, t_action, t_reward, t_done, t_info in chunk:
-                model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done, [t_info])
+                model.replay_buffer.add(
+                    t_obs, t_next_obs, t_action, t_reward, t_done, [t_info]
+                )
                 global_step += 1
-                
+
                 # 3. Perform learning identically to how SB3 behaves
-                if global_step > model.learning_starts and global_step % model.train_freq.frequency == 0:
-                    model.train(gradient_steps=model.gradient_steps, batch_size=model.batch_size)
-                    
+                if (
+                    global_step > model.learning_starts
+                    and global_step % model.train_freq.frequency == 0
+                ):
+                    model.train(
+                        gradient_steps=model.gradient_steps, batch_size=model.batch_size
+                    )
+
                     if global_step % 1000 == 0:
                         model.logger.dump(step=global_step)
-                        
+
                         # Sync weights occasionally during heavy training (safely to CPU)
-                        cpu_state_dict = {k: v.cpu() for k, v in model.policy.state_dict().items()}
+                        cpu_state_dict = {
+                            k: v.cpu() for k, v in model.policy.state_dict().items()
+                        }
                         weights_dict_server["weights"] = cpu_state_dict
-                        
+
             # Intermediate saving logic equivalent
             if global_step % 10000 == 0:
                 save_checkpoint(f"step_{global_step}")
@@ -164,6 +181,6 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
         log.info("Keyboard interrupt, shutting down workers...")
 
     save_checkpoint(f"final_{global_step}")
-    
+
     for w in workers:
         w.terminate()

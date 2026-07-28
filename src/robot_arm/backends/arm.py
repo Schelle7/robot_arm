@@ -26,6 +26,13 @@ class Arm(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def disconnect(self):
+        """
+        Emergency power cutoff or safe shutdown routine.
+        """
+        pass
+
+    @abc.abstractmethod
     def write_goal(self, positions: Dict[str, float]) -> None:
         """
         Send goal positions to the arm.

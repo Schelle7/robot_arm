@@ -108,15 +108,16 @@ video3	Pixel (metadata node)	no
 
 
 
+visualize the arm:
+python -m mujoco.viewer --mjcf models/so101/scene.xml
+
+
 
 ### 5.
+plans:
 smolvla + custom 7d pose to motor commands adapter
 currently the adapter outputs delta positions which then get converted to position targets.
 Later on I want to output PWM values.
-
-
-visualize the arm:
-python -m mujoco.viewer --mjcf models/so101/scene.xml
 
 
 set up a training loop for vla training based on synthetic and real trajectories.
@@ -124,26 +125,17 @@ For training it makes sense if I use the lerobot data format
 Then I don't have to handle any of it and can just call the existing training script.
 
 
+### Safety layer
+(long term pwm safety)
+check the allowed ticks and then only allow certain goal positions.
 The safety layer checks the commands and decides what to execute.
 Does the command respect the defined boundaries?
 
 What is the current velocity of the motor?
 What is its current temperature?
 
+
+
+
+### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)
-
-
-The rl loop for low level 7d to 6d is set up and training converges.
-collect data can collect a single episode now and save the camera poses.
-
-I do have to look at the lerobot data format now in detail and define my schema.
-Also it would probably be a good idea to combine the run episode and worker process more.
-And only split the parts that actually need splitting.
-
-once that is completed I can prepare everything for a deployment on the robot.
-Alternatively I could try a deployment already now with the low level controller.
-And then only start the training afterwards.
-for that i need to work on the safety wrapper.
-
-
-I started a bit with the lerobot conversion but its vibecoded garbage so might have to do it again.

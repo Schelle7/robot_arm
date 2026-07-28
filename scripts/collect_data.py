@@ -17,7 +17,7 @@ def main(cfg: DictConfig):
         trajectory_length=cfg.trajectory_length,
         speed=cfg.training.waypoint_speed,
     )
-    
+
     # Load the latest trained low-level RL model
     low_level_policy = load_latest_low_level_policy()
 

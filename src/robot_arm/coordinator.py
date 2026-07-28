@@ -38,7 +38,7 @@ class Coordinator:
     ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
         total_reward = 0.0
         dense_trajectory = []
-        low_level_transitions = [] # Collect transitions for the training buffer
+        low_level_transitions = []  # Collect transitions for the training buffer
 
         # 1. High Level Inference at 10Hz
         high_level_action = self.high_level_policy.get_action(
@@ -50,24 +50,21 @@ class Coordinator:
         # 3. Step physics using the reactive RL agent
         for step_idx in range(self.chunk_size):
 
-            low_level_action, _ = self.low_level_policy.predict(obs, deterministic=not self.training)
+            low_level_action, _ = self.low_level_policy.predict(
+                obs, deterministic=not self.training
+            )
 
             next_obs, reward, terminated, truncated, info = self.env.step(
                 low_level_action
             )
             total_reward += reward
-            
+
             chunk_terminated = terminated or (obs["time_left"] == 0)
 
             # Record transition decoupled from the SB3 replay buffer directly
-            low_level_transitions.append((
-                obs,
-                next_obs,
-                low_level_action,
-                reward,
-                chunk_terminated,
-                info
-            ))
+            low_level_transitions.append(
+                (obs, next_obs, low_level_action, reward, chunk_terminated, info)
+            )
 
             self.global_step += 1
             obs = next_obs
@@ -85,7 +82,7 @@ class Coordinator:
 
         info["dense_trajectory"] = dense_trajectory
         info["high_level_action"] = high_level_action.copy()
-        
+
         # Add transitions array to info for extraction by external learner loop
         info["low_level_transitions"] = low_level_transitions
 
