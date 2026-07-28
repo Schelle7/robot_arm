@@ -120,7 +120,14 @@ class SimBackend(Arm):
 
             state["Present_Position"][name] = float(self.data.qpos[qpos_idx])
             state["Present_Velocity"][name] = float(self.data.qvel[qvel_idx])
-            state["Present_Load"][name] = float(self.data.ctrl[actuator_idx])
+            # Simulated load normalization: MuJoCo forces are in N or N-m. 
+            # We divide by a nominal stall torque (e.g., 2.0 N-m for STS3215) to get a pseudo-percentage.
+            # Clip between -1.0 and 1.0 to match hardware behavior.
+            raw_force = float(self.data.actuator_force[actuator_idx])
+            state["Present_Load"][name] = 0  # max(-1.0, min(1.0, raw_force / 2.0))
+            # TODO decide some sensible strategy how to do this in simulation
+            # read a bit about it.
+            
             state["Present_Voltage"][name] = 12.0
             state["Present_Temperature"][name] = 40.0
 
@@ -137,9 +144,7 @@ class SimBackend(Arm):
         """Simulation doesn't need to physically disconnect power."""
         pass
 
-    def reset_sim(self):
-        mujoco.mj_resetData(self.model, self.data)
-
+    def randomize_box(self):
         # Randomize box placement
         # Reach is ~60cm. Goal is 25cm-45cm outward (X-axis) and -10cm to 10cm sideways (Y-axis)
         box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
@@ -158,6 +163,28 @@ class SimBackend(Arm):
                 self.data.qpos[qpos_adr] = dist
                 self.data.qpos[qpos_adr + 1] = y_shift
                 # Z explicitly left alone
+
+    def randomize_arm_pos(self):
+        for name, joint_id in self.joint_indices.items():
+            jnt_range = self.model.jnt_range[joint_id]
+            qpos_idx = self.model.jnt_qposadr[joint_id]
+            
+            jmin, jmax = jnt_range[0], jnt_range[1]
+            span = jmax - jmin
+            safe_min = jmin + 0.05 * span
+            safe_max = jmax - 0.05 * span
+            new_pos = np.random.uniform(safe_min, safe_max)
+            self.data.qpos[qpos_idx] = new_pos
+            
+            # Sync control target so the arm doesn't instantly snap back
+            actuator_id = self.actuator_indices[name]
+            self.data.ctrl[actuator_id] = new_pos
+
+    def reset_sim(self):
+        mujoco.mj_resetData(self.model, self.data)
+
+        self.randomize_box()
+        self.randomize_arm_pos()
 
         mujoco.mj_forward(self.model, self.data)
 

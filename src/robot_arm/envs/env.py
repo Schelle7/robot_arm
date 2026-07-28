@@ -121,10 +121,12 @@ class RobotEnv(gym.Env):
         }
 
         info = {}
-        if hasattr(self.arm, "get_end_effector_pose_7d"):
-            info["privileged_end_effector_pose_7d"] = (
-                self.arm.get_end_effector_pose_7d()
-            )
+        if hasattr(self.arm, "get_end_effector_pose_7d") or hasattr(self.arm, "backend_arm") and hasattr(self.arm.backend_arm, "get_end_effector_pose_7d_forward_kinematics"):
+            # Supply the already-polled state coordinates to avoid redundant I/O requests
+            if hasattr(self.arm, "backend_arm") and type(self.arm.backend_arm).__name__ == "RealArm":
+                info["privileged_end_effector_pose_7d"] = self.arm.backend_arm.get_end_effector_pose_7d_forward_kinematics(state_dict["Present_Position"])
+            else:
+                info["privileged_end_effector_pose_7d"] = self.arm.get_end_effector_pose_7d()
         if hasattr(self.arm, "get_privileged_box_pose_6d"):
             info["privileged_box_pose_6d"] = self.arm.get_privileged_box_pose_6d()
 
@@ -234,7 +236,9 @@ class RobotEnv(gym.Env):
 
     def update_path(self, new_trajectory: np.ndarray):
         """Called by the high-level controller whenever a new plan is generated."""
-        self.chunk_start_pose = self.arm.get_end_effector_pose_7d()
+        obs, info = self._get_obs()
+        self.chunk_start_pose = info["privileged_end_effector_pose_7d"].copy()
+        
         self.current_trajectory_goal = new_trajectory
 
         # We start a new high level instruction chunk, reset chunk time
@@ -248,8 +252,12 @@ class RobotEnv(gym.Env):
         try:
             # The trajectory goal is local deltas.
             # We must map our current position relative to where the chunk started.
+            obs, info = self._get_obs()
+            current_pose = info["privileged_end_effector_pose_7d"]  # this is pretty ugly and it is my fault but Ill try it for now.
+            # later I have to decide how to sensibly sovle it.
+            
             weighted_relative_pose = (
-                self.arm.get_end_effector_pose_7d() - self.chunk_start_pose
+                current_pose - self.chunk_start_pose
             ) * self.pose_distance_weights
             weighted_trajectory = (
                 self.current_trajectory_goal * self.pose_distance_weights

@@ -7,13 +7,25 @@ HZ ?= 50
 ITERATIONS ?= 500
 WARMUP ?= 20
 
-.PHONY: install find-port test move-mid bench
+.PHONY: install find-port test move-mid bench train rollout_sim sanity_check_real rollout_real
 
 install:
 	$(RUN) pip install -e .
 
 find-port:
 	$(RUN) lerobot-find-port
+
+train:
+	$(RUN) python scripts/train_low_level.py
+
+rollout_sim:
+	$(RUN) python scripts/rollout_vla.py backend=sim
+
+sanity_check_real:
+	$(RUN) python scripts/rollout_waypoint.py backend=real
+
+rollout_real:
+	$(RUN) python scripts/rollout_vla.py backend=real
 
 test:
 	$(RUN) python -m robot_arm.check_arm --port $(PORT)

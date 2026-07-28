@@ -127,18 +127,8 @@ Then I don't have to handle any of it and can just call the existing training sc
 
 ### Safety layer
 (long term pwm safety)
-check the allowed ticks and then only allow certain goal positions.
-The safety layer checks the commands and decides what to execute.
-Does the command respect the defined boundaries?
 
-What is the current velocity of the motor?
-What is its current temperature?
-
-check whether the servos support a shutdown or an immediate pwm = 0 mode switch from position to pwm mode.
-
-after that do the suggested conversion to standard units gemini suggested.
-
-
+next step is probably do define some waypoints and try on the real robot.
 
 
 ### longer term plans

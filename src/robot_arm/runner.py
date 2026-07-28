@@ -48,15 +48,21 @@ def execute_episode(
 
     print(f"Executing '{instruction}' and recording to {recorder.episode_dir}...")
 
-    for step_idx in range(max_steps):
-        obs, reward, terminated, truncated, info = coordinator.step(
-            obs, info, instruction
-        )
+    try:
+        for step_idx in range(max_steps):
+            obs, reward, terminated, truncated, info = coordinator.step(
+                obs, info, instruction
+            )
 
-        recorder.step(step_idx, obs, reward=reward, info=info, instruction=instruction)
+            recorder.step(step_idx, obs, reward=reward, info=info, instruction=instruction)
 
-        if terminated or truncated:
-            break
-
-    recorder.save()
-    print("Recording complete.")
+            if terminated or truncated:
+                break
+    except BaseException as e:
+        print(f"\nExecution interrupted by {type(e).__name__}: {e}")
+        raise  # Re-raise to ensure the script still crashes cleanly after saving
+    finally:
+        if len(recorder.frames) > 0:
+            print(f"Saving {len(recorder.frames)} recorded frames to disk...")
+            recorder.save()
+        print("Recording complete.")

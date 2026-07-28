@@ -125,7 +125,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
                     "observation.images.camera1": img,
                     "observation.state": state,
                     "action": action,
-                    "task": task_instruction,  # TODO update my custom recording instead
+                    "task": task_instruction,  # TODO update my custom recording instead /name it task there instead of instruction)
                 }
             )
 

@@ -52,6 +52,9 @@ class SafeArmWrapper(Arm):
 
         return state
 
+    def disconnect(self):
+        self.backend_arm.disconnect()
+
     def write_goal(self, positions: Dict[str, float]) -> Dict[str, float]:
         safe_positions = {}
         for motor, pos in positions.items():
