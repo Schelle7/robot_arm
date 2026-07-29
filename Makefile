@@ -24,6 +24,9 @@ rollout_sim:
 sanity_check_real:
 	$(RUN) python scripts/rollout_waypoint.py backend=real
 
+sanity_check_sim:
+	$(RUN) python scripts/rollout_waypoint.py backend=sim
+
 rollout_real:
 	$(RUN) python scripts/rollout_vla.py backend=real
 

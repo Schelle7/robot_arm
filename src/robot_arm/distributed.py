@@ -57,6 +57,7 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
             gripper_open=cfg.training.gripper_open,
             gripper_closed=cfg.training.gripper_closed,
         )
+        # TODO env.add_high level waypoints if cfg tells you to
         high_level_step = 0
 
         while not (terminated or truncated):
