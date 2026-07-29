@@ -1,3 +1,5 @@
+import math
+import numpy as np
 import os
 import torch
 import multiprocessing as mp
@@ -17,8 +19,6 @@ log = logging.getLogger(__name__)
 # since we dropped gym, we define simple spaces here to build the actor layout.
 class DummySpaceEnv(gymnasium.Env):
         def __init__(self, cfg):
-            import math
-            import numpy as np
             self.observation_space = gymnasium.spaces.Dict({
                 "joint_positions": gymnasium.spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
                 "joint_velocities": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
