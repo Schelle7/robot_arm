@@ -13,26 +13,28 @@ from robot_arm.coordinator import Coordinator
 log = logging.getLogger(__name__)
 
 
-def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
+def worker_process(worker_id, cfg, transition_queue, weights_dict_server, high_level_policy):
     """
     Subprocess isolated execution: Initializes env, coordinator, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
     """
+    ## 1. ----------------------
     torch.set_num_threads(1)
 
     log.info(f"Worker {worker_id}: Initializing Simulation...")
     # Workers do not need camera visual fidelity during low-level positional training
     env = make_env(cfg, minimize_visuals=True)
 
-    # Initialize a dummy SAC agent simply to build the actor architecture for inference
-    # Buffer size 1 on workers to save memory, they do not train so they don't need a buffer
+    # ???
     model = SAC("MultiInputPolicy", env, buffer_size=1, device="cpu")
+    # what do i do here? pass the policy in?
 
-    high_level_policy = WaypointPolicy(
-        trajectory_length=cfg.trajectory_length,
-        speed=cfg.training.waypoint_speed,
-    )
+    # high_level_policy = WaypointPolicy(
+    #     trajectory_length=cfg.trajectory_length,
+    #     speed=cfg.training.waypoint_speed,
+    # )
 
+    # this has to be combined with make env.
     coordinator = Coordinator(
         env=env,
         high_level_policy=high_level_policy,
@@ -42,9 +44,18 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
         training=True,
     )
 
+
+    # Maybe we could just call coordinator or env.run?
+    # env can get a recorder.
+    # recorder should also record if the episode suddenly terminates.
+    # recorder should probably just be a part of our env.
+
     # Continuous episodes loop
+    # I have no idea how the whole thing with one thread works.
+    # maybe I can place the env on one thread an still interact with it?
     while True:
         # 1. Sync weights before episode starts
+        # training specific
         model.policy.load_state_dict(weights_dict_server["weights"])
 
         obs, info = env.reset()
