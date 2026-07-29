@@ -128,10 +128,10 @@ class WaypointPolicy(Policy):
     def get_action(
         self,
         obs: Dict[str, np.ndarray],
-        info: Dict[str, Any],
+        privileged_end_effector_pose_7d: Dict[str, Any],
         instruction: Optional[str] = None,
     ) -> np.ndarray:
-        current_pose = info["privileged_end_effector_pose_7d"]
+        current_pose = privileged_end_effector_pose_7d
         chunk = np.zeros((self.chunk_size, 7), dtype=np.float32)
 
         # If we exhausted waypoints, just stay where we are (zero deltas)

@@ -48,13 +48,9 @@ def make_env(cfg: DictConfig):
     )
     env = RobotEnv(
         arm=safe_backend,
-        max_seconds=cfg.max_seconds,
-        trajectory_length=cfg.trajectory_length,
-        trajectory_dim=cfg.trajectory_dim,
         pose_distance_weights=np.array(cfg.pose_distance_weights, dtype=np.float32),
-        high_level_hz=cfg.frequencies.high_level,
-        low_level_hz=cfg.frequencies.low_level,
         delta_action_scale=cfg.training.waypoint_speed / cfg.frequencies.low_level,
         violation_penalty_factor=cfg.safety.violation_penalty_factor,
+        low_level_hz=cfg.frequencies.low_level,
     )
     return env

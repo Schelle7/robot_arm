@@ -46,21 +46,22 @@ class EpisodeRunner:
     def run_episode(
         self, instruction: str, generate_waypoints: bool, **waypoint_kwargs
     ):
-        obs, info = self.env.reset()
+        obs = self.env.reset()
 
         if self.recorder:
-            self.recorder.record_reset(obs, info, instruction)
+            self.recorder.record_reset(obs, instruction)
 
         if generate_waypoints and hasattr(
             self.high_level_policy, "generate_grab_waypoints"
         ):
+            waypoint_kwargs["box_pose_6d"] = self.env.arm.get_privileged_box_pose_6d()
             self.high_level_policy.generate_grab_waypoints(**waypoint_kwargs)
 
         try:
             for step_idx in range(self.max_high_level_steps):
                 # 1. High Level Inference at 10Hz
                 high_level_action = self.high_level_policy.get_action(
-                    obs, info, instruction=instruction
+                    obs, privileged_end_effector_pose_7d=self.env.get_privileged_end_effector_pose_7d(), instruction=instruction
                 )
 
                 obs = self.run_chunk(obs, high_level_action)
@@ -84,8 +85,7 @@ class EpisodeRunner:
         # The env doesn't track this statefully anymore, we provide it.
         # It's hidden in the observation info block from either reset() or the last chunk loop.
         # Since _get_obs doesn't return info directly to run_chunk via arg, we get it here.
-        _, info = self.env._get_obs()
-        chunk_start_pose = info["privileged_end_effector_pose_7d"].copy()
+        chunk_start_pose = self.env.get_privileged_end_effector_pose_7d()
 
         # Construct the first policy observation before entering the loop
         policy_obs = dict(raw_obs)
@@ -101,7 +101,7 @@ class EpisodeRunner:
             chunk_terminated = chunk_step == self.chunk_size - 1
 
             # Env returns physical state (raw_next_obs) plus step metrics
-            raw_next_obs, reward, step_info = self.env.step(
+            raw_next_obs, reward = self.env.step(
                 low_level_action, high_level_action, chunk_start_pose, chunk_terminated
             )
 
@@ -122,7 +122,6 @@ class EpisodeRunner:
                     low_level_action,
                     reward,
                     chunk_terminated,
-                    step_info,
                 )
 
             if self.training and self.replay_buffer:
@@ -132,7 +131,6 @@ class EpisodeRunner:
                     low_level_action,
                     reward,
                     chunk_terminated,
-                    [step_info],
                 )
 
             self.episode_low_level_step += 1
