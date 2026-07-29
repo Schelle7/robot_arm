@@ -3,6 +3,7 @@ import mujoco
 import numpy as np
 
 from robot_arm.backends.arm import Arm
+from scipy.spatial.transform import Rotation
 
 
 class SimBackend(Arm):
@@ -150,21 +151,23 @@ class SimBackend(Arm):
         # Randomize box placement
         # Reach is ~60cm. Goal is 25cm-45cm outward (X-axis) and -10cm to 10cm sideways (Y-axis)
         box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
-        if box_id != -1:
-            dist = np.random.uniform(0.25, 0.45)
-            y_shift = np.random.uniform(-0.10, 0.10)
+        if box_id == -1:
+            raise Exception('Box is missing')
+        
+        dist = np.random.uniform(0.35, 0.15)
+        y_shift = np.random.uniform(-0.10, 0.10)
 
-            # Directly updating the freejoint associated with the box
-            jnt_idx = self.model.body_jntadr[box_id]
-            if (
-                jnt_idx != -1
-                and self.model.jnt_type[jnt_idx] == mujoco.mjtJoint.mjJNT_FREE
-            ):
-                qpos_adr = self.model.jnt_qposadr[jnt_idx]
+        # Directly updating the freejoint associated with the box
+        jnt_idx = self.model.body_jntadr[box_id]
+        if (
+            jnt_idx != -1
+            and self.model.jnt_type[jnt_idx] == mujoco.mjtJoint.mjJNT_FREE
+        ):
+            qpos_adr = self.model.jnt_qposadr[jnt_idx]
 
-                self.data.qpos[qpos_adr] = dist
-                self.data.qpos[qpos_adr + 1] = y_shift
-                # Z explicitly left alone
+            self.data.qpos[qpos_adr] = dist
+            self.data.qpos[qpos_adr + 1] = y_shift
+            # Z explicitly left alone
 
     def randomize_arm_pos(self):
         for name, joint_id in self.joint_indices.items():
@@ -193,3 +196,76 @@ class SimBackend(Arm):
     def read_camera(self) -> np.ndarray:
         self.renderer.update_scene(self.data, camera="pixel_cam")
         return self.renderer.render()
+
+    def draw_waypoints(self, waypoints: np.ndarray):
+        """
+        Takes up to 4 waypoints of shape [x, y, z, roll, pitch, yaw, gripper] 
+        and updates the 'ghost_wp_X' mocap models to visualize them.
+        Lines ('ghost_line_X') are drawn between them.
+        """
+        num_wp = min(len(waypoints), 4)
+        
+        for i in range(num_wp):
+            wp = waypoints[i]
+            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}")
+            if body_id == -1:
+                raise KeyError(f"Body 'ghost_wp_{i}' not found in MuJoCo model. Ensure ghost_waypoints.xml is included.")
+            mocap_id = self.model.body_mocapid[body_id]
+            self.data.mocap_pos[mocap_id] = wp[:3]
+            self.data.mocap_quat[mocap_id] = Rotation.from_euler("xyz", wp[3:6]).as_quat()[[3, 0, 1, 2]]  # wxyz
+                
+        # Draw cylinders between waypoints
+        for i in range(num_wp - 1):
+            p1 = waypoints[i][:3]
+            p2 = waypoints[i + 1][:3]
+            
+            line_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_line_{i}")
+            line_geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"ghost_line_{i}_geom")
+            
+            if line_body_id == -1 or line_geom_id == -1:
+                raise KeyError(f"Body or geom for 'ghost_line_{i}' not found in MuJoCo model.")
+            
+            mocap_id = self.model.body_mocapid[line_body_id]
+                
+            # Position is midpoint
+            midpoint = (p1 + p2) / 2.0
+            self.data.mocap_pos[mocap_id] = midpoint
+            
+            # Rotation to align z-axis of cylinder with the direction vector
+            vec = p2 - p1
+            dist = np.linalg.norm(vec)
+            
+            if dist > 1e-5:
+                vec = vec / dist
+                # Default cylinder acts along Z (0, 0, 1)
+                # We compute quaternion that maps (0,0,1) to vec
+                z_axis = np.array([0, 0, 1])
+                v = np.cross(z_axis, vec)
+                c = np.dot(z_axis, vec)
+                k = 1.0 / (1.0 + c)
+                
+                rot_mat = np.array([
+                    [v[0]*v[0]*k + c,     v[0]*v[1]*k - v[2],  v[0]*v[2]*k + v[1]],
+                    [v[1]*v[0]*k + v[2],  v[1]*v[1]*k + c,     v[1]*v[2]*k - v[0]],
+                    [v[2]*v[0]*k - v[1],  v[2]*v[1]*k + v[0],  v[2]*v[2]*k + c]
+                ])
+                quat = Rotation.from_matrix(rot_mat).as_quat()[[3, 0, 1, 2]]
+                self.data.mocap_quat[mocap_id] = quat
+                
+            # Update geom length (size is [radius, half-length])
+            self.model.geom_size[line_geom_id][1] = dist / 2.0
+                
+        # Send unused waypoints / lines underground
+        for i in range(num_wp, 4):
+            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}")
+            if body_id == -1:
+                raise KeyError(f"Body 'ghost_wp_{i}' not found in MuJoCo model.")
+            mocap_id = self.model.body_mocapid[body_id]
+            self.data.mocap_pos[mocap_id] = [0, 0, -10]
+                
+        for i in range(max(0, num_wp - 1), 3):
+            line_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_line_{i}")
+            if line_body_id == -1:
+                raise KeyError(f"Body 'ghost_line_{i}' not found in MuJoCo model.")
+            mocap_id = self.model.body_mocapid[line_body_id]
+            self.data.mocap_pos[mocap_id] = [0, 0, -10]

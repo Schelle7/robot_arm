@@ -56,6 +56,9 @@ class EpisodeRunner:
         ):
             waypoint_kwargs["box_pose_6d"] = self.env.arm.get_privileged_box_pose_6d()
             self.high_level_policy.generate_grab_waypoints(**waypoint_kwargs)
+            
+            if self.cfg["draw_waypoints"]:
+                self.env.arm.draw_waypoints(self.high_level_policy.waypoints)
 
         try:
             for step_idx in range(self.max_high_level_steps):

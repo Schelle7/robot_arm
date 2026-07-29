@@ -131,22 +131,15 @@ Then I don't have to handle any of it and can just call the existing training sc
 next step is probably do define some waypoints and try on the real robot.
 
 
-
-how could I change the setup including the logger?
-Should I move away from stable baselines even further?
-I dont think the selection of the neural network and the loop are difficult.
-
-The heuristic for the alpha value for SAC might be. But I could also just check the stable baselines code. probably it would be easy to reimplement. However I do not currently see a use for it.
-
-
-I think the easiest process would be to have a recorder that I can pass into the loop next to the action.
-And then just have the low level loop append to that.
-
-
 the current policy is complete crap.
 
 I should probably add a ghost end effector pos that shows the desired position for better testing.
 
+I have rewritten the core loops to control the robot.
+Now it should hopefully be easier to add the end effector ghosts.
+
+generally I need more testing
+The reward and the path following logic is highly questionable whether it works correctly.
 
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)

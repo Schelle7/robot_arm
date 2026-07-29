@@ -1,0 +1,37 @@
+<mujoco model="ghost_waypoints">
+  <worldbody>
+    <!-- Waypoints -->
+    <body name="ghost_wp_0" mocap="true" pos="0 0 -10" quat="1 0 0 0">
+      <!-- A visual representation of the gripper -->
+      <geom type="mesh" class="visual" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="mesh" class="visual" pos="0 0 -0.015" quat="0.5 0.5 0.5 0.5" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.01" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+    <body name="ghost_wp_1" mocap="true" pos="0 0 -10" quat="1 0 0 0">
+      <geom type="mesh" class="visual" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="mesh" class="visual" pos="0 0 -0.015" quat="0.5 0.5 0.5 0.5" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.01" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+    <body name="ghost_wp_2" mocap="true" pos="0 0 -10" quat="1 0 0 0">
+      <geom type="mesh" class="visual" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="mesh" class="visual" pos="0 0 -0.015" quat="0.5 0.5 0.5 0.5" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.01" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+    <body name="ghost_wp_3" mocap="true" pos="0 0 -10" quat="1 0 0 0">
+      <geom type="mesh" class="visual" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="mesh" class="visual" pos="0 0 -0.015" quat="0.5 0.5 0.5 0.5" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.01" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+
+    <!-- Cylinders for lines between waypoints -->
+    <body name="ghost_line_0" mocap="true" pos="0 0 -10">
+      <geom name="ghost_line_0_geom" type="cylinder" size="0.002 0.05" rgba="1 1 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+    <body name="ghost_line_1" mocap="true" pos="0 0 -10">
+      <geom name="ghost_line_1_geom" type="cylinder" size="0.002 0.05" rgba="1 1 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+    <body name="ghost_line_2" mocap="true" pos="0 0 -10">
+      <geom name="ghost_line_2_geom" type="cylinder" size="0.002 0.05" rgba="1 1 0 0.5" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

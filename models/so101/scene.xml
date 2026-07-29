@@ -1,5 +1,6 @@
 <mujoco model="scene">
   <include file="so101.xml"/>
+  <include file="ghost_waypoints.xml"/>
 
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
@@ -33,15 +34,6 @@
     <body name="target_box" pos="0.3 0.0 0.05">
       <freejoint/>
       <geom type="box" size="0.03 0.03 0.03" material="matte_red" mass="0.1"/>
-    </body>
-
-    <!-- Ghost end-effector marker -->
-    <body name="ghost_ee" mocap="true" pos="0.3 0 0.1" quat="1 0 0 0">
-      <!-- A visual representation of the gripper -->
-      <geom type="mesh" class="visual" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
-      <geom type="mesh" class="visual" pos="0 0 -0.015" quat="0.5 0.5 0.5 0.5" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material" rgba="0 1 0 0.3" contype="0" conaffinity="0"/>
-      <!-- A small red sphere to show the exact center -->
-      <geom type="sphere" size="0.01" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
     </body>
   </worldbody>
 </mujoco>
