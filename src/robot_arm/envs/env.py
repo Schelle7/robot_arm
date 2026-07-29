@@ -1,48 +1,27 @@
-import math
 import numpy as np
-import gymnasium as gym
-from gymnasium import spaces
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple
 
 from robot_arm.backends.arm import Arm
 
 
-class RobotEnv(gym.Env):
+class RobotEnv:
     """
-    Standard MDP wrapper for the robotic arm.
+    Standard driver wrapper for the robotic arm.
     """
-
-    metadata = {"render_modes": ["human"]}
 
     def __init__(
         self,
         arm: Arm,
-        max_seconds: float,
-        trajectory_length: int,
-        trajectory_dim: int,
         pose_distance_weights: np.ndarray,
-        high_level_hz: int,
-        low_level_hz: int,
         delta_action_scale: float,
         violation_penalty_factor: float,
+        low_level_hz: int,
     ):
-        super().__init__()
         self.arm = arm
-        self.max_seconds = max_seconds
         self.delta_action_scale = delta_action_scale
         self.violation_penalty_factor = violation_penalty_factor
+        self.low_level_hz = low_level_hz
 
-        if low_level_hz % high_level_hz != 0:
-            raise ValueError(
-                f"low_level_hz ({low_level_hz}) must be cleanly divisible by high_level_hz ({high_level_hz})"
-            )
-
-        self.chunk_size = low_level_hz // high_level_hz
-        self.step_in_chunk = 0
-        self.global_low_level_step = 0
-
-        self.trajectory_length = trajectory_length
-        self.trajectory_dim = trajectory_dim
         self.pose_distance_weights = np.array(pose_distance_weights, dtype=np.float32)
 
         # Hardcoding the ordered list of motors to ensure deterministic vectorization
@@ -55,40 +34,6 @@ class RobotEnv(gym.Env):
             "gripper",
         ]
 
-        # Normalized action space for delta control: [-1.0, 1.0].
-        # The agent outputs a proportion of the maximum delta_action_scale per step.
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
-
-        self.observation_space = spaces.Dict(
-            {
-                "joint_positions": spaces.Box(
-                    low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
-                ),
-                "joint_velocities": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32
-                ),
-                # The joint positions at the exact moment the VLA generated the trajectory
-                "start_joint_positions": spaces.Box(
-                    low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
-                ),
-                "high_level_action": spaces.Box(
-                    # array of future relative waypoints from the VLA.
-                    low=-1.0,
-                    high=1.0,
-                    shape=(trajectory_length, trajectory_dim),
-                    dtype=np.float32,
-                ),
-                "time_left": spaces.Box(
-                    low=0.0, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-            }
-        )
-        # We store the current goals so they can be accessed in step() and _get_obs()
-        self.current_trajectory_goal = np.zeros(
-            (trajectory_length, trajectory_dim), dtype=np.float32
-        )
-        self.start_joint_positions = np.zeros(6, dtype=np.float32)
-
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
@@ -100,9 +45,27 @@ class RobotEnv(gym.Env):
             dtype=np.float32,
         )
 
-    def _get_obs(
-        self, called_by_reset=False
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def get_privileged_end_effector_pose_7d(self) -> np.ndarray:
+        if (
+            hasattr(self.arm, "get_end_effector_pose_7d")
+            or hasattr(self.arm, "backend_arm")
+            and hasattr(
+                self.arm.backend_arm, "get_end_effector_pose_7d_forward_kinematics"
+            )
+        ):
+            if (
+                hasattr(self.arm, "backend_arm")
+                and type(self.arm.backend_arm).__name__ == "RealArm"
+            ):
+                state_dict = self.arm.read_state()
+                return self.arm.backend_arm.get_end_effector_pose_7d_forward_kinematics(
+                    state_dict["Present_Position"]
+                )
+            else:
+                return self.arm.get_end_effector_pose_7d()
+        raise NotImplementedError("Arm backend does not support 7d pose retrieval.")
+
+    def _get_obs(self) -> Dict[str, np.ndarray]:
         state_dict = self.arm.read_state()
         current_pos = self.current_joint_angles
         current_vel = np.array(
@@ -113,56 +76,23 @@ class RobotEnv(gym.Env):
         obs = {
             "joint_positions": current_pos,
             "joint_velocities": current_vel,
-            "start_joint_positions": self.start_joint_positions.copy(),
-            "high_level_action": self.current_trajectory_goal.copy(),
-            "time_left": np.array(
-                [self.chunk_size - self.step_in_chunk - 1], dtype=np.float32
-            ),
         }
 
-        info = {}
-        if hasattr(self.arm, "get_end_effector_pose_7d") or hasattr(self.arm, "backend_arm") and hasattr(self.arm.backend_arm, "get_end_effector_pose_7d_forward_kinematics"):
-            # Supply the already-polled state coordinates to avoid redundant I/O requests
-            if hasattr(self.arm, "backend_arm") and type(self.arm.backend_arm).__name__ == "RealArm":
-                info["privileged_end_effector_pose_7d"] = self.arm.backend_arm.get_end_effector_pose_7d_forward_kinematics(state_dict["Present_Position"])
-            else:
-                info["privileged_end_effector_pose_7d"] = self.arm.get_end_effector_pose_7d()
-        if hasattr(self.arm, "get_privileged_box_pose_6d"):
-            info["privileged_box_pose_6d"] = self.arm.get_privileged_box_pose_6d()
+        return obs
 
-        if obs["time_left"] <= 0 or called_by_reset:
-            info["image"] = self.arm.read_camera()
-
-        return obs, info
-
-    def reset(
-        self, seed=None, options=None
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
-        super().reset(seed=seed)
-
-        state_dict = self.arm.read_state()
-        self.start_joint_positions = np.array(
-            [state_dict["Present_Position"][m] for m in self.motor_order],
-            dtype=np.float32,
-        )
-
-        # At reset, there is no trajectory plan yet, so the goal is simply zero relative deltas
-        self.current_trajectory_goal = np.zeros(
-            (self.trajectory_length, self.trajectory_dim), dtype=np.float32
-        )
-
+    def reset(self) -> Dict[str, np.ndarray]:
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
-        self.step_in_chunk = 0
-        self.global_low_level_step = 0
 
         # We don't magically reset the physical arm to zero, we just start observing from where it is
         # However, for simulation, the SimBackend handles advancing time and scene resets
         if hasattr(self.arm, "reset_sim"):
             self.arm.reset_sim()
 
-        obs, info = self._get_obs(called_by_reset=True)
-        return obs, info
+        return self._get_obs()
+
+    def read_camera(self):
+        return self.arm.read_camera()
 
     def _get_closest_path_point(
         self, current_point: np.ndarray, path: np.ndarray
@@ -234,34 +164,21 @@ class RobotEnv(gym.Env):
 
         return float(past_progress + current_progress)
 
-    def update_path(self, new_trajectory: np.ndarray):
-        """Called by the high-level controller whenever a new plan is generated."""
-        obs, info = self._get_obs()
-        self.chunk_start_pose = info["privileged_end_effector_pose_7d"].copy()
-        
-        self.current_trajectory_goal = new_trajectory
-
-        # We start a new high level instruction chunk, reset chunk time
-        self.step_in_chunk = 0
-        self.previous_deviation = 0.0
-        self.previous_progress = 0.0
-
     def compute_reward(
-        self, requested_action: Dict[str, float], safe_action: Dict[str, float]
+        self,
+        requested_action: Dict[str, float],
+        safe_action: Dict[str, float],
+        high_level_action: np.ndarray,
+        current_pose: np.ndarray,
+        chunk_start_pose: np.ndarray,
+        chunk_terminated: bool,
     ) -> float:
         try:
-            # The trajectory goal is local deltas.
-            # We must map our current position relative to where the chunk started.
-            obs, info = self._get_obs()
-            current_pose = info["privileged_end_effector_pose_7d"]  # this is pretty ugly and it is my fault but Ill try it for now.
-            # later I have to decide how to sensibly sovle it.
-            
+            # We map our current position relative to where the chunk started.
             weighted_relative_pose = (
-                current_pose - self.chunk_start_pose
+                current_pose - chunk_start_pose
             ) * self.pose_distance_weights
-            weighted_trajectory = (
-                self.current_trajectory_goal * self.pose_distance_weights
-            )
+            weighted_trajectory = high_level_action * self.pose_distance_weights
 
             closest_pt, seg_idx, t = self._get_closest_path_point(
                 weighted_relative_pose, weighted_trajectory
@@ -288,14 +205,32 @@ class RobotEnv(gym.Env):
                 if diff > 0:
                     safety_penalty -= diff * self.violation_penalty_factor
 
-            return float(dev_reward + prog_reward + safety_penalty)
+            # Massive distance penalty if the chunk fully terminates and we are far from the end
+            termination_penalty = 0.0
+            if chunk_terminated:
+                # The final pose in the VLA trajectory is the absolute goal for this chunk
+                # In relative space, this is simply the final element compared to relative current pose.
+                final_target_relative = weighted_trajectory[-1]
+                end_distance = np.linalg.norm(
+                    final_target_relative - weighted_relative_pose
+                )
+                # Penalize remaining distance failure
+                termination_penalty = -float(end_distance)
+
+            return float(
+                dev_reward + prog_reward + safety_penalty + termination_penalty
+            )
 
         except NotImplementedError:
             return np.nan
 
     def step(
-        self, action: np.ndarray
-    ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
+        self,
+        action: np.ndarray,
+        high_level_action: np.ndarray,
+        privileged_chunk_start_pose: np.ndarray,
+        chunk_terminated: bool,
+    ) -> Tuple[Dict[str, np.ndarray], float]:
 
         # 1. Unscale delta action and add to current joint angles
         delta = action * self.delta_action_scale
@@ -310,19 +245,15 @@ class RobotEnv(gym.Env):
         safe_action_dict = self.arm.write_goal(action_dict)
 
         # 4. Get new observation
-        obs, info = self._get_obs()
-
-        info["global_low_level_step"] = self.global_low_level_step
-        info["step_in_chunk"] = self.step_in_chunk
-
-        self.step_in_chunk += 1
-        self.global_low_level_step += 1
+        obs = self._get_obs()
 
         reward = self.compute_reward(
-            requested_action=action_dict, safe_action=safe_action_dict
+            requested_action=action_dict,
+            safe_action=safe_action_dict,
+            high_level_action=high_level_action,
+            current_pose=self.get_privileged_end_effector_pose_7d(),
+            chunk_start_pose=privileged_chunk_start_pose,
+            chunk_terminated=chunk_terminated,
         )
 
-        terminated = False
-        truncated = False
-
-        return obs, reward, terminated, truncated, info
+        return obs, reward

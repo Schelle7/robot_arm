@@ -7,82 +7,92 @@ from hydra.core.hydra_config import HydraConfig
 from stable_baselines3 import SAC
 
 from robot_arm.envs.factory import make_env
-from robot_arm.policies import WaypointPolicy
-from robot_arm.coordinator import Coordinator
+from robot_arm.episode_runner import EpisodeRunner
 
 log = logging.getLogger(__name__)
 
+# We need a dummy wrapper for SAC to parse the space logic implicitly 
+# since we dropped gym, we define simple spaces here to build the actor layout.
+class DummySpaceEnv:
+    def __init__(self, cfg):
+        from gymnasium import spaces
+        import math
+        import numpy as np
+        self.observation_space = spaces.Dict({
+            "joint_positions": spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
+            "joint_velocities": spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
+            "start_joint_positions": spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
+            "high_level_action": spaces.Box(low=-1.0, high=1.0, shape=(cfg.trajectory_length, cfg.trajectory_dim), dtype=np.float32),
+            "time_left": spaces.Box(low=0.0, high=np.inf, shape=(1,), dtype=np.float32),
+        })
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
 
-def worker_process(worker_id, cfg, transition_queue, weights_dict_server, high_level_policy):
+# We use a custom local Replay queue to ship bulk chunks, replacing the local SB3 replay buffer
+class TransitionQueueBuffer:
+    def __init__(self, q):
+        self.q = q
+        self.chunk = []
+
+    def add(self, obs, next_obs, action, reward, done, infos):
+        self.chunk.append((obs, next_obs, action, reward, done, infos[0]))
+        
+    def flush(self):
+        if len(self.chunk) > 0:
+            self.q.put(self.chunk)
+            self.chunk = []
+
+    # EpisodeRunner uses `is not None` logic, meaning it expects truthy checking to pass
+    def __bool__(self):
+        return True
+
+
+def worker_process(
+    worker_id, cfg, transition_queue, weights_dict_server, high_level_policy
+):
     """
-    Subprocess isolated execution: Initializes env, coordinator, and an inference-only model.
+    Subprocess isolated execution: Initializes env, runner, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
     """
     ## 1. ----------------------
     torch.set_num_threads(1)
 
     log.info(f"Worker {worker_id}: Initializing Simulation...")
-    # Workers do not need camera visual fidelity during low-level positional training
-    env = make_env(cfg, minimize_visuals=True)
+    env = make_env(cfg)
 
-    # ???
-    model = SAC("MultiInputPolicy", env, buffer_size=1, device="cpu")
-    # what do i do here? pass the policy in?
+    dummy_env_for_sac = DummySpaceEnv(cfg)
+    low_level_policy = SAC("MultiInputPolicy", dummy_env_for_sac, buffer_size=1, device="cpu")
+    
+    worker_transition_buffer = TransitionQueueBuffer(transition_queue)
 
-    # high_level_policy = WaypointPolicy(
-    #     trajectory_length=cfg.trajectory_length,
-    #     speed=cfg.training.waypoint_speed,
-    # )
-
-    # this has to be combined with make env.
-    coordinator = Coordinator(
+    runner = EpisodeRunner(
+        cfg=cfg,
         env=env,
+        low_level_policy=low_level_policy,
         high_level_policy=high_level_policy,
-        low_level_policy=model,
-        high_level_hz=cfg.frequencies.high_level,
-        low_level_hz=cfg.frequencies.low_level,
         training=True,
+        recorder=None,
+        replay_buffer=worker_transition_buffer
     )
 
-
-    # Maybe we could just call coordinator or env.run?
-    # env can get a recorder.
-    # recorder should also record if the episode suddenly terminates.
-    # recorder should probably just be a part of our env.
-
     # Continuous episodes loop
-    # I have no idea how the whole thing with one thread works.
-    # maybe I can place the env on one thread an still interact with it?
     while True:
-        # 1. Sync weights before episode starts
-        # training specific
-        model.policy.load_state_dict(weights_dict_server["weights"])
+        # Sync weights before episode starts safely via the encapsulated runner policy
+        runner.low_level_policy.policy.load_state_dict(weights_dict_server["weights"])
 
-        obs, info = env.reset()
-        terminated = False
-        truncated = False
-
-        high_level_policy.generate_grab_waypoints(
-            box_pose_6d=info["privileged_box_pose_6d"],
+        # Runner natively collects, chunks, calls policies, and populates `worker_transition_buffer` via `.add()`
+        # Note: box pose extraction will require whatever config your specific VLA / setup uses.
+        # This acts as a placeholder structure for the integration
+        runner.run_episode(
+            instruction="grab the box", 
+            generate_waypoints=True,
+            # box_pose_6d=env.get_privileged_box_pose_6d(), 
             lift_height=cfg.training.lift_height,
             gripper_open=cfg.training.gripper_open,
-            gripper_closed=cfg.training.gripper_closed,
+            gripper_closed=cfg.training.gripper_closed
         )
-        # TODO env.add_high level waypoints if cfg tells you to
-        high_level_step = 0
 
-        while not (terminated or truncated):
-            # Coordinator natively chunks inside
-            obs, reward, terminated, truncated, info = coordinator.step(
-                obs, info, instruction="grab the box"
-            )
-
-            # Send the completed chunk to the learner thread
-            transition_queue.put(info["low_level_transitions"])
-
-            high_level_step += 1
-            if high_level_step >= cfg.max_seconds * cfg.frequencies.high_level:
-                break
+        # Batch ship all collected physics steps to the central learner
+        worker_transition_buffer.flush()
 
 
 def run_distributed_training(cfg: DictConfig, device: torch.device):
@@ -106,13 +116,13 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     weights_dict_server = mp.Manager().dict()
     transition_queue = mp.Queue(maxsize=1000)
 
-    # 1. Main Learner Model Setup (We init one Env briefly just to map action bounds)
-    dummy_env = make_env(cfg, minimize_visuals=True)
+    # 1. Main Learner Model Setup 
+    dummy_env_for_sac = DummySpaceEnv(cfg)
 
     # 2. Setup central SAC agent
     model = SAC(
         "MultiInputPolicy",
-        dummy_env,
+        dummy_env_for_sac,
         learning_rate=cfg.training.learning_rate,
         buffer_size=cfg.training.buffer_size,
         learning_starts=cfg.training.learning_starts,

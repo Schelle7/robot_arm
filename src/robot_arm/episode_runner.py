@@ -1,15 +1,16 @@
 import numpy as np
 from omegaconf import DictConfig
-from typing import Dict, Tuple
+from typing import Dict
 
 from robot_arm.policies import Policy
 from robot_arm.envs.env import RobotEnv
 from robot_arm.recorder import EpisodeRecorder
 
+
 class EpisodeRunner:
     """
     Orchestrates the entire episode.
-    Handles high/low level syncing, logging to recorder, 
+    Handles high/low level syncing, logging to recorder,
     and returns transitions for the training buffers.
     """
 
@@ -42,13 +43,17 @@ class EpisodeRunner:
         self.max_high_level_steps = int(cfg.max_seconds * high_level_hz)
         self.episode_low_level_step = 0
 
-    def run_episode(self, instruction: str, generate_waypoints: bool, **waypoint_kwargs):
+    def run_episode(
+        self, instruction: str, generate_waypoints: bool, **waypoint_kwargs
+    ):
         obs, info = self.env.reset()
 
         if self.recorder:
             self.recorder.record_reset(obs, info, instruction)
 
-        if generate_waypoints and hasattr(self.high_level_policy, "generate_grab_waypoints"):
+        if generate_waypoints and hasattr(
+            self.high_level_policy, "generate_grab_waypoints"
+        ):
             self.high_level_policy.generate_grab_waypoints(**waypoint_kwargs)
 
         try:
@@ -67,12 +72,21 @@ class EpisodeRunner:
             if self.recorder:
                 self.recorder.save()
 
-    def run_chunk(self, raw_obs: Dict[str, np.ndarray], high_level_action: np.ndarray) -> Dict[str, np.ndarray]:
+    def run_chunk(
+        self, raw_obs: Dict[str, np.ndarray], high_level_action: np.ndarray
+    ) -> Dict[str, np.ndarray]:
         """
         Executes a single chunk of low-level physics steps to chase the high-level action target.
         """
         start_positions = raw_obs["joint_positions"].copy()
-        
+
+        # We need the physical cartesian start pose explicitly to calculate rewards
+        # The env doesn't track this statefully anymore, we provide it.
+        # It's hidden in the observation info block from either reset() or the last chunk loop.
+        # Since _get_obs doesn't return info directly to run_chunk via arg, we get it here.
+        _, info = self.env._get_obs()
+        chunk_start_pose = info["privileged_end_effector_pose_7d"].copy()
+
         # Construct the first policy observation before entering the loop
         policy_obs = dict(raw_obs)
         policy_obs["high_level_action"] = high_level_action
@@ -84,29 +98,45 @@ class EpisodeRunner:
                 policy_obs, deterministic=not self.training
             )
 
+            chunk_terminated = chunk_step == self.chunk_size - 1
+
             # Env returns physical state (raw_next_obs) plus step metrics
-            raw_next_obs, reward, step_info = self.env.step(low_level_action)
-            
+            raw_next_obs, reward, step_info = self.env.step(
+                low_level_action, high_level_action, chunk_start_pose, chunk_terminated
+            )
+
             # Construct the next policy observation for the RL transition and next step
             next_policy_obs = dict(raw_next_obs)
             next_policy_obs["high_level_action"] = high_level_action
             next_policy_obs["start_joint_positions"] = start_positions
-            next_policy_obs["time_left"] = np.array([self.chunk_size - chunk_step - 1], dtype=np.float32)
+            next_policy_obs["time_left"] = np.array(
+                [self.chunk_size - chunk_step - 1], dtype=np.float32
+            )
 
-            chunk_terminated = (chunk_step == self.chunk_size - 1)
+            chunk_terminated = chunk_step == self.chunk_size - 1
 
             if self.recorder:
                 self.recorder.append_low_level_transition(
-                    policy_obs, next_policy_obs, low_level_action, reward, chunk_terminated, step_info
+                    policy_obs,
+                    next_policy_obs,
+                    low_level_action,
+                    reward,
+                    chunk_terminated,
+                    step_info,
                 )
 
             if self.training and self.replay_buffer:
                 self.replay_buffer.add(
-                    policy_obs, next_policy_obs, low_level_action, reward, chunk_terminated, [step_info]
+                    policy_obs,
+                    next_policy_obs,
+                    low_level_action,
+                    reward,
+                    chunk_terminated,
+                    [step_info],
                 )
 
             self.episode_low_level_step += 1
             policy_obs = next_policy_obs
-                
+
         # Return physical state for the next high-level policy inference
         return raw_next_obs

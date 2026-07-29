@@ -32,26 +32,22 @@ def main(cfg: DictConfig):
         jpeg_quality=cfg.camera.jpeg_quality,
         episode_name="waypoint_sanity_check",
     )
-    
+
     # Define our manual waypoints for the sanity check
     # 7D target: [x, y, z, roll, pitch, yaw, gripper]
-    
+
     # Standard neutral looking forward, gripper slightly open
     wp_mid = np.array([0.25, 0.0, 0.20, 0.0, 0.0, 0.0, 0.3], dtype=np.float32)
     # Reach forward 15cm
     wp_front = np.array([0.40, 0.0, 0.20, 0.0, 0.0, 0.0, 0.3], dtype=np.float32)
-    
+
     # Sequence: Mid -> Front -> Mid -> Close gripper
-    policy.waypoints = [
-        wp_mid.copy(),
-        wp_front.copy(),
-        wp_mid.copy()
-    ]
+    policy.waypoints = [wp_mid.copy(), wp_front.copy(), wp_mid.copy()]
     # Close gripper on the last waypoint
     wp_close = wp_mid.copy()
-    wp_close[6] = 0.05 # closed
+    wp_close[6] = 0.05  # closed
     policy.waypoints.append(wp_close)
-    
+
     policy.current_wp_idx = 0
 
     # Execute

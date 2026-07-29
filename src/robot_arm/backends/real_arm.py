@@ -36,17 +36,32 @@ class RealArm(Arm):
         self.joint_indices = {
             # Map motor names directly to their mujoco joint IDs to update qpos efficiently
             name: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
-            for name in ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+            for name in [
+                "shoulder_pan",
+                "shoulder_lift",
+                "elbow_flex",
+                "wrist_flex",
+                "wrist_roll",
+                "gripper",
+            ]
         }
 
         # Cache MuJoCo IDs during initialization
-        self.fixed_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip")
-        self.moving_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "moving_finger_tip")
-        self.gripper_frame_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe")
+        self.fixed_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip"
+        )
+        self.moving_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_SITE, "moving_finger_tip"
+        )
+        self.gripper_frame_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
+        )
 
         # Validate IDs
         if -1 in (self.fixed_id, self.moving_id, self.gripper_frame_id):
-            raise RuntimeError("One or more MuJoCo site IDs could not be found in the XML.")
+            raise RuntimeError(
+                "One or more MuJoCo site IDs could not be found in the XML."
+            )
 
     def _tick_to_rad(self, name: str, tick: int) -> float:
         """
@@ -79,32 +94,42 @@ class RealArm(Arm):
 
         return raw_state
 
-    def get_end_effector_pose_7d_forward_kinematics(self, present_positions: dict) -> np.ndarray:
+    def get_end_effector_pose_7d_forward_kinematics(
+        self, present_positions: dict
+    ) -> np.ndarray:
         # Bind raw Joint radians back into MuJoCo FK structural limits
         for name, rad in present_positions.items():
             if name in self.joint_indices:
                 qpos_idx = self.model.jnt_qposadr[self.joint_indices[name]]
                 self.data.qpos[qpos_idx] = rad
-                
+
         # Simulate geometric kinematics
         mujoco.mj_kinematics(self.model, self.data)
 
         # Re-derive exact geometric variables
         fixed_pos = self.data.site_xpos[self.fixed_id]
         moving_pos = self.data.site_xpos[self.moving_id]
-        
+
         # Pseudo TCP (middle point)
         tcp_pos = (fixed_pos + moving_pos) / 2.0
-        
+
         # Pseudo Rotation Matrix
         rot_mat = self.data.site_xmat[self.gripper_frame_id].reshape(3, 3)
         euler = Rotation.from_matrix(rot_mat).as_euler("xyz")
-        
+
         # Raw Gripper Aperture Rads
         gripper_radians = present_positions["gripper"]
-        
+
         return np.array(
-            [tcp_pos[0], tcp_pos[1], tcp_pos[2], euler[0], euler[1], euler[2], gripper_radians],
+            [
+                tcp_pos[0],
+                tcp_pos[1],
+                tcp_pos[2],
+                euler[0],
+                euler[1],
+                euler[2],
+                gripper_radians,
+            ],
             dtype=np.float32,
         )
 
@@ -112,7 +137,9 @@ class RealArm(Arm):
         raise NotImplementedError("Real arm does not have access to pinch point")
 
     def read_camera(self) -> np.ndarray:
-        print("\033[93mWARNING: READ_CAMERA NOT IMPLEMENTED FOR REAL ARM YET! RETURN DUMMY IMAGE\033[0m")
+        print(
+            "\033[93mWARNING: READ_CAMERA NOT IMPLEMENTED FOR REAL ARM YET! RETURN DUMMY IMAGE\033[0m"
+        )
         return np.zeros((480, 640, 3), dtype=np.uint8)
 
     def write_goal(self, positions: Dict[str, float]) -> None:

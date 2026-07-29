@@ -10,25 +10,27 @@ from robot_arm.envs.safety import SafeArmWrapper
 log = logging.getLogger(__name__)
 
 
-def make_env(cfg: DictConfig, minimize_visuals=False):
+def make_env(cfg: DictConfig):
     """
     Creates a standardized instance of the underlying backend and RobotEnv wrapper
     based on the loaded DictConfig. Helper to avoid duplicating this setup between
     the learner and the workers.
     """
-    height = 10 if minimize_visuals else cfg.camera.height
-    width = 10 if minimize_visuals else cfg.camera.width
+    height = cfg.camera.height
+    width = cfg.camera.width
 
     if cfg.backend == "sim":
         backend = SimBackend(model_path=cfg.model_path, height=height, width=width)
     elif cfg.backend == "real":
         # Imports protected to avoid needing lerobot/hardware on simulation-only machines
         from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
-        
+
         # Instantiate the LeRobot follower using settings from our Hydra config
-        follower = SO101Follower(SO101FollowerConfig(port=cfg.hardware.port, id=cfg.hardware.calibration_id))
+        follower = SO101Follower(
+            SO101FollowerConfig(port=cfg.hardware.port, id=cfg.hardware.calibration_id)
+        )
         follower.connect(calibrate=True)
-        
+
         # Initialize our wrapper using the raw connected bus natively
         backend = RealArm(bus=follower.bus, model_path=cfg.model_path)
         # Prevent garbage collection of the follower object

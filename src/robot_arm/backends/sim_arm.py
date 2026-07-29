@@ -120,14 +120,16 @@ class SimBackend(Arm):
 
             state["Present_Position"][name] = float(self.data.qpos[qpos_idx])
             state["Present_Velocity"][name] = float(self.data.qvel[qvel_idx])
-            # Simulated load normalization: MuJoCo forces are in N or N-m. 
+            # Simulated load normalization: MuJoCo forces are in N or N-m.
             # We divide by a nominal stall torque (e.g., 2.0 N-m for STS3215) to get a pseudo-percentage.
             # Clip between -1.0 and 1.0 to match hardware behavior.
-            raw_force = float(self.data.actuator_force[actuator_idx])
+
+            # TODO use
+            # raw_force = float(self.data.actuator_force[actuator_idx])
             state["Present_Load"][name] = 0  # max(-1.0, min(1.0, raw_force / 2.0))
             # TODO decide some sensible strategy how to do this in simulation
             # read a bit about it.
-            
+
             state["Present_Voltage"][name] = 12.0
             state["Present_Temperature"][name] = 40.0
 
@@ -168,14 +170,14 @@ class SimBackend(Arm):
         for name, joint_id in self.joint_indices.items():
             jnt_range = self.model.jnt_range[joint_id]
             qpos_idx = self.model.jnt_qposadr[joint_id]
-            
+
             jmin, jmax = jnt_range[0], jnt_range[1]
             span = jmax - jmin
             safe_min = jmin + 0.05 * span
             safe_max = jmax - 0.05 * span
             new_pos = np.random.uniform(safe_min, safe_max)
             self.data.qpos[qpos_idx] = new_pos
-            
+
             # Sync control target so the arm doesn't instantly snap back
             actuator_id = self.actuator_indices[name]
             self.data.ctrl[actuator_id] = new_pos
