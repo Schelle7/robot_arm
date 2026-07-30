@@ -23,6 +23,7 @@ class EpisodeRunner:
         training: bool,
         recorder: EpisodeRecorder,
         replay_buffer=None,
+        chunk_reward_queue=None,
     ):
         high_level_hz = cfg.frequencies.high_level
         low_level_hz = cfg.frequencies.low_level
@@ -39,6 +40,7 @@ class EpisodeRunner:
         self.training = training
         self.recorder = recorder
         self.replay_buffer = replay_buffer
+        self.chunk_reward_queue = chunk_reward_queue
         self.cfg = cfg
 
         self.max_high_level_steps = int(cfg.max_seconds * high_level_hz)
@@ -168,4 +170,7 @@ class EpisodeRunner:
             policy_obs = next_policy_obs
 
         # Return physical state for the next high-level policy inference
+        if self.training and self.chunk_reward_queue:
+            self.chunk_reward_queue.put(total_reward)
+            
         return raw_next_obs, total_reward

@@ -125,6 +125,10 @@ For training it makes sense if I use the lerobot data format
 Then I don't have to handle any of it and can just call the existing training script.
 
 
+I will have to check the rewards and all that kinda stuff next.
+Get the low level policy to work, then move on.
+
+
 ### Safety layer
 (long term pwm safety)
 
@@ -142,11 +146,21 @@ generally I need more testing
 The reward and the path following logic is highly questionable whether it works correctly.
 
 
-current visual debugging still sucks since I can not move in the sim.
-It would be much nicer if I could just step into the sim in any step.
-
 
 still on debugging the orientation stuff.
+most orientation stuff does work now.
+
+
+I want to make it more unlikely for things to fail.
+I think I should have a python code bit taht writes the gripeprs and ghost gripeprs with a starting joint pos and then inserts them at the right spot.
+I think that would be a helpful thing to do.
+
+
+I could very much simplify the reward calculation?
+And then make it more complicated again later on when basic things are working?
+
+I could also add dots for the relative position that the high level policy tries to achieve.
+we might have to multiply the deltas to make them visible.
 
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)

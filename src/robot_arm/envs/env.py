@@ -174,63 +174,63 @@ class RobotEnv:
         chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> float:
-        try:
-            # We map our current position relative to where the chunk started.
-            pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
-            
-            # Use 6D rotation for trajectory math
-            rot_diff_6d = (current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()) * self.pose_distance_weights[3:9]
-            
-            gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
-            
-            # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
-            weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
-            
-            weighted_trajectory = high_level_action * self.pose_distance_weights
+        # try:
+        # We map our current position relative to where the chunk started.
+        pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
+        
+        # Use 6D rotation for trajectory math
+        rot_diff_6d = (current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()) * self.pose_distance_weights[3:9]
+        
+        gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
+        
+        # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
+        weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
+        
+        weighted_trajectory = high_level_action * self.pose_distance_weights
 
-            closest_pt, seg_idx, t = self._get_closest_path_point(
-                weighted_relative_pose, weighted_trajectory
+        closest_pt, seg_idx, t = self._get_closest_path_point(
+            weighted_relative_pose, weighted_trajectory
+        )
+
+        current_deviation = self._compute_path_deviation(
+            weighted_relative_pose, closest_pt
+        )
+        current_progress = self._compute_path_progress(
+            weighted_trajectory, seg_idx, t
+        )
+
+        # Improvement math
+        dev_reward = self.previous_deviation - current_deviation
+        prog_reward = current_progress - self.previous_progress
+
+        self.previous_deviation = current_deviation
+        self.previous_progress = current_progress
+
+        # Safety penalty
+        safety_penalty = 0.0
+        for motor in requested_action:
+            diff = abs(requested_action[motor] - safe_action[motor])
+            if diff > 0:
+                safety_penalty -= diff * self.violation_penalty_factor
+
+        # Massive distance penalty if the chunk fully terminates and we are far from the end
+        termination_penalty = 0.0
+        if chunk_terminated:
+            # The final pose in the VLA trajectory is the absolute goal for this chunk
+            # In relative space, this is simply the final element compared to relative current pose.
+            final_target_relative = weighted_trajectory[-1]
+            end_distance = np.linalg.norm(
+                final_target_relative - weighted_relative_pose
             )
+            # Penalize remaining distance failure
+            termination_penalty = -float(end_distance)
 
-            current_deviation = self._compute_path_deviation(
-                weighted_relative_pose, closest_pt
-            )
-            current_progress = self._compute_path_progress(
-                weighted_trajectory, seg_idx, t
-            )
+        return float(
+            dev_reward + prog_reward + safety_penalty + termination_penalty
+        )
 
-            # Improvement math
-            dev_reward = self.previous_deviation - current_deviation
-            prog_reward = current_progress - self.previous_progress
-
-            self.previous_deviation = current_deviation
-            self.previous_progress = current_progress
-
-            # Safety penalty
-            safety_penalty = 0.0
-            for motor in requested_action:
-                diff = abs(requested_action[motor] - safe_action[motor])
-                if diff > 0:
-                    safety_penalty -= diff * self.violation_penalty_factor
-
-            # Massive distance penalty if the chunk fully terminates and we are far from the end
-            termination_penalty = 0.0
-            if chunk_terminated:
-                # The final pose in the VLA trajectory is the absolute goal for this chunk
-                # In relative space, this is simply the final element compared to relative current pose.
-                final_target_relative = weighted_trajectory[-1]
-                end_distance = np.linalg.norm(
-                    final_target_relative - weighted_relative_pose
-                )
-                # Penalize remaining distance failure
-                termination_penalty = -float(end_distance)
-
-            return float(
-                dev_reward + prog_reward + safety_penalty + termination_penalty
-            )
-
-        except NotImplementedError:
-            return np.nan
+        # except NotImplementedError:
+        #     return np.nan
 
     def step(
         self,

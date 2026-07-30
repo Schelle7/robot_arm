@@ -76,7 +76,7 @@ class TransitionQueueBuffer:
         return True
 
 
-def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
+def worker_process(worker_id, cfg, transition_queue, chunk_reward_queue, weights_dict_server):
     """
     Subprocess isolated execution: Initializes env, runner, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
@@ -107,6 +107,7 @@ def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
         training=True,
         recorder=None,
         replay_buffer=worker_transition_buffer,
+        chunk_reward_queue=chunk_reward_queue,
     )
 
     # Continuous episodes loop
@@ -150,6 +151,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
 
     weights_dict_server = mp.Manager().dict()
     transition_queue = mp.Queue(maxsize=1000)
+    chunk_reward_queue = mp.Queue(maxsize=1000)
 
     # 1. Main Learner Model Setup
     dummy_env_for_sac = DummySpaceEnv(cfg)
@@ -189,7 +191,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     workers = []
     for i in range(num_workers):
         p = mp.Process(
-            target=worker_process, args=(i, cfg, transition_queue, weights_dict_server)
+            target=worker_process, args=(i, cfg, transition_queue, chunk_reward_queue, weights_dict_server)
         )
         p.daemon = True
         p.start()
@@ -202,6 +204,16 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
 
     try:
         while global_step < target_total_steps:
+            # Drain up to 100 rewards per loop iteration to avoid starvation
+            # for _ in range(3):
+            #     if chunk_reward_queue.empty():
+            #         break
+            #     try:
+            #         c_reward = chunk_reward_queue.get_nowait()
+            #         model.logger.record("rollout/ep_rew_mean", c_reward)
+            #     except Exception:
+            #         break
+
             # 1. Blocks until worker chunks arrive
             chunk = transition_queue.get()
 

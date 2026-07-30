@@ -116,7 +116,7 @@ class WaypointPolicy(Policy):
         3. Move straight up along the Z-axis with the gripper closed.
         """
         # Neutral pre-grasp position: ~35cm out, 30cm high, pitch pointing down, open gripper
-        wp0 = Pose.from_euler([0.35, 0.0, 0.30], [0.0, 0, 0.0], gripper_open, "xyz", False).as_10d()
+        wp0 = Pose.from_euler([0.35, 0.0, 0.30], [0.0, 0, 0.0], gripper_open, "XYZ", False).as_10d()
         
         wp1 = box_pose.as_10d()
         wp1[9] = gripper_open

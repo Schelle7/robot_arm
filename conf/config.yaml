@@ -17,7 +17,7 @@ hardware:
   port: "/dev/ttyACM0"
   calibration_id: "my_follower"
 
-max_seconds: 1
+max_seconds: 20
 
 # Camera resolution
 camera:
