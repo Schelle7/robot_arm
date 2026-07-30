@@ -141,5 +141,9 @@ Now it should hopefully be easier to add the end effector ghosts.
 generally I need more testing
 The reward and the path following logic is highly questionable whether it works correctly.
 
+
+current visual debugging still sucks since I can not move in the sim.
+It would be much nicer if I could just step into the sim in any step.
+
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)

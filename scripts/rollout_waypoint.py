@@ -6,7 +6,8 @@ import numpy as np
 
 from robot_arm.recorder import EpisodeRecorder
 from robot_arm.policies import WaypointPolicy, load_latest_low_level_policy
-from robot_arm.runner import execute_episode
+from robot_arm.episode_runner import EpisodeRunner
+from robot_arm.envs.factory import make_env
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
@@ -30,6 +31,7 @@ def main(cfg: DictConfig):
     recorder = EpisodeRecorder(
         output_dir=output_dir,
         jpeg_quality=cfg.camera.jpeg_quality,
+        chunk_size=cfg.frequencies.low_level // cfg.frequencies.high_level,
         episode_name="waypoint_sanity_check",
     )
 
@@ -50,12 +52,20 @@ def main(cfg: DictConfig):
 
     policy.current_wp_idx = 0
 
-    # Execute
-    execute_episode(
+    env = make_env(cfg)
+
+    runner = EpisodeRunner(
         cfg=cfg,
-        policy=policy,
+        env=env,
         low_level_policy=low_level_policy,
+        high_level_policy=policy,
+        training=False,
         recorder=recorder,
+    )
+
+    # Execute
+    # No generate_waypoints=True for the sanity check, we supply our own
+    runner.run_episode(
         instruction=instruction,
         generate_waypoints=False,
     )

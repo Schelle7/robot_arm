@@ -15,26 +15,47 @@ from robot_arm.policies import WaypointPolicy
 
 log = logging.getLogger(__name__)
 
-# We need a dummy wrapper for SAC to parse the space logic implicitly 
+
+# We need a dummy wrapper for SAC to parse the space logic implicitly
 # since we dropped gym, we define simple spaces here to build the actor layout.
 class DummySpaceEnv(gymnasium.Env):
-        def __init__(self, cfg):
-            self.observation_space = gymnasium.spaces.Dict({
-                "joint_positions": gymnasium.spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
-                "joint_velocities": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
-                "start_joint_positions": gymnasium.spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
-                "high_level_action": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(cfg.trajectory_length, cfg.trajectory_dim), dtype=np.float32),
-                "time_left": gymnasium.spaces.Box(low=0.0, high=np.inf, shape=(1,), dtype=np.float32),
-            })
-            self.action_space = gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
+    def __init__(self, cfg):
+        self.observation_space = gymnasium.spaces.Dict(
+            {
+                "joint_positions": gymnasium.spaces.Box(
+                    low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
+                ),
+                "joint_velocities": gymnasium.spaces.Box(
+                    low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32
+                ),
+                "start_joint_positions": gymnasium.spaces.Box(
+                    low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
+                ),
+                "high_level_action": gymnasium.spaces.Box(
+                    low=-1.0,
+                    high=1.0,
+                    shape=(cfg.trajectory_length, cfg.trajectory_dim),
+                    dtype=np.float32,
+                ),
+                "time_left": gymnasium.spaces.Box(
+                    low=0.0, high=np.inf, shape=(1,), dtype=np.float32
+                ),
+            }
+        )
+        self.action_space = gymnasium.spaces.Box(
+            low=-1.0, high=1.0, shape=(6,), dtype=np.float32
+        )
 
-        # Standard gymnasium API requirements for base wrappers to avoid patching crashes
-        def step(self, action):
-            pass
-        def reset(self, *, seed=None, options=None):
-            pass
-        def render(self):
-            pass
+    # Standard gymnasium API requirements for base wrappers to avoid patching crashes
+    def step(self, action):
+        pass
+
+    def reset(self, *, seed=None, options=None):
+        pass
+
+    def render(self):
+        pass
+
 
 # We use a custom local Replay queue to ship bulk chunks, replacing the local SB3 replay buffer
 class TransitionQueueBuffer:
@@ -55,9 +76,7 @@ class TransitionQueueBuffer:
         return True
 
 
-def worker_process(
-    worker_id, cfg, transition_queue, weights_dict_server
-):
+def worker_process(worker_id, cfg, transition_queue, weights_dict_server):
     """
     Subprocess isolated execution: Initializes env, runner, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
@@ -69,13 +88,15 @@ def worker_process(
     env = make_env(cfg)
 
     dummy_env_for_sac = DummySpaceEnv(cfg)
-    low_level_policy = SAC("MultiInputPolicy", dummy_env_for_sac, buffer_size=1, device="cpu")
-    
+    low_level_policy = SAC(
+        "MultiInputPolicy", dummy_env_for_sac, buffer_size=1, device="cpu"
+    )
+
     high_level_policy = WaypointPolicy(
         trajectory_length=cfg.trajectory_length,
         speed=cfg.training.waypoint_speed,
     )
-    
+
     worker_transition_buffer = TransitionQueueBuffer(transition_queue)
 
     runner = EpisodeRunner(
@@ -85,7 +106,7 @@ def worker_process(
         high_level_policy=high_level_policy,
         training=True,
         recorder=None,
-        replay_buffer=worker_transition_buffer
+        replay_buffer=worker_transition_buffer,
     )
 
     # Continuous episodes loop
@@ -93,16 +114,16 @@ def worker_process(
         # Sync weights before episode starts safely via the encapsulated runner policy
         runner.low_level_policy.policy.load_state_dict(weights_dict_server["weights"])
 
-        # We must extract the simulated box pose directly from the env driver 
+        # We must extract the simulated box pose directly from the env driver
         # to feed the waypoint generator, because we deleted info mappings in reset.
 
         # Runner natively collects, chunks, calls policies, and populates `worker_transition_buffer` via `.add()`
         runner.run_episode(
-            instruction="grab the box", 
-            generate_waypoints=True, 
+            instruction="grab the box",
+            generate_waypoints=True,
             lift_height=cfg.training.lift_height,
             gripper_open=cfg.training.gripper_open,
-            gripper_closed=cfg.training.gripper_closed
+            gripper_closed=cfg.training.gripper_closed,
         )
 
         # Batch ship all collected physics steps to the central learner
@@ -130,7 +151,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     weights_dict_server = mp.Manager().dict()
     transition_queue = mp.Queue(maxsize=1000)
 
-    # 1. Main Learner Model Setup 
+    # 1. Main Learner Model Setup
     dummy_env_for_sac = DummySpaceEnv(cfg)
 
     # 2. Setup central SAC agent

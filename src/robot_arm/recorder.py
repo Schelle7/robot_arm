@@ -12,43 +12,23 @@ class EpisodeRecorder:
     """
 
     def __init__(
-        self, output_dir: str, jpeg_quality: int, episode_name: str = "episode_0"
+        self,
+        output_dir: str,
+        jpeg_quality: int,
+        chunk_size: int,
+        episode_name: str = "episode_0",
     ):
         self.output_dir = output_dir
         self.episode_dir = os.path.join(output_dir, episode_name)
         self.images_dir = os.path.join(self.episode_dir, "images")
         self.jpeg_quality = jpeg_quality
+        self.chunk_size = chunk_size
         self.frames: List[Dict[str, Any]] = []
+        self.dense_trajectory_buffer: List[Dict[str, Any]] = []
 
         os.makedirs(self.images_dir, exist_ok=True)
 
-    def record_reset(
-        self,
-        obs: Dict[str, np.ndarray],
-        info: Dict[str, Any],
-        instruction: str = "",
-    ):
-        """
-        Record the initial state immediately after resetting the environment.
-        """
-        step_idx = -1
-        image_path = self._save_image(step_idx, info["image"])
-
-        frame_data = {
-            "step": step_idx,
-            "instruction": instruction,
-            "image_path": image_path,
-            "joint_positions": obs["joint_positions"].copy(),
-            "privileged_end_effector_pose_7d": info[
-                "privileged_end_effector_pose_7d"
-            ].copy(),
-            "high_level_action": np.array([]),  # No action taken yet
-            "reward": 0.0,
-            "dense_trajectory": [],
-        }
-        self.frames.append(frame_data)
-
-    def step(
+    def record_high_level(
         self,
         step_idx: int,
         obs: Dict[str, np.ndarray],
@@ -72,17 +52,44 @@ class EpisodeRecorder:
             ].copy(),
             "high_level_action": info["high_level_action"].copy(),
             "reward": float(reward),
-            "dense_trajectory": [
-                {
-                    "global_step": step["global_step"],
-                    "chunk_step": step["chunk_step"],
-                    "joint_positions": step["joint_positions"].copy(),
-                    "action": step["action"].copy(),
-                }
-                for step in info["dense_trajectory"]
-            ],
+            "dense_trajectory": self.dense_trajectory_buffer.copy(),
         }
         self.frames.append(frame_data)
+        self.dense_trajectory_buffer.clear()
+
+    def append_low_level_transition(
+        self,
+        obs: Dict[str, np.ndarray],
+        next_obs: Dict[str, np.ndarray],
+        action: np.ndarray,
+        reward: float,
+        terminated: bool,
+    ):
+        """
+        Record a single low-level RL transition step in the environment.
+        Currently, this method just caches dense steps on the most recently added frame
+        so that when we save, we can view the whole micro-trajectory that occurred during the high-level step.
+        """
+        if len(self.dense_trajectory_buffer) >= self.chunk_size:
+            raise RuntimeError(
+                f"Dense trajectory buffer overflow! Max chunk size is {self.chunk_size}."
+            )
+
+        self.dense_trajectory_buffer.append(
+            {
+                "obs": {
+                    k: v.copy() for k, v in obs.items() if isinstance(v, np.ndarray)
+                },
+                "next_obs": {
+                    k: v.copy()
+                    for k, v in next_obs.items()
+                    if isinstance(v, np.ndarray)
+                },
+                "action": action.copy(),
+                "reward": float(reward),
+                "terminated": terminated,
+            }
+        )
 
     def _save_image(self, step_idx: int, pixels: np.ndarray) -> str:
         """Saves the camera frame to disk and returns the relative path."""
@@ -122,3 +129,4 @@ class EpisodeRecorder:
         }
 
         np.savez_compressed(episode_path, **data_dict)
+        print(f"Saved to: {episode_path}")

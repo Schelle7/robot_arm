@@ -107,11 +107,17 @@ class WaypointPolicy(Policy):
         gripper_closed: float,
     ) -> None:
         """
-        Generates a generic 3-waypoint sequence for grasping a given 6D pose:
+        Generates a generic 4-waypoint sequence for grasping a given 6D pose:
+        0. Move to a neutral, safe position to orient the arm gracefully.
         1. Move to the target with the gripper completely open.
         2. Close the gripper while remaining in place.
         3. Move straight up along the Z-axis with the gripper closed.
         """
+        # Neutral pre-grasp position: ~35cm out, 30cm high, pitch pointing down, open gripper
+        wp0 = np.array(
+            [0.35, 0.0, 0.30, 0.0, np.pi / 2, 0.0, gripper_open], dtype=np.float32
+        )
+
         wp1 = np.zeros(7, dtype=np.float32)
         wp1[:6] = box_pose_6d
         wp1[6] = gripper_open
@@ -122,7 +128,7 @@ class WaypointPolicy(Policy):
         wp3 = wp2.copy()
         wp3[2] += lift_height
 
-        self.waypoints = [wp1, wp2, wp3]
+        self.waypoints = [wp0, wp1, wp2, wp3]
         self.current_wp_idx = 0
 
     def get_action(

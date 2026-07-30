@@ -39,6 +39,7 @@ class EpisodeRunner:
         self.training = training
         self.recorder = recorder
         self.replay_buffer = replay_buffer
+        self.cfg = cfg
 
         self.max_high_level_steps = int(cfg.max_seconds * high_level_hz)
         self.episode_low_level_step = 0
@@ -48,26 +49,42 @@ class EpisodeRunner:
     ):
         obs = self.env.reset()
 
-        if self.recorder:
-            self.recorder.record_reset(obs, instruction)
-
         if generate_waypoints and hasattr(
             self.high_level_policy, "generate_grab_waypoints"
         ):
             waypoint_kwargs["box_pose_6d"] = self.env.arm.get_privileged_box_pose_6d()
             self.high_level_policy.generate_grab_waypoints(**waypoint_kwargs)
-            
-            if self.cfg["draw_waypoints"]:
-                self.env.arm.draw_waypoints(self.high_level_policy.waypoints)
+
+        if self.cfg.draw_waypoints:
+            self.env.arm.draw_waypoints(self.high_level_policy.waypoints)
 
         try:
             for step_idx in range(self.max_high_level_steps):
-                # 1. High Level Inference at 10Hz
                 high_level_action = self.high_level_policy.get_action(
-                    obs, privileged_end_effector_pose_7d=self.env.get_privileged_end_effector_pose_7d(), instruction=instruction
+                    obs,
+                    privileged_end_effector_pose_7d=self.env.get_privileged_end_effector_pose_7d(),
+                    instruction=instruction,
                 )
 
-                obs = self.run_chunk(obs, high_level_action)
+                next_obs, reward = self.run_chunk(obs, high_level_action)
+
+                if self.recorder:
+                    image = self.env.read_camera()
+                    pose = self.env.get_privileged_end_effector_pose_7d()
+                    # We pass info layout mimicking what recorder.step expects
+                    self.recorder.record_high_level(
+                        step_idx,
+                        obs,
+                        reward=reward,
+                        info={
+                            "image": image,
+                            "privileged_end_effector_pose_7d": pose,
+                            "high_level_action": high_level_action,
+                        },
+                        instruction=instruction,
+                    )
+
+                obs = next_obs
 
         except BaseException as e:
             print(f"\nExecution interrupted by {type(e).__name__}: {e}")
@@ -78,7 +95,7 @@ class EpisodeRunner:
 
     def run_chunk(
         self, raw_obs: Dict[str, np.ndarray], high_level_action: np.ndarray
-    ) -> Dict[str, np.ndarray]:
+    ) -> tuple[Dict[str, np.ndarray], float]:
         """
         Executes a single chunk of low-level physics steps to chase the high-level action target.
         """
@@ -96,6 +113,8 @@ class EpisodeRunner:
         policy_obs["start_joint_positions"] = start_positions
         policy_obs["time_left"] = np.array([self.chunk_size], dtype=np.float32)
 
+        total_reward = 0.0
+
         for chunk_step in range(self.chunk_size):
             low_level_action, _ = self.low_level_policy.predict(
                 policy_obs, deterministic=not self.training
@@ -107,6 +126,8 @@ class EpisodeRunner:
             raw_next_obs, reward = self.env.step(
                 low_level_action, high_level_action, chunk_start_pose, chunk_terminated
             )
+
+            total_reward += reward
 
             # Construct the next policy observation for the RL transition and next step
             next_policy_obs = dict(raw_next_obs)
@@ -140,4 +161,4 @@ class EpisodeRunner:
             policy_obs = next_policy_obs
 
         # Return physical state for the next high-level policy inference
-        return raw_next_obs
+        return raw_next_obs, total_reward
