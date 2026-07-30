@@ -71,12 +71,11 @@ class EpisodeRunner:
 
                 if self.recorder:
                     image = self.env.read_camera()
-                    pose_ee, gripper_state = self.env.get_privileged_end_effector_pose()
+                    pose_ee = self.env.get_privileged_end_effector_pose()
                     
                     info_dict = {
                         "image": image, 
                         "privileged_end_effector_pose": pose_ee,
-                        "gripper_state": gripper_state,
                         "high_level_action": high_level_action,
                     }
                     
@@ -112,7 +111,7 @@ class EpisodeRunner:
         # The env doesn't track this statefully anymore, we provide it.
         # It's hidden in the observation info block from either reset() or the last chunk loop.
         # Since _get_obs doesn't return info directly to run_chunk via arg, we get it here.
-        chunk_start_pose_obj, _ = self.env.get_privileged_end_effector_pose()
+        chunk_start_pose_obj = self.env.get_privileged_end_effector_pose()
 
         # Construct the first policy observation before entering the loop
         policy_obs = dict(raw_obs)

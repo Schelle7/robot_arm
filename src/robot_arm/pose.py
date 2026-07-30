@@ -3,29 +3,30 @@ from scipy.spatial.transform import Rotation as R
 
 class Pose:
     """
-    Encapsulates 3D position and rotation state. 
+    Encapsulates 3D position, rotation state, and gripper status. 
     Provides bridges between Euler, Quaternions, 3x3 Matrices, 
     and Neural Network-friendly 6D continuous representations.
     """
-    def __init__(self, position: np.ndarray, rotation: R):
+    def __init__(self, position: np.ndarray, rotation: R, gripper: float):
         self.position = np.array(position, dtype=np.float32)
         self.rotation = rotation
+        self.gripper = float(gripper)
 
     @classmethod
-    def from_euler(cls, position: np.ndarray, angles: np.ndarray, seq: str = "xyz", degrees: bool = False) -> "Pose":
-        return cls(position, R.from_euler(seq, angles, degrees=degrees))
+    def from_euler(cls, position: np.ndarray, angles: np.ndarray, gripper: float, seq: str, degrees: bool) -> "Pose":
+        return cls(position, R.from_euler(seq, angles, degrees=degrees), gripper)
 
     @classmethod
-    def from_quat(cls, position: np.ndarray, quat: np.ndarray) -> "Pose":
+    def from_quat(cls, position: np.ndarray, quat: np.ndarray, gripper: float) -> "Pose":
         # SciPy expects scalar-last quaternions: (x, y, z, w)
-        return cls(position, R.from_quat(quat))
+        return cls(position, R.from_quat(quat), gripper)
 
     @classmethod
-    def from_matrix(cls, position: np.ndarray, matrix: np.ndarray) -> "Pose":
-        return cls(position, R.from_matrix(matrix))
+    def from_matrix(cls, position: np.ndarray, matrix: np.ndarray, gripper: float) -> "Pose":
+        return cls(position, R.from_matrix(matrix), gripper)
 
     @classmethod
-    def from_6d(cls, position: np.ndarray, rep_6d: np.ndarray) -> "Pose":
+    def from_6d(cls, position: np.ndarray, rep_6d: np.ndarray, gripper: float) -> "Pose":
         """
         Reconstructs a rotation from the 6D continuous representation.
         Uses Gram-Schmidt orthogonalization to build the 3x3 matrix.
@@ -43,7 +44,7 @@ class Pose:
         matrix = np.column_stack((v1, v2, v3))
         return cls(position, R.from_matrix(matrix))
 
-    def as_euler(self, seq: str = "xyz", degrees: bool = False) -> np.ndarray:
+    def as_euler(self, seq: str, degrees: bool) -> np.ndarray:
         return self.rotation.as_euler(seq, degrees=degrees).astype(np.float32)
 
     def as_quat(self) -> np.ndarray:

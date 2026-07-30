@@ -65,17 +65,17 @@ class SimBackend(Arm):
         )
         rot_mat = self.data.site_xmat[site_id].copy()
 
-        return Pose.from_matrix(self.tcp, rot_mat)
-
-    def get_end_effector_pose(self) -> Tuple[Pose, float]:
-        # Get position of TCP and rot from wrist
-        pose = self.gripper_pose
-
         # Aperture in radians from the servo itself
         qpos_idx = self.model.jnt_qposadr[self.joint_indices["gripper"]]
         gripper_radians = float(self.data.qpos[qpos_idx])
 
-        return pose, gripper_radians
+        return Pose.from_matrix(self.tcp, rot_mat, gripper_radians)
+
+    def get_end_effector_pose(self) -> Pose:
+        # Get position of TCP and rot from wrist
+        pose = self.gripper_pose
+
+        return pose
 
     def get_privileged_box_pose(self) -> Pose:
         # The box is defined as a body named "target_box" in scene.xml
@@ -86,7 +86,7 @@ class SimBackend(Arm):
         pos = self.data.xpos[body_id].copy()
         rot_mat = self.data.xmat[body_id].reshape(3, 3)
         
-        return Pose.from_matrix(pos, rot_mat)
+        return Pose.from_matrix(pos, rot_mat, 1.0)  # pose with gripper info is a bit weird but ok for now
 
     def read_state(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel, ctrl (as a proxy for load) to our expected dictionary format

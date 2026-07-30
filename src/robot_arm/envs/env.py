@@ -46,7 +46,7 @@ class RobotEnv:
             dtype=np.float32,
         )
 
-    def get_privileged_end_effector_pose(self) -> Tuple[Pose, float]:
+    def get_privileged_end_effector_pose(self) -> Pose:
         if (
             hasattr(self.arm, "get_end_effector_pose")
             or hasattr(self.arm, "backend_arm")
@@ -181,8 +181,10 @@ class RobotEnv:
             # Use 6D rotation for trajectory math
             rot_diff_6d = (current_pose.as_6d() - chunk_start_pose.as_6d()) * self.pose_distance_weights[3:9]
             
-            # Combine back into a weighted 9D (pos + 6D rot) array for path matching
-            weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d])
+            gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
+            
+            # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
+            weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
             
             weighted_trajectory = high_level_action * self.pose_distance_weights
 
@@ -234,7 +236,7 @@ class RobotEnv:
         self,
         action: np.ndarray,
         high_level_action: np.ndarray,
-        privileged_chunk_start_pose: np.ndarray,
+        privileged_chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> Tuple[Dict[str, np.ndarray], float]:
 
@@ -257,7 +259,7 @@ class RobotEnv:
             requested_action=action_dict,
             safe_action=safe_action_dict,
             high_level_action=high_level_action,
-            current_pose=self.get_privileged_end_effector_pose_7d(),
+            current_pose=self.get_privileged_end_effector_pose(),
             chunk_start_pose=privileged_chunk_start_pose,
             chunk_terminated=chunk_terminated,
         )
