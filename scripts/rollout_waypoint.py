@@ -33,6 +33,7 @@ def main(cfg: DictConfig):
         jpeg_quality=cfg.camera.jpeg_quality,
         chunk_size=cfg.frequencies.low_level // cfg.frequencies.high_level,
         episode_name="waypoint_sanity_check",
+        record_sim_state=cfg["record_sim_state"],
     )
 
     # Define our manual waypoints for the sanity check

@@ -28,8 +28,9 @@ def main(cfg: DictConfig):
     recorder = EpisodeRecorder(
         output_dir=output_dir,
         jpeg_quality=cfg.camera.jpeg_quality,
-        chunk_size=cfg.frequencies.low_level // cfg.frequencies.high_level,
+        chunk_size=cfg.frequencies.low_level // cfg.frequencies.high_level,  # TODO just pass in the cfg instead of doing it everywhere.
         episode_name="waypoint_dataset_01",
+        record_sim_state=cfg["record_sim_state"],
     )
 
     # Execute

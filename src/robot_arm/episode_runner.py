@@ -57,6 +57,7 @@ class EpisodeRunner:
 
         if self.cfg.draw_waypoints:
             self.env.arm.draw_waypoints(self.high_level_policy.waypoints)
+            self.recorder.save_waypoints(self.high_level_policy.waypoints)
 
         try:
             for step_idx in range(self.max_high_level_steps):
@@ -71,16 +72,21 @@ class EpisodeRunner:
                 if self.recorder:
                     image = self.env.read_camera()
                     pose = self.env.get_privileged_end_effector_pose_7d()
-                    # We pass info layout mimicking what recorder.step expects
+                    
+                    info_dict = {
+                        "image": image, 
+                        "privileged_end_effector_pose_7d": pose,
+                        "high_level_action": high_level_action,
+                    }
+                    
+                    if self.cfg["record_sim_state"]:
+                        info_dict["sim_state"] = self.env.arm.read_state()["sim_state"]
+
                     self.recorder.record_high_level(
                         step_idx,
                         obs,
                         reward=reward,
-                        info={
-                            "image": image,
-                            "privileged_end_effector_pose_7d": pose,
-                            "high_level_action": high_level_action,
-                        },
+                        info=info_dict,
                         instruction=instruction,
                     )
 

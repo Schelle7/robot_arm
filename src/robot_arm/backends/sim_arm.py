@@ -134,6 +134,11 @@ class SimBackend(Arm):
             state["Present_Voltage"][name] = 12.0
             state["Present_Temperature"][name] = 40.0
 
+        state["sim_state"] = {
+            "qpos": self.data.qpos.copy(),
+            "qvel": self.data.qvel.copy()
+        }
+
         return state
 
     def write_goal(self, positions: Dict[str, float]) -> None:

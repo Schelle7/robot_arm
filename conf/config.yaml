@@ -10,6 +10,7 @@ model_path: "models/so101/scene.xml"
 # Backend configuration
 backend: "sim" # "sim" or "real"
 draw_waypoints: true
+record_sim_state: true
 
 # Hardware parameters used if backend == "real"
 hardware:
