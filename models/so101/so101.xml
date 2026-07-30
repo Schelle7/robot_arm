@@ -198,7 +198,7 @@
                 <geom name="fixed_jaw_box7" class="collision_gripper" type="box" size="0.001 0.01 0.008"
                   pos="-0.0143 0 -0.053"/>
                 <!-- Frame gripperframe -->
-                <site group="3" name="gripperframe" pos="0.012 -0.000218 -0.098127" quat="1 0 1 0"/>
+                <site group="3" name="gripperframe" pos="0.012 -0.000218 -0.098127"/>
                 <!-- Reference point for fixed jaw -->
                 <site name="fixed_finger_tip" pos="-0.0081 0.0 -0.09925" size="0.003" rgba="1 0 0 0.5"/>
                 <!-- Camera mount

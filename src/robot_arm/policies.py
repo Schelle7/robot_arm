@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional, Any
 import numpy as np
 
+from robot_arm.pose import Pose
+
 
 class Policy(ABC):
     """
@@ -101,7 +103,7 @@ class WaypointPolicy(Policy):
 
     def generate_grab_waypoints(
         self,
-        box_pose_6d: np.ndarray,
+        box_pose: Pose,
         lift_height: float,
         gripper_open: float,
         gripper_closed: float,
@@ -114,16 +116,13 @@ class WaypointPolicy(Policy):
         3. Move straight up along the Z-axis with the gripper closed.
         """
         # Neutral pre-grasp position: ~35cm out, 30cm high, pitch pointing down, open gripper
-        wp0 = np.array(
-            [0.35, 0.0, 0.30, 0.0, np.pi / 2, 0.0, gripper_open], dtype=np.float32
-        )
-
-        wp1 = np.zeros(7, dtype=np.float32)
-        wp1[:6] = box_pose_6d
-        wp1[6] = gripper_open
+        wp0 = Pose.from_euler([0.35, 0.0, 0.30], [0.0, np.pi / 2, 0.0], gripper_open, "xyz", False).as_10d()
+        
+        wp1 = box_pose.as_10d()
+        wp1[9] = gripper_open
 
         wp2 = wp1.copy()
-        wp2[6] = gripper_closed
+        wp2[9] = gripper_closed
 
         wp3 = wp2.copy()
         wp3[2] += lift_height
@@ -134,18 +133,19 @@ class WaypointPolicy(Policy):
     def get_action(
         self,
         obs: Dict[str, np.ndarray],
-        privileged_end_effector_pose_7d: Dict[str, Any],
+        privileged_end_effector_pose: Pose,
         instruction: Optional[str] = None,
     ) -> np.ndarray:
-        current_pose = privileged_end_effector_pose_7d
-        chunk = np.zeros((self.chunk_size, 7), dtype=np.float32)
+        current_flat = privileged_end_effector_pose.as_10d()
+        
+        chunk = np.zeros((self.chunk_size, 10), dtype=np.float32)
 
         # If we exhausted waypoints, just stay where we are (zero deltas)
         if self.current_wp_idx >= len(self.waypoints):
             return chunk  # TODO I might wan to make this an error instead
 
         target = self.waypoints[self.current_wp_idx]
-        diff = target - current_pose
+        diff = target - current_flat
         dist = np.linalg.norm(diff)
 
         # Determine the speed of this entire chunk

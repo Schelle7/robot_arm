@@ -58,9 +58,9 @@ class EpisodeRecorder:
             "instruction": instruction,
             "image_path": image_path,
             "joint_positions": obs["joint_positions"].copy(),
-            "privileged_end_effector_pose_7d": info[
-                "privileged_end_effector_pose_7d"
-            ].copy(),
+            "privileged_end_effector_pose": info[
+                "privileged_end_effector_pose"
+            ].as_10d(),
             "high_level_action": info["high_level_action"].copy(),
             "reward": float(reward),
             "dense_trajectory": self.dense_trajectory_buffer.copy(),
@@ -131,8 +131,8 @@ class EpisodeRecorder:
             "joint_positions": np.array(
                 [f["joint_positions"] for f in self.frames], dtype=np.float32
             ),
-            "privileged_end_effector_pose_7d": np.array(
-                [f["privileged_end_effector_pose_7d"] for f in self.frames],
+            "privileged_end_effector_pose": np.array(
+                [f["privileged_end_effector_pose"] for f in self.frames],
                 dtype=np.float32,
             ),
             "high_level_action": np.array(

@@ -59,6 +59,10 @@ class Pose:
         matrix = self.as_matrix()
         return np.concatenate((matrix[:, 0], matrix[:, 1])).astype(np.float32)
         
+    def as_10d(self) -> np.ndarray:
+        """Returns the full 10D state array: [x, y, z, r1, r2, r3, r4, r5, r6, gripper]"""
+        return np.concatenate([self.position, self.as_6d(), [self.gripper]]).astype(np.float32)
+
     def angular_distance(self, other: "Pose") -> float:
         """Returns the absolute angular difference between two orientations in radians."""
         diff = self.rotation * other.rotation.inv()

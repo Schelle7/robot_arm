@@ -57,7 +57,8 @@ class EpisodeRunner:
 
         if self.cfg.draw_waypoints:
             self.env.arm.draw_waypoints(self.high_level_policy.waypoints)
-            self.recorder.save_waypoints(self.high_level_policy.waypoints)
+            if self.recorder:
+                self.recorder.save_waypoints(self.high_level_policy.waypoints)
 
         try:
             for step_idx in range(self.max_high_level_steps):

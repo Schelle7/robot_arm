@@ -63,7 +63,7 @@ class SimBackend(Arm):
         site_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
         )
-        rot_mat = self.data.site_xmat[site_id].copy()
+        rot_mat = self.data.site_xmat[site_id].copy().reshape(3, 3)
 
         # Aperture in radians from the servo itself
         qpos_idx = self.model.jnt_qposadr[self.joint_indices["gripper"]]

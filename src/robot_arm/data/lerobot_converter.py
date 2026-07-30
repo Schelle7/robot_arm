@@ -110,7 +110,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
 
             # State t
             state = torch.tensor(
-                data["privileged_end_effector_pose_7d"][frame_idx], dtype=torch.float32
+                data["privileged_end_effector_pose"][frame_idx], dtype=torch.float32
             )
 
             # Action t (the action decided after seeing state t, recorded in frame t+1's metadata)

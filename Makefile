@@ -7,7 +7,7 @@ HZ ?= 50
 ITERATIONS ?= 500
 WARMUP ?= 20
 
-.PHONY: install find-port test move-mid bench train rollout_sim sanity_check_real rollout_real
+.PHONY: install find-port test move-mid bench train rollout_sim sanity_check_real rollout_real train_low_level
 
 install:
 	$(RUN) pip install -e .
@@ -48,3 +48,6 @@ verify:
 lint:
 	$(RUN) python -m black --target-version py312 src/ tests/ scripts/ benchmarks/
 	$(RUN) python -m ruff check --fix src/ tests/ scripts/ benchmarks/
+
+train_low_level:
+	python scripts/train_low_level.py

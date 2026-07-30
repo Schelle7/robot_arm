@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 import numpy as np
 
+from robot_arm.pose import Pose
 from robot_arm.recorder import EpisodeRecorder
 from robot_arm.policies import WaypointPolicy, load_latest_low_level_policy
 from robot_arm.episode_runner import EpisodeRunner
@@ -37,19 +38,20 @@ def main(cfg: DictConfig):
     )
 
     # Define our manual waypoints for the sanity check
-    # 7D target: [x, y, z, roll, pitch, yaw, gripper]
-    # quaternion that is hopefully correct [0.5, -0.5, -0.5, 0.5]
-
-    # Standard neutral looking forward, gripper slightly open
-    wp_mid = np.array([0.25, 0.0, 0.20, 0.0, 0.0, 0.0, 0.3], dtype=np.float32)
+    # 10D target: [x, y, z, r1, r2, r3, r4, r5, r6, gripper]
+    # Neutral looking forward, gripper slightly open
+    wp_mid_pose = Pose.from_euler([0.25, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "xyz", False)
+    wp_mid = wp_mid_pose.as_10d()
+    
     # Reach forward 15cm
-    wp_front = np.array([0.40, 0.0, 0.20, 0.0, 0.0, 0.0, 0.3], dtype=np.float32)
+    wp_front_pose = Pose.from_euler([0.40, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "xyz", False)
+    wp_front = wp_front_pose.as_10d()
 
     # Sequence: Mid -> Front -> Mid -> Close gripper
     policy.waypoints = [wp_mid.copy(), wp_front.copy(), wp_mid.copy()]
     # Close gripper on the last waypoint
     wp_close = wp_mid.copy()
-    wp_close[6] = 0.05  # closed
+    wp_close[9] = 0.05  # closed
     policy.waypoints.append(wp_close)
 
     policy.current_wp_idx = 0
