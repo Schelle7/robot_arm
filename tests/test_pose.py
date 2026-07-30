@@ -25,6 +25,17 @@ def test_10d_roundtrip():
     # Test converting a from_10d pose back to 10D to check state mutation
     np.testing.assert_allclose(p_multi.as_10d(), p_multi_rt.as_10d(), atol=1e-5)
 
+def test_10d_uniqueness():
+    p1 = Pose.from_euler([0,0,0], [-np.pi/4, np.pi/4, np.pi/6], 0, "XYZ", False)
+    p2 = Pose.from_euler([0,0,0], [np.pi/4, np.pi/4, np.pi/6], 0, "XYZ", False)
+    p3 = Pose.from_euler([0,0,0], [0, np.pi/4, np.pi/6], 0, "XYZ", False)
+    
+    assert not np.allclose(p1.as_10d(), p2.as_10d())
+    assert not np.allclose(p1.as_10d(), p3.as_10d())
+    assert not np.allclose(p2.as_10d(), p3.as_10d())
+    print("All different")
+
 if __name__ == "__main__":
     test_10d_roundtrip()
+    test_10d_uniqueness()
     print("All roundtrip tests passed! Quaternions are perfectly preserved.")
