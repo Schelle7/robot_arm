@@ -38,6 +38,7 @@ def main(cfg: DictConfig):
 
     # Define our manual waypoints for the sanity check
     # 7D target: [x, y, z, roll, pitch, yaw, gripper]
+    # quaternion that is hopefully correct [0.5, -0.5, -0.5, 0.5]
 
     # Standard neutral looking forward, gripper slightly open
     wp_mid = np.array([0.25, 0.0, 0.20, 0.0, 0.0, 0.0, 0.3], dtype=np.float32)

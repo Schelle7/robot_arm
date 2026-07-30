@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict, Tuple
 
+from robot_arm.pose import Pose
 from robot_arm.backends.arm import Arm
 
 
@@ -45,12 +46,12 @@ class RobotEnv:
             dtype=np.float32,
         )
 
-    def get_privileged_end_effector_pose_7d(self) -> np.ndarray:
+    def get_privileged_end_effector_pose(self) -> Tuple[Pose, float]:
         if (
-            hasattr(self.arm, "get_end_effector_pose_7d")
+            hasattr(self.arm, "get_end_effector_pose")
             or hasattr(self.arm, "backend_arm")
             and hasattr(
-                self.arm.backend_arm, "get_end_effector_pose_7d_forward_kinematics"
+                self.arm.backend_arm, "get_end_effector_pose_forward_kinematics"
             )
         ):
             if (
@@ -58,12 +59,12 @@ class RobotEnv:
                 and type(self.arm.backend_arm).__name__ == "RealArm"
             ):
                 state_dict = self.arm.read_state()
-                return self.arm.backend_arm.get_end_effector_pose_7d_forward_kinematics(
+                return self.arm.backend_arm.get_end_effector_pose_forward_kinematics(
                     state_dict["Present_Position"]
                 )
             else:
-                return self.arm.get_end_effector_pose_7d()
-        raise NotImplementedError("Arm backend does not support 7d pose retrieval.")
+                return self.arm.get_end_effector_pose()
+        raise NotImplementedError("Arm backend does not support pose retrieval.")
 
     def _get_obs(self) -> Dict[str, np.ndarray]:
         state_dict = self.arm.read_state()
@@ -169,15 +170,20 @@ class RobotEnv:
         requested_action: Dict[str, float],
         safe_action: Dict[str, float],
         high_level_action: np.ndarray,
-        current_pose: np.ndarray,
-        chunk_start_pose: np.ndarray,
+        current_pose: Pose,
+        chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> float:
         try:
             # We map our current position relative to where the chunk started.
-            weighted_relative_pose = (
-                current_pose - chunk_start_pose
-            ) * self.pose_distance_weights
+            pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
+            
+            # Use 6D rotation for trajectory math
+            rot_diff_6d = (current_pose.as_6d() - chunk_start_pose.as_6d()) * self.pose_distance_weights[3:9]
+            
+            # Combine back into a weighted 9D (pos + 6D rot) array for path matching
+            weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d])
+            
             weighted_trajectory = high_level_action * self.pose_distance_weights
 
             closest_pt, seg_idx, t = self._get_closest_path_point(

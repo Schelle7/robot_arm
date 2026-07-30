@@ -91,7 +91,25 @@ def main(cfg: DictConfig):
         wp = wps[i]
         body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}")
         mocap_id = model.body_mocapid[body_id]
-        mdata.mocap_pos[mocap_id] = wp[:3]  # TODO the waypoint pos is completely broken maybe because orientation is completely being ignored?
+        mdata.mocap_pos[mocap_id] = wp[:3]
+        
+        # Convert Euler to Quaternion (assuming wp[3:6] contains roll, pitch, yaw)
+        roll, pitch, yaw = wp[3:6]
+        
+        cr = np.cos(roll * 0.5)
+        sr = np.sin(roll * 0.5)
+        cp = np.cos(pitch * 0.5)
+        sp = np.sin(pitch * 0.5)
+        cy = np.cos(yaw * 0.5)
+        sy = np.sin(yaw * 0.5)
+
+        q = np.empty(4, dtype=np.float64)
+        q[0] = cr * cp * cy + sr * sp * sy  # w
+        q[1] = sr * cp * cy - cr * sp * sy  # x
+        q[2] = cr * sp * cy + sr * cp * sy  # y
+        q[3] = cr * cp * sy - sr * sp * cy  # z
+        
+        mdata.mocap_quat[mocap_id] = q
 
     mujoco.mj_forward(model, mdata)
     

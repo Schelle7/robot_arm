@@ -1,8 +1,9 @@
-from typing import Dict
+from typing import Dict, Tuple
 import mujoco
 import numpy as np
 
 from robot_arm.backends.arm import Arm
+from robot_arm.pose import Pose
 from scipy.spatial.transform import Rotation
 
 
@@ -58,52 +59,34 @@ class SimBackend(Arm):
         return float(np.linalg.norm(self.moving_finger_tip - self.fixed_finger_tip))
 
     @property
-    def gripper_euler(self) -> np.ndarray:
+    def gripper_pose(self) -> Pose:
         site_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
         )
         rot_mat = self.data.site_xmat[site_id].copy()
 
-        # We can extract xyz directly with scipy if we dont want to write it out
-        from scipy.spatial.transform import Rotation
+        return Pose.from_matrix(self.tcp, rot_mat)
 
-        euler = Rotation.from_matrix(rot_mat.reshape(3, 3)).as_euler("xyz")
-
-        return euler.astype(np.float32)
-
-    def get_end_effector_pose_7d(self) -> np.ndarray:
-        # Get position of TCP
-        pos = self.tcp
-
-        # Get euler angles from the wrist
-        euler = self.gripper_euler
+    def get_end_effector_pose(self) -> Tuple[Pose, float]:
+        # Get position of TCP and rot from wrist
+        pose = self.gripper_pose
 
         # Aperture in radians from the servo itself
         qpos_idx = self.model.jnt_qposadr[self.joint_indices["gripper"]]
         gripper_radians = float(self.data.qpos[qpos_idx])
 
-        return np.array(
-            [pos[0], pos[1], pos[2], euler[0], euler[1], euler[2], gripper_radians],
-            dtype=np.float32,
-        )
+        return pose, gripper_radians
 
-    def get_privileged_box_pose_6d(self) -> np.ndarray:
+    def get_privileged_box_pose(self) -> Pose:
         # The box is defined as a body named "target_box" in scene.xml
         body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
         if body_id == -1:
             raise KeyError("Body 'target_box' not found in MuJoCo model.")
 
-        pos = self.data.xpos[body_id]
-
+        pos = self.data.xpos[body_id].copy()
         rot_mat = self.data.xmat[body_id].reshape(3, 3)
-        from scipy.spatial.transform import Rotation
-
-        euler = Rotation.from_matrix(rot_mat).as_euler("xyz")
-
-        return np.array(
-            [pos[0], pos[1], pos[2], euler[0], euler[1], euler[2]],
-            dtype=np.float32,
-        )
+        
+        return Pose.from_matrix(pos, rot_mat)
 
     def read_state(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel, ctrl (as a proxy for load) to our expected dictionary format

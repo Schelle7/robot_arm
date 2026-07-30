@@ -52,7 +52,7 @@ class EpisodeRunner:
         if generate_waypoints and hasattr(
             self.high_level_policy, "generate_grab_waypoints"
         ):
-            waypoint_kwargs["box_pose_6d"] = self.env.arm.get_privileged_box_pose_6d()
+            waypoint_kwargs["box_pose"] = self.env.arm.get_privileged_box_pose()
             self.high_level_policy.generate_grab_waypoints(**waypoint_kwargs)
 
         if self.cfg.draw_waypoints:
@@ -63,7 +63,7 @@ class EpisodeRunner:
             for step_idx in range(self.max_high_level_steps):
                 high_level_action = self.high_level_policy.get_action(
                     obs,
-                    privileged_end_effector_pose_7d=self.env.get_privileged_end_effector_pose_7d(),
+                    privileged_end_effector_pose=self.env.get_privileged_end_effector_pose(),
                     instruction=instruction,
                 )
 
@@ -71,11 +71,12 @@ class EpisodeRunner:
 
                 if self.recorder:
                     image = self.env.read_camera()
-                    pose = self.env.get_privileged_end_effector_pose_7d()
+                    pose_ee, gripper_state = self.env.get_privileged_end_effector_pose()
                     
                     info_dict = {
                         "image": image, 
-                        "privileged_end_effector_pose_7d": pose,
+                        "privileged_end_effector_pose": pose_ee,
+                        "gripper_state": gripper_state,
                         "high_level_action": high_level_action,
                     }
                     
@@ -111,7 +112,7 @@ class EpisodeRunner:
         # The env doesn't track this statefully anymore, we provide it.
         # It's hidden in the observation info block from either reset() or the last chunk loop.
         # Since _get_obs doesn't return info directly to run_chunk via arg, we get it here.
-        chunk_start_pose = self.env.get_privileged_end_effector_pose_7d()
+        chunk_start_pose_obj, _ = self.env.get_privileged_end_effector_pose()
 
         # Construct the first policy observation before entering the loop
         policy_obs = dict(raw_obs)
@@ -130,7 +131,7 @@ class EpisodeRunner:
 
             # Env returns physical state (raw_next_obs) plus step metrics
             raw_next_obs, reward = self.env.step(
-                low_level_action, high_level_action, chunk_start_pose, chunk_terminated
+                low_level_action, high_level_action, chunk_start_pose_obj, chunk_terminated
             )
 
             total_reward += reward
