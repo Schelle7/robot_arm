@@ -10,6 +10,26 @@ from robot_arm.policies import WaypointPolicy, load_latest_low_level_policy
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.factory import make_env
 
+def get_waypoint_list():
+    # Define our manual waypoints for a grabbing motion
+    # 10D target: [x, y, z, r1, r2, r3, r4, r5, r6, gripper]
+    # Neutral looking forward, gripper slightly open
+    wp_hover_pose = Pose.from_euler([0.25, 0.0, 0.20], [0, 0.0, 0.0], 0.3, "XYZ", False)
+    wp_hover = wp_hover_pose.as_10d()
+    
+    # Reach forward low, rotate wrist +45 deg (roll around X)
+    wp_reach_box_pose = Pose.from_euler([0.35, 0., 0.05], [np.pi/2, 0, 0], 1, "XYZ", False)
+    wp_reach_forward = wp_reach_box_pose.as_10d()
+
+    # Move right and up, rotate wrist -45 deg (roll around X)
+    wp_move_right_pose = Pose.from_euler([0.35, 0, 0.05], [np.pi/2, 0, 0], 0.3, "XYZ", False)
+    wp_move_right = wp_move_right_pose.as_10d()
+
+    # 4. Lift higher and closer to base: 15cm X (forward), 40cm Z (height)
+    wp_lift_pose = Pose.from_euler([0.45, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "XYZ", False)
+    wp_lift = wp_lift_pose.as_10d()
+
+    return [wp_hover.copy(), wp_reach_forward.copy(), wp_move_right.copy(), wp_lift.copy()]
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
@@ -37,22 +57,8 @@ def main(cfg: DictConfig):
         record_sim_state=cfg["record_sim_state"],
     )
 
-    # Define our manual waypoints for the sanity check
-    # 10D target: [x, y, z, r1, r2, r3, r4, r5, r6, gripper]
-    # Neutral looking forward, gripper slightly open
-    wp_mid_pose = Pose.from_euler([0.25, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "XYZ", False)
-    wp_mid = wp_mid_pose.as_10d()
-    
-    # Reach left, rotate wrist +45 deg (roll around X)
-    wp_left_pose = Pose.from_euler([0.25, 0.15, 0.20], [150, 0, 0], 0.3, "XYZ", False)
-    wp_left = wp_left_pose.as_10d()
-
-    # Reach right, rotate wrist -45 deg (roll around X)
-    wp_right_pose = Pose.from_euler([0.25, -0.15, 0.20], [-np.pi/4, 0, 0], 0.3, "XYZ", False)
-    wp_right = wp_right_pose.as_10d()
-
-    # Sequence: Mid -> Left (+45) -> Mid -> Right (-45)
-    policy.waypoints = [wp_mid.copy(), wp_left.copy(), wp_mid.copy(), wp_right.copy()]
+    # Sequence: Hover -> Reach Forward -> Move Right -> Lift
+    policy.waypoints = get_waypoint_list()
 
     policy.current_wp_idx = 0
 
