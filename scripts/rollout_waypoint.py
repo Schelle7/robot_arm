@@ -40,19 +40,19 @@ def main(cfg: DictConfig):
     # Define our manual waypoints for the sanity check
     # 10D target: [x, y, z, r1, r2, r3, r4, r5, r6, gripper]
     # Neutral looking forward, gripper slightly open
-    wp_mid_pose = Pose.from_euler([0.25, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "xyz", False)
+    wp_mid_pose = Pose.from_euler([0.25, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "XYZ", False)
     wp_mid = wp_mid_pose.as_10d()
     
-    # Reach forward 15cm
-    wp_front_pose = Pose.from_euler([0.40, 0.0, 0.20], [0.0, 0.0, 0.0], 0.3, "xyz", False)
-    wp_front = wp_front_pose.as_10d()
+    # Reach left, rotate wrist +45 deg (roll around X)
+    wp_left_pose = Pose.from_euler([0.25, 0.15, 0.20], [150, 0, 0], 0.3, "XYZ", False)
+    wp_left = wp_left_pose.as_10d()
 
-    # Sequence: Mid -> Front -> Mid -> Close gripper
-    policy.waypoints = [wp_mid.copy(), wp_front.copy(), wp_mid.copy()]
-    # Close gripper on the last waypoint
-    wp_close = wp_mid.copy()
-    wp_close[9] = 0.05  # closed
-    policy.waypoints.append(wp_close)
+    # Reach right, rotate wrist -45 deg (roll around X)
+    wp_right_pose = Pose.from_euler([0.25, -0.15, 0.20], [-np.pi/4, 0, 0], 0.3, "XYZ", False)
+    wp_right = wp_right_pose.as_10d()
+
+    # Sequence: Mid -> Left (+45) -> Mid -> Right (-45)
+    policy.waypoints = [wp_mid.copy(), wp_left.copy(), wp_mid.copy(), wp_right.copy()]
 
     policy.current_wp_idx = 0
 

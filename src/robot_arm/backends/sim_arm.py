@@ -184,7 +184,7 @@ class SimBackend(Arm):
 
     def draw_waypoints(self, waypoints: np.ndarray):
         """
-        Takes up to 4 waypoints of shape [x, y, z, roll, pitch, yaw, gripper]
+        Takes up to 4 waypoints of 10D arrays
         and updates the 'ghost_wp_X' mocap models to visualize them.
         Lines ('ghost_line_X') are drawn between them.
         """
@@ -192,6 +192,8 @@ class SimBackend(Arm):
 
         for i in range(num_wp):
             wp = waypoints[i]
+            pose = Pose.from_10d(wp)
+            
             body_id = mujoco.mj_name2id(
                 self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}"
             )
@@ -200,17 +202,15 @@ class SimBackend(Arm):
                     f"Body 'ghost_wp_{i}' not found in MuJoCo model. Ensure ghost_waypoints.xml is included."
                 )
             mocap_id = self.model.body_mocapid[body_id]
-            self.data.mocap_pos[mocap_id] = wp[:3]
-            self.data.mocap_quat[mocap_id] = Rotation.from_euler(
-                "xyz", wp[3:6]
-            ).as_quat()[
-                [3, 0, 1, 2]
-            ]  # wxyz
+            self.data.mocap_pos[mocap_id] = pose.position
+            self.data.mocap_quat[mocap_id] = pose.as_mujoco_quat()
 
         # Draw cylinders between waypoints
         for i in range(num_wp - 1):
-            p1 = waypoints[i][:3]
-            p2 = waypoints[i + 1][:3]
+            p1_pose = Pose.from_10d(waypoints[i])
+            p2_pose = Pose.from_10d(waypoints[i + 1])
+            p1 = p1_pose.position
+            p2 = p2_pose.position
 
             line_body_id = mujoco.mj_name2id(
                 self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_line_{i}"
@@ -262,7 +262,7 @@ class SimBackend(Arm):
                         ],
                     ]
                 )
-                quat = Rotation.from_matrix(rot_mat).as_quat()[[3, 0, 1, 2]]
+                quat = Pose.from_matrix(midpoint, rot_mat, 1.0).as_mujoco_quat()
                 self.data.mocap_quat[mocap_id] = quat
 
             # Update geom length (size is [radius, half-length])

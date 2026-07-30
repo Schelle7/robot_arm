@@ -179,7 +179,7 @@ class RobotEnv:
             pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
             
             # Use 6D rotation for trajectory math
-            rot_diff_6d = (current_pose.as_6d() - chunk_start_pose.as_6d()) * self.pose_distance_weights[3:9]
+            rot_diff_6d = (current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()) * self.pose_distance_weights[3:9]
             
             gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
             
