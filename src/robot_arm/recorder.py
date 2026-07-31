@@ -33,9 +33,7 @@ class EpisodeRecorder:
         """
         Record the raw waypoints provided by the high level policy layout.
         """
-        self.waypoints = (
-            waypoints.copy()
-        )
+        self.waypoints = waypoints.copy()
 
     def record_high_level(
         self,
@@ -63,11 +61,11 @@ class EpisodeRecorder:
             "reward": float(reward),
             "dense_trajectory": self.dense_trajectory_buffer.copy(),
         }
-        
+
         if self.record_sim_state:
             frame_data["qpos"] = info["sim_state"]["qpos"].copy()
             frame_data["qvel"] = info["sim_state"]["qvel"].copy()
-            
+
         self.frames.append(frame_data)
         self.dense_trajectory_buffer.clear()
 
@@ -141,10 +139,14 @@ class EpisodeRecorder:
                 [f["dense_trajectory"] for f in self.frames], dtype=object
             ),
         }
-        
+
         if self.record_sim_state:
-            data_dict["qpos"] = np.array([f["qpos"] for f in self.frames], dtype=np.float32)
-            data_dict["qvel"] = np.array([f["qvel"] for f in self.frames], dtype=np.float32)
+            data_dict["qpos"] = np.array(
+                [f["qpos"] for f in self.frames], dtype=np.float32
+            )
+            data_dict["qvel"] = np.array(
+                [f["qvel"] for f in self.frames], dtype=np.float32
+            )
 
         if self.waypoints:
             data_dict["waypoints"] = self.waypoints

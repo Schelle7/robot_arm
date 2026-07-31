@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict
 import mujoco
 import numpy as np
 
@@ -85,8 +85,10 @@ class SimBackend(Arm):
 
         pos = self.data.xpos[body_id].copy()
         rot_mat = self.data.xmat[body_id].reshape(3, 3)
-        
-        return Pose.from_matrix(pos, rot_mat, 1.0)  # pose with gripper info is a bit weird but ok for now
+
+        return Pose.from_matrix(
+            pos, rot_mat, 1.0
+        )  # pose with gripper info is a bit weird but ok for now
 
     def read_state(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel, ctrl (as a proxy for load) to our expected dictionary format
@@ -119,7 +121,7 @@ class SimBackend(Arm):
 
         state["sim_state"] = {
             "qpos": self.data.qpos.copy(),
-            "qvel": self.data.qvel.copy()
+            "qvel": self.data.qvel.copy(),
         }
 
         return state
@@ -193,7 +195,7 @@ class SimBackend(Arm):
         for i in range(num_wp):
             wp = waypoints[i]
             pose = Pose.from_10d(wp)
-            
+
             body_id = mujoco.mj_name2id(
                 self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}"
             )

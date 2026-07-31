@@ -175,9 +175,7 @@ class RobotEnv:
         current_deviation = self._compute_path_deviation(
             weighted_relative_pose, closest_pt
         )
-        current_progress = self._compute_path_progress(
-            weighted_trajectory, seg_idx, t
-        )
+        current_progress = self._compute_path_progress(weighted_trajectory, seg_idx, t)
 
         # Improvement math
         dev_reward = self.previous_deviation - current_deviation
@@ -199,7 +197,10 @@ class RobotEnv:
         return safety_penalty
 
     def _compute_termination_penalty(
-        self, chunk_terminated: bool, weighted_relative_pose: np.ndarray, weighted_trajectory: np.ndarray
+        self,
+        chunk_terminated: bool,
+        weighted_relative_pose: np.ndarray,
+        weighted_trajectory: np.ndarray,
     ) -> float:
         termination_penalty = 0.0
         if chunk_terminated:
@@ -220,16 +221,23 @@ class RobotEnv:
         chunk_terminated: bool,
     ) -> Tuple[float, Dict[str, float]]:
         # We map our current position relative to where the chunk started.
-        pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
-        
+        pos_diff = (
+            current_pose.position - chunk_start_pose.position
+        ) * self.pose_distance_weights[:3]
+
         # Use 6D rotation for trajectory math
-        rot_diff_6d = (current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()) * self.pose_distance_weights[3:9]
-        
-        gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
-        
+        rot_diff_6d = (
+            current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()
+        ) * self.pose_distance_weights[3:9]
+
+        gripper_diff = (
+            np.array([current_pose.gripper - chunk_start_pose.gripper])
+            * self.pose_distance_weights[9:]
+        )
+
         # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
         weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
-        
+
         weighted_trajectory = high_level_action * self.pose_distance_weights
 
         dev_reward, prog_reward = self._compute_tracking_rewards(
@@ -241,8 +249,10 @@ class RobotEnv:
         termination_penalty = self._compute_termination_penalty(
             chunk_terminated, weighted_relative_pose, weighted_trajectory
         )
-        
-        total_reward = float(dev_reward + prog_reward + safety_penalty + termination_penalty)
+
+        total_reward = float(
+            dev_reward + prog_reward + safety_penalty + termination_penalty
+        )
         reward_breakdown = {
             "dev_reward": dev_reward,
             "prog_reward": prog_reward,

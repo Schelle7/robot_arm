@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from omegaconf import DictConfig
 from typing import Dict
 
@@ -75,13 +76,13 @@ class EpisodeRunner:
                 if self.recorder:
                     image = self.env.read_camera()
                     pose_ee = self.env.get_privileged_end_effector_pose()
-                    
+
                     info_dict = {
-                        "image": image, 
+                        "image": image,
                         "privileged_end_effector_pose": pose_ee,
                         "high_level_action": high_level_action,
                     }
-                    
+
                     if self.cfg["record_sim_state"]:
                         info_dict["sim_state"] = self.env.arm.read_state()["sim_state"]
 
@@ -123,7 +124,7 @@ class EpisodeRunner:
         policy_obs["time_left"] = np.array([self.chunk_size], dtype=np.float32)
 
         total_reward = 0.0
-        
+
         if self.cfg.training.detailed_metrics:
             chunk_dev_rewards = []
             chunk_prog_rewards = []
@@ -139,16 +140,21 @@ class EpisodeRunner:
 
             # Env returns physical state (raw_next_obs) plus step metrics
             raw_next_obs, reward, reward_breakdown = self.env.step(
-                low_level_action, high_level_action, chunk_start_pose_obj, chunk_terminated
+                low_level_action,
+                high_level_action,
+                chunk_start_pose_obj,
+                chunk_terminated,
             )
 
             total_reward += reward
-            
+
             if self.cfg.training.detailed_metrics:
                 chunk_dev_rewards.append(reward_breakdown["dev_reward"])
                 chunk_prog_rewards.append(reward_breakdown["prog_reward"])
                 chunk_safety_penalties.append(reward_breakdown["safety_penalty"])
-                chunk_termination_penalties.append(reward_breakdown["termination_penalty"])
+                chunk_termination_penalties.append(
+                    reward_breakdown["termination_penalty"]
+                )
 
             # Construct the next policy observation for the RL transition and next step
             next_policy_obs = dict(raw_next_obs)
@@ -184,7 +190,7 @@ class EpisodeRunner:
         # Return physical state for the next high-level policy inference
         if self.training and self.metrics_queue:
             detailed_metrics = {"total_reward": total_reward}
-            
+
             if self.cfg.training.detailed_metrics:
                 detailed_metrics["dev_reward"] = chunk_dev_rewards
                 detailed_metrics["prog_reward"] = chunk_prog_rewards
@@ -192,5 +198,5 @@ class EpisodeRunner:
                 detailed_metrics["termination_penalty"] = chunk_termination_penalties
 
             self.metrics_queue.add(detailed_metrics)
-            
+
         return raw_next_obs, total_reward

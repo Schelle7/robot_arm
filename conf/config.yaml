@@ -47,6 +47,7 @@ pose_distance_weights: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0]
 # Training parameters for the low-level SAC controller
 training:
   detailed_metrics: true
+  sync_weights_every_n_chunks: 10
   total_training_steps: 30000
   learning_rate: 0.0003
   buffer_size: 100000
