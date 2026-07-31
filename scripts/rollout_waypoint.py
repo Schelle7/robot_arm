@@ -34,7 +34,7 @@ def get_waypoint_list():
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     # Setup Policy
-    instruction = "Sanity check: Initial pose, move front, move back."
+    task = "Sanity check: Initial pose, move front, move back."
 
     # Initialize a WaypointPolicy
     policy = WaypointPolicy(
@@ -51,10 +51,8 @@ def main(cfg: DictConfig):
 
     recorder = EpisodeRecorder(
         output_dir=output_dir,
-        jpeg_quality=cfg.camera.jpeg_quality,
-        chunk_size=cfg.frequencies.low_level // cfg.frequencies.high_level,
+        cfg=cfg,
         episode_name="waypoint_sanity_check",
-        record_sim_state=cfg["record_sim_state"],
     )
 
     # Sequence: Hover -> Reach Forward -> Move Right -> Lift
@@ -76,7 +74,7 @@ def main(cfg: DictConfig):
     # Execute
     # No generate_waypoints=True for the sanity check, we supply our own
     runner.run_episode(
-        instruction=instruction,
+        task=task,
         generate_waypoints=False,
     )
 

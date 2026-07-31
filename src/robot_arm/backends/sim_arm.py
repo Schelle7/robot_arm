@@ -108,10 +108,10 @@ class SimBackend(Arm):
             # We divide by a nominal stall torque (e.g., 2.0 N-m for STS3215) to get a pseudo-percentage.
             # Clip between -1.0 and 1.0 to match hardware behavior.
 
-            # TODO use
+            # todo use
             # raw_force = float(self.data.actuator_force[actuator_idx])
             state["Present_Load"][name] = 0  # max(-1.0, min(1.0, raw_force / 2.0))
-            # TODO decide some sensible strategy how to do this in simulation
+            # todo decide some sensible strategy how to do this in simulation
             # read a bit about it.
 
             state["Present_Voltage"][name] = 12.0
@@ -239,30 +239,9 @@ class SimBackend(Arm):
                 # Default cylinder acts along Z (0, 0, 1)
                 # We compute quaternion that maps (0,0,1) to vec
                 z_axis = np.array([0, 0, 1])
-                v = np.cross(z_axis, vec)
-                c = np.dot(z_axis, vec)
-                k = 1.0 / (1.0 + c)
+                rot, _ = Rotation.align_vectors([vec], [z_axis])
 
-                rot_mat = np.array(
-                    [
-                        [
-                            v[0] * v[0] * k + c,
-                            v[0] * v[1] * k - v[2],
-                            v[0] * v[2] * k + v[1],
-                        ],
-                        [
-                            v[1] * v[0] * k + v[2],
-                            v[1] * v[1] * k + c,
-                            v[1] * v[2] * k - v[0],
-                        ],
-                        [
-                            v[2] * v[0] * k - v[1],
-                            v[2] * v[1] * k + v[0],
-                            v[2] * v[2] * k + c,
-                        ],
-                    ]
-                )
-                quat = Pose.from_matrix(midpoint, rot_mat, 1.0).as_mujoco_quat()
+                quat = Pose(midpoint, rot, 1.0).as_mujoco_quat()
                 self.data.mocap_quat[mocap_id] = quat
 
             # Update geom length (size is [radius, half-length])

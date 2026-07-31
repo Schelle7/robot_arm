@@ -11,10 +11,9 @@ from robot_arm.runner import execute_episode
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     # Setup Policy
-    instruction = "Grip the red box."
+    task = "Grip the red box."
 
     # Initialize the high-level policy wrapper
-    # TODO instead load a version that outputs 7 dim vectors
     policy = SmolVLAPolicyWrapper()
 
     # Load the latest trained low-level RL model
@@ -26,10 +25,8 @@ def main(cfg: DictConfig):
 
     recorder = EpisodeRecorder(
         output_dir=output_dir,
-        jpeg_quality=cfg.camera.jpeg_quality,
-        chunk_size=cfg.frequencies.low_level // cfg.frequencies.high_level,
+        cfg=cfg,
         episode_name="vla_run_01",
-        record_sim_state=cfg["record_sim_state"],
     )
 
     # Execute
@@ -38,7 +35,7 @@ def main(cfg: DictConfig):
         policy=policy,
         low_level_policy=low_level_policy,
         recorder=recorder,
-        instruction=instruction,
+        task=task,
         generate_waypoints=False,
     )
 

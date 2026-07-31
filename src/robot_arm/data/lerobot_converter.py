@@ -117,7 +117,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
             action_raw = data["high_level_action"][frame_idx + 1]
             action = torch.tensor(action_raw, dtype=torch.float32)
 
-            task_instruction = str(data["instruction"][frame_idx])
+            task = str(data["task"][frame_idx])
 
             # Add frame to the dataset
             dataset.add_frame(
@@ -125,7 +125,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
                     "observation.images.camera1": img,
                     "observation.state": state,
                     "action": action,
-                    "task": task_instruction,  # TODO update my custom recording instead /name it task there instead of instruction)
+                    "task": task,
                 }
             )
 

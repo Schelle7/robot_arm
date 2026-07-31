@@ -17,7 +17,7 @@ hardware:
   port: "/dev/ttyACM0"
   calibration_id: "my_follower"
 
-max_seconds: 20
+max_seconds: 2
 
 # Camera resolution
 camera:
@@ -46,6 +46,7 @@ pose_distance_weights: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0]
 
 # Training parameters for the low-level SAC controller
 training:
+  detailed_metrics: true
   total_training_steps: 30000
   learning_rate: 0.0003
   buffer_size: 100000

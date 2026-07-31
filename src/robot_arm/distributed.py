@@ -1,4 +1,5 @@
 import math
+import queue
 import numpy as np
 import os
 import torch
@@ -8,6 +9,7 @@ import gymnasium
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 from stable_baselines3 import SAC
+from torch.utils.tensorboard import SummaryWriter
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
@@ -71,12 +73,21 @@ class TransitionQueueBuffer:
             self.q.put(self.chunk)
             self.chunk = []
 
-    # EpisodeRunner uses `is not None` logic, meaning it expects truthy checking to pass
-    def __bool__(self):
-        return True
+class MetricsQueueBuffer:
+    def __init__(self, q):
+        self.q = q
+        self.chunk_metrics = []
+
+    def add(self, metric_dict):
+        self.chunk_metrics.append(metric_dict)
+
+    def flush(self):
+        if len(self.chunk_metrics) > 0:
+            self.q.put(self.chunk_metrics)
+            self.chunk_metrics = []
 
 
-def worker_process(worker_id, cfg, transition_queue, chunk_reward_queue, weights_dict_server):
+def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_dict_server):
     """
     Subprocess isolated execution: Initializes env, runner, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
@@ -98,6 +109,7 @@ def worker_process(worker_id, cfg, transition_queue, chunk_reward_queue, weights
     )
 
     worker_transition_buffer = TransitionQueueBuffer(transition_queue)
+    worker_metrics_buffer = MetricsQueueBuffer(metrics_queue)
 
     runner = EpisodeRunner(
         cfg=cfg,
@@ -107,7 +119,7 @@ def worker_process(worker_id, cfg, transition_queue, chunk_reward_queue, weights
         training=True,
         recorder=None,
         replay_buffer=worker_transition_buffer,
-        chunk_reward_queue=chunk_reward_queue,
+        chunk_reward_queue=worker_metrics_buffer,
     )
 
     # Continuous episodes loop
@@ -120,7 +132,7 @@ def worker_process(worker_id, cfg, transition_queue, chunk_reward_queue, weights
 
         # Runner natively collects, chunks, calls policies, and populates `worker_transition_buffer` via `.add()`
         runner.run_episode(
-            instruction="grab the box",
+            task="grab the box",
             generate_waypoints=True,
             lift_height=cfg.training.lift_height,
             gripper_open=cfg.training.gripper_open,
@@ -129,7 +141,86 @@ def worker_process(worker_id, cfg, transition_queue, chunk_reward_queue, weights
 
         # Batch ship all collected physics steps to the central learner
         worker_transition_buffer.flush()
+        worker_metrics_buffer.flush()
 
+
+def _log_metrics(metrics_queue, writer, logging_step):
+    # Drain up to 10 reward batches per loop iteration to avoid starvation
+    for _ in range(10):
+        try:
+            chunk_metrics = metrics_queue.get_nowait()
+        except queue.Empty:
+            break
+        for metrics_dict in chunk_metrics:
+            for key, val in metrics_dict.items():
+                if isinstance(val, list):
+                    # Write the mean if it's a detailed array, to avoid tensorboard clutter
+                    if len(val) > 0:
+                        writer.add_scalars(
+                            f"rollout_detailed/{key}",
+                            {
+                                "mean": sum(val) / len(val),
+                                "max": max(val),
+                                "min": min(val),
+                            },
+                            logging_step,
+                        )
+                else:
+                    writer.add_scalar(f"rollout/{key}", val, logging_step)
+            logging_step += 1
+    writer.flush()
+    return logging_step
+
+def _add_transition_and_train(chunk, model, sac_training_step, weights_dict_server, save_checkpoint):
+    for t_obs, t_next_obs, t_action, t_reward, t_done in chunk:
+        # empty dict is info field. done is passed as string to represent terminated
+        model.replay_buffer.add(
+            t_obs, t_next_obs, t_action, t_reward, t_done, [{}]
+        )
+        sac_training_step += 1
+
+        # 3. Perform learning identically to how SB3 behaves
+        if (
+            sac_training_step > model.learning_starts
+            and sac_training_step % model.train_freq.frequency == 0
+        ):
+            model.train(
+                gradient_steps=model.gradient_steps, batch_size=model.batch_size
+            )
+
+            if sac_training_step % 1000 == 0:
+                model.logger.dump(step=sac_training_step)
+
+                # Sync weights occasionally during heavy training (safely to CPU)
+                cpu_state_dict = {
+                    k: v.cpu() for k, v in model.policy.state_dict().items()
+                }
+                weights_dict_server["weights"] = cpu_state_dict
+
+    # Intermediate saving logic equivalent
+    if sac_training_step % 10000 == 0:
+        save_checkpoint(f"step_{sac_training_step}")
+        
+    return sac_training_step
+
+def _training_loop(target_total_steps, metrics_queue, transition_queue, model, weights_dict_server, save_checkpoint, writer):
+    sac_training_step = 0
+    logging_step = 0
+    try:
+        while sac_training_step < target_total_steps:
+            logging_step = _log_metrics(metrics_queue, writer, logging_step)
+
+            # 1. Blocks until worker chunks arrive
+            chunk = transition_queue.get()
+
+            sac_training_step = _add_transition_and_train(
+                chunk, model, sac_training_step, weights_dict_server, save_checkpoint
+            )
+            
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt, shutting down workers...")
+        
+    return sac_training_step
 
 def run_distributed_training(cfg: DictConfig, device: torch.device):
     """
@@ -151,7 +242,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
 
     weights_dict_server = mp.Manager().dict()
     transition_queue = mp.Queue(maxsize=1000)
-    chunk_reward_queue = mp.Queue(maxsize=1000)
+    metrics_queue = mp.Queue(maxsize=1000)
 
     # 1. Main Learner Model Setup
     dummy_env_for_sac = DummySpaceEnv(cfg)
@@ -187,11 +278,14 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     weights_dict_server["weights"] = model.policy.to("cpu").state_dict()
     model.policy.to(device)
 
+    # Initialize Tensorboard writer inside the output directory
+    writer = SummaryWriter(log_dir=hydra_cfg.runtime.output_dir)
+
     # 3. Spawn Workers
     workers = []
     for i in range(num_workers):
         p = mp.Process(
-            target=worker_process, args=(i, cfg, transition_queue, chunk_reward_queue, weights_dict_server)
+            target=worker_process, args=(i, cfg, transition_queue, metrics_queue, weights_dict_server)
         )
         p.daemon = True
         p.start()
@@ -199,57 +293,14 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
 
     log.info("Starting central learning loop...")
 
-    global_step = 0
     target_total_steps = cfg.training.total_training_steps
 
-    try:
-        while global_step < target_total_steps:
-            # Drain up to 100 rewards per loop iteration to avoid starvation
-            # for _ in range(3):
-            #     if chunk_reward_queue.empty():
-            #         break
-            #     try:
-            #         c_reward = chunk_reward_queue.get_nowait()
-            #         model.logger.record("rollout/ep_rew_mean", c_reward)
-            #     except Exception:
-            #         break
+    sac_training_step = _training_loop(
+        target_total_steps, metrics_queue, transition_queue, model, weights_dict_server, save_checkpoint, writer
+    )
 
-            # 1. Blocks until worker chunks arrive
-            chunk = transition_queue.get()
+    save_checkpoint(f"final_{sac_training_step}")
 
-            # 2. Add raw transitions to central buffer
-            for t_obs, t_next_obs, t_action, t_reward, t_done in chunk:
-                model.replay_buffer.add(
-                    t_obs, t_next_obs, t_action, t_reward, t_done, [{}]
-                )
-                global_step += 1
-
-                # 3. Perform learning identically to how SB3 behaves
-                if (
-                    global_step > model.learning_starts
-                    and global_step % model.train_freq.frequency == 0
-                ):
-                    model.train(
-                        gradient_steps=model.gradient_steps, batch_size=model.batch_size
-                    )
-
-                    if global_step % 1000 == 0:
-                        model.logger.dump(step=global_step)
-
-                        # Sync weights occasionally during heavy training (safely to CPU)
-                        cpu_state_dict = {
-                            k: v.cpu() for k, v in model.policy.state_dict().items()
-                        }
-                        weights_dict_server["weights"] = cpu_state_dict
-
-            # Intermediate saving logic equivalent
-            if global_step % 10000 == 0:
-                save_checkpoint(f"step_{global_step}")
-
-    except KeyboardInterrupt:
-        log.info("Keyboard interrupt, shutting down workers...")
-
-    save_checkpoint(f"final_{global_step}")
-
+    writer.close()
     for w in workers:
         w.terminate()

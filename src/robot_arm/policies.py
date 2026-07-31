@@ -1,3 +1,6 @@
+import os
+import glob
+from stable_baselines3 import SAC
 from abc import ABC, abstractmethod
 from typing import Dict, Optional, Any
 import numpy as np
@@ -15,10 +18,10 @@ class Policy(ABC):
         self,
         obs: Dict[str, np.ndarray],
         info: Dict[str, Any],
-        instruction: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> np.ndarray:
         """
-        Given the current observation, privileged info, and optional language instruction, output an action.
+        Given the current observation, privileged info, and optional language task, output an action.
         """
         pass
 
@@ -46,7 +49,7 @@ class SmolVLAPolicyWrapper(Policy):
         self,
         obs: Dict[str, np.ndarray],
         info: Dict[str, Any],
-        instruction: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> np.ndarray:
         import torch
 
@@ -58,8 +61,8 @@ class SmolVLAPolicyWrapper(Policy):
             "observation.state": obs["joint_positions"].astype(np.float32),
             "observation.images.camera1": img_chw,
         }
-        if instruction is not None:
-            raw_obs["task"] = instruction
+        if task is not None:
+            raw_obs["task"] = task
 
         with torch.inference_mode():
             # Add batch dim manually as preprocessor expects it
@@ -72,7 +75,7 @@ class SmolVLAPolicyWrapper(Policy):
                 for k, v in raw_obs.items()
             }
 
-            # Preprocess (tokenizes instruction, normalizes images/state, sends to device)
+            # Preprocess (tokenizes task, normalizes images/state, sends to device)
             processed_batch = self.preprocessor(batch)
 
             # Action selection
@@ -134,7 +137,7 @@ class WaypointPolicy(Policy):
         self,
         obs: Dict[str, np.ndarray],
         privileged_end_effector_pose: Pose,
-        instruction: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> np.ndarray:
         current_flat = privileged_end_effector_pose.as_10d()
         
@@ -142,7 +145,8 @@ class WaypointPolicy(Policy):
 
         # If we exhausted waypoints, just stay where we are (zero deltas)
         if self.current_wp_idx >= len(self.waypoints):
-            return chunk  # TODO I might wan to make this an error instead
+            print("WARNING waypoints exhausted")
+            return chunk
 
         target = self.waypoints[self.current_wp_idx]
         diff = target - current_flat
@@ -173,11 +177,6 @@ def load_latest_low_level_policy():
     Loads the most recent low-level SAC policy from the outputs/ directory.
     Searches the directory structure for the newest final checkpoint.
     """
-    # TODO I might have to check the cfgs match in the relevant fields
-    import os
-    import glob
-    from stable_baselines3 import SAC
-
     outputs_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../..", "outputs")
     )

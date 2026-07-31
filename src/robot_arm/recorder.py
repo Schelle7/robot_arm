@@ -14,17 +14,15 @@ class EpisodeRecorder:
     def __init__(
         self,
         output_dir: str,
-        jpeg_quality: int,
-        chunk_size: int,
+        cfg: Any,
         episode_name: str,
-        record_sim_state: bool,
     ):
         self.output_dir = output_dir
         self.episode_dir = os.path.join(output_dir, episode_name)
         self.images_dir = os.path.join(self.episode_dir, "images")
-        self.jpeg_quality = jpeg_quality
-        self.chunk_size = chunk_size
-        self.record_sim_state = record_sim_state
+        self.jpeg_quality = cfg.camera.jpeg_quality
+        self.chunk_size = cfg.frequencies.low_level // cfg.frequencies.high_level
+        self.record_sim_state = cfg["record_sim_state"]
         self.frames: List[Dict[str, Any]] = []
         self.dense_trajectory_buffer: List[Dict[str, Any]] = []
         self.waypoints = None
@@ -45,7 +43,7 @@ class EpisodeRecorder:
         obs: Dict[str, np.ndarray],
         reward: float,
         info: Dict[str, Any],
-        instruction: str = "",
+        task: str = "",
     ):
         """
         Record a single transition step in the environment.
@@ -55,7 +53,7 @@ class EpisodeRecorder:
         # Buffer numeric state
         frame_data = {
             "step": step_idx,
-            "instruction": instruction,
+            "task": task,
             "image_path": image_path,
             "joint_positions": obs["joint_positions"].copy(),
             "privileged_end_effector_pose": info[
@@ -126,7 +124,7 @@ class EpisodeRecorder:
 
         data_dict = {
             "step": np.array([f["step"] for f in self.frames], dtype=np.int32),
-            "instruction": np.array([f["instruction"] for f in self.frames], dtype=str),
+            "task": np.array([f["task"] for f in self.frames], dtype=str),
             "image_path": np.array([f["image_path"] for f in self.frames], dtype=str),
             "joint_positions": np.array(
                 [f["joint_positions"] for f in self.frames], dtype=np.float32

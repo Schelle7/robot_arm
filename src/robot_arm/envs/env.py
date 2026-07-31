@@ -165,29 +165,9 @@ class RobotEnv:
 
         return float(past_progress + current_progress)
 
-    def compute_reward(
-        self,
-        requested_action: Dict[str, float],
-        safe_action: Dict[str, float],
-        high_level_action: np.ndarray,
-        current_pose: Pose,
-        chunk_start_pose: Pose,
-        chunk_terminated: bool,
-    ) -> float:
-        # try:
-        # We map our current position relative to where the chunk started.
-        pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
-        
-        # Use 6D rotation for trajectory math
-        rot_diff_6d = (current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()) * self.pose_distance_weights[3:9]
-        
-        gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
-        
-        # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
-        weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
-        
-        weighted_trajectory = high_level_action * self.pose_distance_weights
-
+    def _compute_tracking_rewards(
+        self, weighted_relative_pose: np.ndarray, weighted_trajectory: np.ndarray
+    ) -> Tuple[float, float]:
         closest_pt, seg_idx, t = self._get_closest_path_point(
             weighted_relative_pose, weighted_trajectory
         )
@@ -206,31 +186,71 @@ class RobotEnv:
         self.previous_deviation = current_deviation
         self.previous_progress = current_progress
 
-        # Safety penalty
+        return dev_reward, prog_reward
+
+    def _compute_safety_penalty(
+        self, requested_action: Dict[str, float], safe_action: Dict[str, float]
+    ) -> float:
         safety_penalty = 0.0
         for motor in requested_action:
             diff = abs(requested_action[motor] - safe_action[motor])
             if diff > 0:
                 safety_penalty -= diff * self.violation_penalty_factor
+        return safety_penalty
 
-        # Massive distance penalty if the chunk fully terminates and we are far from the end
+    def _compute_termination_penalty(
+        self, chunk_terminated: bool, weighted_relative_pose: np.ndarray, weighted_trajectory: np.ndarray
+    ) -> float:
         termination_penalty = 0.0
         if chunk_terminated:
-            # The final pose in the VLA trajectory is the absolute goal for this chunk
-            # In relative space, this is simply the final element compared to relative current pose.
             final_target_relative = weighted_trajectory[-1]
             end_distance = np.linalg.norm(
                 final_target_relative - weighted_relative_pose
             )
-            # Penalize remaining distance failure
             termination_penalty = -float(end_distance)
+        return termination_penalty
 
-        return float(
-            dev_reward + prog_reward + safety_penalty + termination_penalty
+    def compute_reward(
+        self,
+        requested_action: Dict[str, float],
+        safe_action: Dict[str, float],
+        high_level_action: np.ndarray,
+        current_pose: Pose,
+        chunk_start_pose: Pose,
+        chunk_terminated: bool,
+    ) -> Tuple[float, Dict[str, float]]:
+        # We map our current position relative to where the chunk started.
+        pos_diff = (current_pose.position - chunk_start_pose.position) * self.pose_distance_weights[:3]
+        
+        # Use 6D rotation for trajectory math
+        rot_diff_6d = (current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()) * self.pose_distance_weights[3:9]
+        
+        gripper_diff = np.array([current_pose.gripper - chunk_start_pose.gripper]) * self.pose_distance_weights[9:]
+        
+        # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
+        weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
+        
+        weighted_trajectory = high_level_action * self.pose_distance_weights
+
+        dev_reward, prog_reward = self._compute_tracking_rewards(
+            weighted_relative_pose, weighted_trajectory
         )
 
-        # except NotImplementedError:
-        #     return np.nan
+        safety_penalty = self._compute_safety_penalty(requested_action, safe_action)
+
+        termination_penalty = self._compute_termination_penalty(
+            chunk_terminated, weighted_relative_pose, weighted_trajectory
+        )
+        
+        total_reward = float(dev_reward + prog_reward + safety_penalty + termination_penalty)
+        reward_breakdown = {
+            "dev_reward": dev_reward,
+            "prog_reward": prog_reward,
+            "safety_penalty": safety_penalty,
+            "termination_penalty": termination_penalty,
+        }
+
+        return total_reward, reward_breakdown
 
     def step(
         self,
@@ -238,7 +258,7 @@ class RobotEnv:
         high_level_action: np.ndarray,
         privileged_chunk_start_pose: Pose,
         chunk_terminated: bool,
-    ) -> Tuple[Dict[str, np.ndarray], float]:
+    ) -> Tuple[Dict[str, np.ndarray], float, Dict[str, float]]:
 
         # 1. Unscale delta action and add to current joint angles
         delta = action * self.delta_action_scale
@@ -255,7 +275,7 @@ class RobotEnv:
         # 4. Get new observation
         obs = self._get_obs()
 
-        reward = self.compute_reward(
+        reward, reward_breakdown = self.compute_reward(
             requested_action=action_dict,
             safe_action=safe_action_dict,
             high_level_action=high_level_action,
@@ -264,4 +284,4 @@ class RobotEnv:
             chunk_terminated=chunk_terminated,
         )
 
-        return obs, reward
+        return obs, reward, reward_breakdown

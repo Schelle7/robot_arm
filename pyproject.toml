@@ -16,6 +16,7 @@ dependencies = [
     "stable-baselines3",
     "hydra-core",
     "torch",
+    "tensorboard",
     "scipy",
     "black",
     "ruff"

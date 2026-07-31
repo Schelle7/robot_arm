@@ -152,7 +152,7 @@ most orientation stuff does work now.
 
 
 I want to make it more unlikely for things to fail.
-I think I should have a python code bit taht writes the gripeprs and ghost gripeprs with a starting joint pos and then inserts them at the right spot.
+I think I should have a python code bit that writes the grippers and ghost grippers with a starting joint pos and then inserts them at the right spot.
 I think that would be a helpful thing to do.
 
 
@@ -161,6 +161,37 @@ And then make it more complicated again later on when basic things are working?
 
 I could also add dots for the relative position that the high level policy tries to achieve.
 we might have to multiply the deltas to make them visible.
+
+
+fix the awfully slow new logging.
+
+
+get the reward to work, such that I get an actually sensible rollout for once
+Then attempt a deploy on the robot again.
+
+
+then log everything relevant.
+each specific reward.
+
+
+learning does not happen at all
+the reward is always pretty much identical.
+many possible reasons for that.
+
+The policy could not proeprly laod back into the agent.
+the reward structure might be broken.
+
+how often should I load a new policy?
+every chunk?
+Might be too much overhead.
+for now I could do a low level frequency that is the same as the high level frequency.
+That shouldm be easier for getting a policy to elarn and also for debugging.
+
+maybe config every n chunks?
+
+
+I should properly split the configs into parts
+
 
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)
