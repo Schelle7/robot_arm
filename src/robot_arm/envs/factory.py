@@ -1,4 +1,3 @@
-import numpy as np
 import logging
 from omegaconf import DictConfig
 
@@ -48,9 +47,9 @@ def make_env(cfg: DictConfig):
     )
     env = RobotEnv(
         arm=safe_backend,
-        pose_distance_weights=np.array(cfg.pose_distance_weights, dtype=np.float32),
         delta_action_scale=cfg.training.waypoint_speed / cfg.frequencies.low_level,
         violation_penalty_factor=cfg.safety.violation_penalty_factor,
         low_level_hz=cfg.frequencies.low_level,
+        cfg=cfg,
     )
     return env

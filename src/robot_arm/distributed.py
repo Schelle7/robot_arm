@@ -73,6 +73,7 @@ class TransitionQueueBuffer:
             self.q.put(self.chunk)
             self.chunk = []
 
+
 class MetricsQueueBuffer:
     def __init__(self, q):
         self.q = q
@@ -87,7 +88,7 @@ class MetricsQueueBuffer:
             self.chunk_metrics = []
 
 
-def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_dict_server):
+def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_queue):
     """
     Subprocess isolated execution: Initializes env, runner, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
@@ -119,13 +120,14 @@ def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_dict
         training=True,
         recorder=None,
         replay_buffer=worker_transition_buffer,
-        chunk_reward_queue=worker_metrics_buffer,
+        metrics_queue=worker_metrics_buffer,
+        weights_queue=weights_queue,
     )
 
     # Continuous episodes loop
     while True:
         # Sync weights before episode starts safely via the encapsulated runner policy
-        runner.low_level_policy.policy.load_state_dict(weights_dict_server["weights"])
+        runner._sync_weights()
 
         # We must extract the simulated box pose directly from the env driver
         # to feed the waypoint generator, because we deleted info mappings in reset.
@@ -171,12 +173,13 @@ def _log_metrics(metrics_queue, writer, logging_step):
     writer.flush()
     return logging_step
 
-def _add_transition_and_train(chunk, model, sac_training_step, weights_dict_server, save_checkpoint):
+
+def _add_transition_and_train(
+    chunk, model, sac_training_step, worker_queues, save_checkpoint
+):
     for t_obs, t_next_obs, t_action, t_reward, t_done in chunk:
         # empty dict is info field. done is passed as string to represent terminated
-        model.replay_buffer.add(
-            t_obs, t_next_obs, t_action, t_reward, t_done, [{}]
-        )
+        model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done, [{}])
         sac_training_step += 1
 
         # 3. Perform learning identically to how SB3 behaves
@@ -195,15 +198,31 @@ def _add_transition_and_train(chunk, model, sac_training_step, weights_dict_serv
                 cpu_state_dict = {
                     k: v.cpu() for k, v in model.policy.state_dict().items()
                 }
-                weights_dict_server["weights"] = cpu_state_dict
+                for wq in worker_queues:  # TODO this whole thing seems pretty blocking
+                    try:
+                        # Clear old weights if the worker hasn't read them yet
+                        while True:
+                            wq.get_nowait()
+                    except queue.Empty:
+                        pass
+                    wq.put(cpu_state_dict)
 
     # Intermediate saving logic equivalent
     if sac_training_step % 10000 == 0:
         save_checkpoint(f"step_{sac_training_step}")
-        
+
     return sac_training_step
 
-def _training_loop(target_total_steps, metrics_queue, transition_queue, model, weights_dict_server, save_checkpoint, writer):
+
+def _training_loop(
+    target_total_steps,
+    metrics_queue,
+    transition_queue,
+    model,
+    worker_queues,
+    save_checkpoint,
+    writer,
+):
     sac_training_step = 0
     logging_step = 0
     try:
@@ -214,13 +233,14 @@ def _training_loop(target_total_steps, metrics_queue, transition_queue, model, w
             chunk = transition_queue.get()
 
             sac_training_step = _add_transition_and_train(
-                chunk, model, sac_training_step, weights_dict_server, save_checkpoint
+                chunk, model, sac_training_step, worker_queues, save_checkpoint
             )
-            
+
     except KeyboardInterrupt:
         log.info("Keyboard interrupt, shutting down workers...")
-        
+
     return sac_training_step
+
 
 def run_distributed_training(cfg: DictConfig, device: torch.device):
     """
@@ -240,7 +260,6 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     # Set parallel method to spawn (required for torch/CUDA safety in multiprocessing)
     mp.set_start_method("spawn", force=True)
 
-    weights_dict_server = mp.Manager().dict()
     transition_queue = mp.Queue(maxsize=1000)
     metrics_queue = mp.Queue(maxsize=1000)
 
@@ -274,18 +293,22 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
         os.makedirs(output_dir, exist_ok=True)
         model.save(os.path.join(output_dir, f"sac_manual_step_{step_name}"))
 
-    # Initial weights sync (must happen before spawning workers)
-    weights_dict_server["weights"] = model.policy.to("cpu").state_dict()
-    model.policy.to(device)
-
     # Initialize Tensorboard writer inside the output directory
     writer = SummaryWriter(log_dir=hydra_cfg.runtime.output_dir)
+
+    # Individual weight broadcast queues for workers
+    worker_queues = [mp.Queue(maxsize=1) for _ in range(num_workers)]
+    initial_weights = model.policy.to("cpu").state_dict()
+    model.policy.to(device)
+    for wq in worker_queues:
+        wq.put(initial_weights)
 
     # 3. Spawn Workers
     workers = []
     for i in range(num_workers):
         p = mp.Process(
-            target=worker_process, args=(i, cfg, transition_queue, metrics_queue, weights_dict_server)
+            target=worker_process,
+            args=(i, cfg, transition_queue, metrics_queue, worker_queues[i]),
         )
         p.daemon = True
         p.start()
@@ -296,7 +319,13 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     target_total_steps = cfg.training.total_training_steps
 
     sac_training_step = _training_loop(
-        target_total_steps, metrics_queue, transition_queue, model, weights_dict_server, save_checkpoint, writer
+        target_total_steps,
+        metrics_queue,
+        transition_queue,
+        model,
+        worker_queues,
+        save_checkpoint,
+        writer,
     )
 
     save_checkpoint(f"final_{sac_training_step}")

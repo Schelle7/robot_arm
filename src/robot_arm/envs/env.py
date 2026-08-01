@@ -1,5 +1,7 @@
 import numpy as np
 from typing import Dict, Tuple
+from omegaconf import DictConfig
+from scipy.spatial.transform import Rotation
 
 from robot_arm.pose import Pose
 from robot_arm.backends.arm import Arm
@@ -13,17 +15,29 @@ class RobotEnv:
     def __init__(
         self,
         arm: Arm,
-        pose_distance_weights: np.ndarray,
         delta_action_scale: float,
         violation_penalty_factor: float,
         low_level_hz: int,
+        cfg: DictConfig,
     ):
         self.arm = arm
         self.delta_action_scale = delta_action_scale
         self.violation_penalty_factor = violation_penalty_factor
         self.low_level_hz = low_level_hz
+        self.tracking_deviation_enabled = cfg.reward.tracking.deviation
+        self.tracking_progress_enabled = cfg.reward.tracking.progress
+        self.safety_penalty_enabled = cfg.reward.safety_penalty
+        self.termination_penalty_enabled = cfg.reward.termination_penalty
 
-        self.pose_distance_weights = np.array(pose_distance_weights, dtype=np.float32)
+        self.position_distance_weights = np.array(
+            cfg.pose_weights.position, dtype=np.float32
+        )
+        self.rotation_distance_weights = np.array(
+            cfg.pose_weights.rotation, dtype=np.float32
+        )
+        self.gripper_distance_weights = np.array(
+            cfg.pose_weights.gripper, dtype=np.float32
+        )
 
         # Hardcoding the ordered list of motors to ensure deterministic vectorization
         self.motor_order = [
@@ -68,7 +82,10 @@ class RobotEnv:
 
     def _get_obs(self) -> Dict[str, np.ndarray]:
         state_dict = self.arm.read_state()
-        current_pos = self.current_joint_angles
+        current_pos = np.array(
+            [state_dict["Present_Position"][m] for m in self.motor_order],
+            dtype=np.float32,
+        )
         current_vel = np.array(
             [state_dict["Present_Velocity"][m] for m in self.motor_order],
             dtype=np.float32,
@@ -107,7 +124,7 @@ class RobotEnv:
         """
         if path.shape[0] < 2:
             raise ValueError(
-                "Path must contain at least 2 waypoints to define progressing segments."
+                "Delta path must contain at least one predicted delta."
             )
 
         # Segment start points (A) and end points (B)
@@ -125,10 +142,6 @@ class RobotEnv:
         t = np.einsum("ij,ij->i", AP, AB) / ab_sq_safe
 
         t_clipped = np.clip(t, 0.0, 1.0)
-        t_clipped[0] = min(t[0], 1.0)  # allow negatives on the first segment
-        # the cliiping might prove to be problematic
-        # the whole path reward might be problematic.
-        # maybe a more complicated progress tracking is required, like deleting reached segments.
 
         closest_points = A + t_clipped[:, np.newaxis] * AB
         distances = np.linalg.norm(current_point - closest_points, axis=1)
@@ -165,26 +178,95 @@ class RobotEnv:
 
         return float(past_progress + current_progress)
 
+    def _compute_relative_rotation_vectors(
+        self, absolute_rotations_6d: np.ndarray, chunk_start_pose: Pose
+    ) -> np.ndarray:
+        # TODO should probably read this again when I am not tired.
+        # luna wrote this stuff and it seemed convincing enough to keep.
+        first_columns = absolute_rotations_6d[:, :3]
+        second_columns = absolute_rotations_6d[:, 3:]
+
+        first_columns = first_columns / np.linalg.norm(
+            first_columns, axis=1, keepdims=True
+        )
+        second_columns = second_columns - np.sum(
+            first_columns * second_columns, axis=1, keepdims=True
+        ) * first_columns
+        second_columns = second_columns / np.linalg.norm(
+            second_columns, axis=1, keepdims=True
+        )
+        third_columns = np.cross(first_columns, second_columns)
+        matrices = np.stack(
+            [first_columns, second_columns, third_columns], axis=2
+        )
+
+        absolute_rotations = Rotation.from_matrix(matrices)
+        relative_rotations = chunk_start_pose.rotation.inv() * absolute_rotations
+        return relative_rotations.as_rotvec().astype(np.float32)
+
+    def _compute_weighted_pose_delta_and_path(
+        self,
+        current_pose: Pose,
+        chunk_start_pose: Pose,
+        high_level_action: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        pos_diff = (
+            current_pose.position - chunk_start_pose.position
+        ) * self.position_distance_weights
+
+        current_relative_rotation = (
+            chunk_start_pose.rotation.inv() * current_pose.rotation
+        )
+        rotation_delta = current_relative_rotation.as_rotvec().astype(np.float32)
+
+        gripper_diff = (
+            np.array([current_pose.gripper - chunk_start_pose.gripper])
+            * self.gripper_distance_weights
+        )
+
+        weighted_pose_delta = np.concatenate(
+            [pos_diff, rotation_delta * self.rotation_distance_weights, gripper_diff]
+        )
+        # Each row is an absolute pose delta from the chunk start, not an increment.
+        absolute_rotations_6d = (
+            chunk_start_pose.as_rot_6d()[np.newaxis, :] + high_level_action[:, 3:9]
+        )
+        rotation_delta_path = self._compute_relative_rotation_vectors(
+            absolute_rotations_6d, chunk_start_pose
+        )
+        weighted_delta_path = np.concatenate(
+            [
+                high_level_action[:, :3] * self.position_distance_weights,
+                rotation_delta_path * self.rotation_distance_weights,
+                high_level_action[:, 9:] * self.gripper_distance_weights,
+            ],
+            axis=1,
+        )
+        zero_delta = np.zeros((1, weighted_delta_path.shape[1]), dtype=np.float32)
+        weighted_delta_path = np.concatenate(
+            [zero_delta, weighted_delta_path], axis=0
+        )
+
+        return weighted_pose_delta, weighted_delta_path
+
     def _compute_tracking_rewards(
-        self, weighted_relative_pose: np.ndarray, weighted_trajectory: np.ndarray
-    ) -> Tuple[float, float]:
+        self,
+        weighted_pose_delta: np.ndarray,
+        weighted_delta_path: np.ndarray,
+    ) -> Tuple[float, float, float, float]:
         closest_pt, seg_idx, t = self._get_closest_path_point(
-            weighted_relative_pose, weighted_trajectory
+            weighted_pose_delta, weighted_delta_path
         )
 
         current_deviation = self._compute_path_deviation(
-            weighted_relative_pose, closest_pt
+            weighted_pose_delta, closest_pt
         )
-        current_progress = self._compute_path_progress(weighted_trajectory, seg_idx, t)
+        current_progress = self._compute_path_progress(weighted_delta_path, seg_idx, t)
 
-        # Improvement math
         dev_reward = self.previous_deviation - current_deviation
         prog_reward = current_progress - self.previous_progress
 
-        self.previous_deviation = current_deviation
-        self.previous_progress = current_progress
-
-        return dev_reward, prog_reward
+        return dev_reward, prog_reward, current_deviation, current_progress
 
     def _compute_safety_penalty(
         self, requested_action: Dict[str, float], safe_action: Dict[str, float]
@@ -199,14 +281,14 @@ class RobotEnv:
     def _compute_termination_penalty(
         self,
         chunk_terminated: bool,
-        weighted_relative_pose: np.ndarray,
-        weighted_trajectory: np.ndarray,
+        weighted_pose_delta: np.ndarray,
+        weighted_delta_path: np.ndarray,
     ) -> float:
         termination_penalty = 0.0
         if chunk_terminated:
-            final_target_relative = weighted_trajectory[-1]
+            final_target_delta = weighted_delta_path[-1]
             end_distance = np.linalg.norm(
-                final_target_relative - weighted_relative_pose
+                final_target_delta - weighted_pose_delta
             )
             termination_penalty = -float(end_distance)
         return termination_penalty
@@ -220,45 +302,40 @@ class RobotEnv:
         chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> Tuple[float, Dict[str, float]]:
-        # We map our current position relative to where the chunk started.
-        pos_diff = (
-            current_pose.position - chunk_start_pose.position
-        ) * self.pose_distance_weights[:3]
-
-        # Use 6D rotation for trajectory math
-        rot_diff_6d = (
-            current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()
-        ) * self.pose_distance_weights[3:9]
-
-        gripper_diff = (
-            np.array([current_pose.gripper - chunk_start_pose.gripper])
-            * self.pose_distance_weights[9:]
+        weighted_pose_delta, weighted_delta_path = (
+            self._compute_weighted_pose_delta_and_path(
+                current_pose, chunk_start_pose, high_level_action
+            )
         )
 
-        # Combine back into a weighted 10D (pos + 6D rot + 1 Grip) array for path matching
-        weighted_relative_pose = np.concatenate([pos_diff, rot_diff_6d, gripper_diff])
-
-        weighted_trajectory = high_level_action * self.pose_distance_weights
-
-        dev_reward, prog_reward = self._compute_tracking_rewards(
-            weighted_relative_pose, weighted_trajectory
+        (
+            dev_reward,
+            prog_reward,
+            current_deviation,
+            current_progress,
+        ) = self._compute_tracking_rewards(
+            weighted_pose_delta, weighted_delta_path
         )
+        self.previous_deviation = current_deviation
+        self.previous_progress = current_progress
 
         safety_penalty = self._compute_safety_penalty(requested_action, safe_action)
 
         termination_penalty = self._compute_termination_penalty(
-            chunk_terminated, weighted_relative_pose, weighted_trajectory
+            chunk_terminated, weighted_pose_delta, weighted_delta_path
         )
 
-        total_reward = float(
-            dev_reward + prog_reward + safety_penalty + termination_penalty
-        )
-        reward_breakdown = {
-            "dev_reward": dev_reward,
-            "prog_reward": prog_reward,
-            "safety_penalty": safety_penalty,
-            "termination_penalty": termination_penalty,
-        }
+        reward_breakdown = {}
+        if self.tracking_deviation_enabled:
+            reward_breakdown["dev_reward"] = dev_reward
+        if self.tracking_progress_enabled:
+            reward_breakdown["prog_reward"] = prog_reward
+        if self.safety_penalty_enabled:
+            reward_breakdown["safety_penalty"] = safety_penalty
+        if self.termination_penalty_enabled:
+            reward_breakdown["termination_penalty"] = termination_penalty
+
+        total_reward = float(sum(reward_breakdown.values()))
 
         return total_reward, reward_breakdown
 

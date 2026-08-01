@@ -193,5 +193,31 @@ maybe config every n chunks?
 I should properly split the configs into parts
 
 
+
+I have far better logging now.
+The loading new weights probably works.
+I should maybe add a how often new weights were loaded statistic?
+And a check new weights != old weights?
+
+
+
+make reward and observation swappable modules.
+that allows for proper testing
+
+
+
+Feed a fixed small lookahead window (e.g. next 3–5 waypoints relative to current pose)
+but a bit questionale with time remaining, Im not sure yet.
+
+
+
+Unit tests for _get_closest_path_point with synthetic paths you can compute by hand: straight line, right-angle corner, and one deliberately self-intersecting path (to document current known-broken behavior rather than silently ship it).
+
+When VLA-generated paths are introduced, they may self-intersect or pass close to earlier segments, so path following must stop relying on global nearest-segment selection and track progress sequentially.
+
+
+
+
+
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)

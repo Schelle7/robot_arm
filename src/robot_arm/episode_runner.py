@@ -1,5 +1,5 @@
 import numpy as np
-import torch
+import queue
 from omegaconf import DictConfig
 from typing import Dict
 
@@ -23,8 +23,9 @@ class EpisodeRunner:
         high_level_policy: Policy,
         training: bool,
         recorder: EpisodeRecorder,
-        replay_buffer=None,
-        metrics_queue=None,
+        replay_buffer,
+        metrics_queue,
+        weights_queue,
     ):
         high_level_hz = cfg.frequencies.high_level
         low_level_hz = cfg.frequencies.low_level
@@ -43,13 +44,12 @@ class EpisodeRunner:
         self.replay_buffer = replay_buffer
         self.metrics_queue = metrics_queue
         self.cfg = cfg
+        self.weights_queue = weights_queue
 
         self.max_high_level_steps = int(cfg.max_seconds * high_level_hz)
         self.episode_low_level_step = 0
 
-    def run_episode(
-        self, task: str, generate_waypoints: bool, **waypoint_kwargs
-    ):
+    def run_episode(self, task: str, generate_waypoints: bool, **waypoint_kwargs):
         obs = self.env.reset()
 
         if generate_waypoints and hasattr(
@@ -102,6 +102,20 @@ class EpisodeRunner:
         finally:
             if self.recorder:
                 self.recorder.save()
+
+    def _sync_weights(self):
+        policy_weights = None  # mistake waiting to happen
+        try:
+            # Drain queue to get the absolute newest weights
+            while True:
+                policy_weights = self.weights_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        if policy_weights:
+            # maybe I can add a check?
+            # that it really is new data, and that it gets executed
+            self.low_level_policy.policy.load_state_dict(policy_weights)
 
     def run_chunk(
         self, raw_obs: Dict[str, np.ndarray], high_level_action: np.ndarray
