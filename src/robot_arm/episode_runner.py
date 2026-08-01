@@ -140,10 +140,7 @@ class EpisodeRunner:
         total_reward = 0.0
 
         if self.cfg.training.detailed_metrics:
-            chunk_dev_rewards = []
-            chunk_prog_rewards = []
-            chunk_safety_penalties = []
-            chunk_termination_penalties = []
+            chunk_reward_metrics = {}
 
         for chunk_step in range(self.chunk_size):
             low_level_action, _ = self.low_level_policy.predict(
@@ -163,12 +160,10 @@ class EpisodeRunner:
             total_reward += reward
 
             if self.cfg.training.detailed_metrics:
-                chunk_dev_rewards.append(reward_breakdown["dev_reward"])
-                chunk_prog_rewards.append(reward_breakdown["prog_reward"])
-                chunk_safety_penalties.append(reward_breakdown["safety_penalty"])
-                chunk_termination_penalties.append(
-                    reward_breakdown["termination_penalty"]
-                )
+                for key, value in reward_breakdown.items():
+                    if key not in chunk_reward_metrics:
+                        chunk_reward_metrics[key] = []
+                    chunk_reward_metrics[key].append(value)
 
             # Construct the next policy observation for the RL transition and next step
             next_policy_obs = dict(raw_next_obs)
@@ -206,10 +201,7 @@ class EpisodeRunner:
             detailed_metrics = {"total_reward": total_reward}
 
             if self.cfg.training.detailed_metrics:
-                detailed_metrics["dev_reward"] = chunk_dev_rewards
-                detailed_metrics["prog_reward"] = chunk_prog_rewards
-                detailed_metrics["safety_penalty"] = chunk_safety_penalties
-                detailed_metrics["termination_penalty"] = chunk_termination_penalties
+                detailed_metrics.update(chunk_reward_metrics)
 
             self.metrics_queue.add(detailed_metrics)
 

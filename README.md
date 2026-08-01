@@ -216,6 +216,8 @@ Unit tests for _get_closest_path_point with synthetic paths you can compute by h
 When VLA-generated paths are introduced, they may self-intersect or pass close to earlier segments, so path following must stop relying on global nearest-segment selection and track progress sequentially.
 
 
+consider using a custom policy (not mlp)
+but for sequence / path understanding something different to keep focus on all parts.
 
 
 

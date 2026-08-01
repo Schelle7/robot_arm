@@ -2,9 +2,9 @@ def pytest_addoption(parser):
     parser.addoption(
         "--port",
         action="store",
-        required=True,
+        default=None,
         help="Serial port to the robot, e.g. /dev/ttyACM0",
     )
     parser.addoption(
-        "--id", action="store", required=True, help="Calibration ID, e.g. my_follower"
+        "--id", action="store", default=None, help="Calibration ID, e.g. my_follower"
     )

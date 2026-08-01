@@ -15,9 +15,12 @@ TOLERANCES = {
 @pytest.fixture
 def bus(pytestconfig):
     port = pytestconfig.getoption("port")
-    id_ = pytestconfig.getoption("id")
+    calibration_id = pytestconfig.getoption("id")
 
-    follower = SO101Follower(SO101FollowerConfig(port=port, id=id_))
+    if port is None or calibration_id is None:
+        pytest.fail("Hardware test requires both --port and --id")
+
+    follower = SO101Follower(SO101FollowerConfig(port=port, id=calibration_id))
     follower.connect(calibrate=False)
     yield follower.bus
     follower.disconnect()
