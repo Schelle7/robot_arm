@@ -1,6 +1,7 @@
 import abc
 from typing import Dict
 import numpy as np
+from robot_arm.pose import Pose
 
 
 class Arm(abc.ABC):
@@ -24,6 +25,12 @@ class Arm(abc.ABC):
         Raises NotImplementedError if the backend cannot compute this.
         """
         pass
+
+    def get_tcp_pose(self) -> Pose:
+        raise NotImplementedError("Arm backend does not expose a TCP pose.")
+
+    def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError("Arm backend does not expose TCP axes.")
 
     @abc.abstractmethod
     def disconnect(self):

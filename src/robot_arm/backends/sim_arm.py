@@ -20,6 +20,8 @@ class SimBackend(Arm):
         self.data = mujoco.MjData(self.model)
 
         self.renderer = mujoco.Renderer(self.model, height=height, width=width)
+        self.camera_scene_option = mujoco.MjvOption()
+        self.camera_scene_option.geomgroup[5] = 0
 
         # Build explicit mappings for actuator and joint indices
         self.actuator_indices = {
@@ -59,7 +61,7 @@ class SimBackend(Arm):
         return float(np.linalg.norm(self.moving_finger_tip - self.fixed_finger_tip))
 
     @property
-    def gripper_pose(self) -> Pose:
+    def mujoco_hand_pose(self) -> Pose:
         site_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
         )
@@ -71,11 +73,14 @@ class SimBackend(Arm):
 
         return Pose.from_matrix(self.tcp, rot_mat, gripper_radians)
 
-    def get_end_effector_pose(self) -> Pose:
-        # Get position of TCP and rot from wrist
-        pose = self.gripper_pose
-
-        return pose
+    def get_tcp_pose(self) -> Pose:
+        closing, secondary = self.get_tcp_axes()
+        return Pose.from_tcp_axes(
+            self.tcp,
+            closing,
+            secondary,
+            self.mujoco_hand_pose().gripper,
+        )
 
     def get_privileged_box_pose(self) -> Pose:
         # The box is defined as a body named "target_box" in scene.xml
@@ -181,8 +186,56 @@ class SimBackend(Arm):
         mujoco.mj_forward(self.model, self.data)
 
     def read_camera(self) -> np.ndarray:
-        self.renderer.update_scene(self.data, camera="pixel_cam")
+        self.renderer.update_scene(
+            self.data, camera="pixel_cam", scene_option=self.camera_scene_option
+        )
         return self.renderer.render()
+
+    def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
+        fixed = self.fixed_finger_tip
+        moving = self.moving_finger_tip
+        closing = fixed - moving
+        closing = closing / np.linalg.norm(closing)
+
+        site_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
+        )
+        frame = self.data.site_xmat[site_id].reshape(3, 3)
+        secondary = frame[:, 1]
+        secondary = secondary - np.dot(secondary, closing) * closing
+        secondary = secondary / np.linalg.norm(secondary)
+
+        return closing, secondary
+
+    def draw_tcp(self):
+        """Draw the live finger axes without affecting physics or camera images."""
+        fixed = self.fixed_finger_tip
+        moving = self.moving_finger_tip
+        closing, secondary = self.get_tcp_axes()
+        closing_length = np.linalg.norm(fixed - moving)
+
+        self._draw_debug_arrow(
+            "debug_actual_closing", (fixed + moving) / 2, closing, closing_length
+        )
+        self._draw_debug_arrow(
+            "debug_actual_secondary", (fixed + moving) / 2, secondary, 0.09
+        )
+
+    def _draw_debug_arrow(
+        self, body_name: str, origin: np.ndarray, direction: np.ndarray, length: float
+    ):
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+        mocap_id = self.model.body_mocapid[body_id]
+        self.data.mocap_pos[mocap_id] = origin + direction * length / 2
+        rotation, _ = Rotation.align_vectors([direction], [[0, 0, 1]])
+        rotation_matrix = rotation.as_matrix()
+        self.data.mocap_quat[mocap_id] = Pose(
+            origin,
+            rotation,
+            0.0,
+            rotation_matrix[:, 0],
+            rotation_matrix[:, 1],
+        ).as_mujoco_quat()
 
     def draw_waypoints(self, waypoints: np.ndarray):
         """
@@ -243,7 +296,14 @@ class SimBackend(Arm):
                 z_axis = np.array([0, 0, 1])
                 rot, _ = Rotation.align_vectors([vec], [z_axis])
 
-                quat = Pose(midpoint, rot, 1.0).as_mujoco_quat()
+                rotation_matrix = rot.as_matrix()
+                quat = Pose(
+                    midpoint,
+                    rot,
+                    1.0,
+                    rotation_matrix[:, 0],
+                    rotation_matrix[:, 1],
+                ).as_mujoco_quat()
                 self.data.mocap_quat[mocap_id] = quat
 
             # Update geom length (size is [radius, half-length])

@@ -10,10 +10,16 @@ def make_env() -> RobotEnv:
     env.tracking_progress_enabled = True
     env.safety_penalty_enabled = True
     env.termination_penalty_enabled = True
+    env.pose_delta_diagnostics_enabled = False
+    env.position_distance_weight = 1.0
+    env.rotation_primary_distance_weight = 1.0
+    env.rotation_secondary_distance_weight = 1.0
+    env.gripper_distance_weight = 1.0
     env.violation_penalty_factor = 10.0
-    env.position_distance_weights = np.ones(3, dtype=np.float32)
-    env.rotation_distance_weights = np.ones(3, dtype=np.float32)
-    env.gripper_distance_weights = np.ones(1, dtype=np.float32)
+    env.position_distance_weight = 1.0
+    env.rotation_primary_distance_weight = 1.0
+    env.rotation_secondary_distance_weight = 1.0
+    env.gripper_distance_weight = 1.0
     env.previous_deviation = 0.0
     env.previous_progress = 0.0
     return env
@@ -88,46 +94,42 @@ def test_rotation_reward_uses_three_dimensional_rotation_vector():
     env = make_env()
     chunk_start_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
     current_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, np.pi / 2])
-    high_level_action = np.zeros((1, 10), dtype=np.float32)
-    high_level_action[0, 3:9] = current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()
+    high_level_delta_action = np.zeros((1, 7), dtype=np.float32)
+    high_level_delta_action[0, 3:6] = [0.0, 0.0, np.pi / 2]
 
     weighted_pose_delta, weighted_delta_path = (
         env._compute_weighted_pose_delta_and_path(
-            current_pose, chunk_start_pose, high_level_action
+            current_pose, chunk_start_pose, high_level_delta_action
         )
     )
 
     np.testing.assert_allclose(weighted_pose_delta[:3], [0.0, 0.0, 0.0])
-    np.testing.assert_allclose(
-        np.linalg.norm(weighted_pose_delta[3:6]), np.pi / 2, atol=1e-6
-    )
-    assert weighted_pose_delta.shape == (7,)
-    assert weighted_delta_path.shape == (2, 7)
-    np.testing.assert_allclose(weighted_delta_path[0], np.zeros(7))
-    np.testing.assert_allclose(
-        np.linalg.norm(weighted_delta_path[1, 3:6]), np.pi / 2, atol=1e-6
-    )
+    np.testing.assert_allclose(weighted_pose_delta[3], np.pi / 2, atol=1e-6)
+    np.testing.assert_allclose(weighted_pose_delta[4], np.pi / 2, atol=1e-6)
+    assert weighted_pose_delta.shape == (6,)
+    assert weighted_delta_path.shape == (2, 6)
+    np.testing.assert_allclose(weighted_delta_path[0], np.zeros(6))
+    np.testing.assert_allclose(weighted_delta_path[1, 3], np.pi / 2, atol=1e-6)
+    np.testing.assert_allclose(weighted_delta_path[1, 4], np.pi / 2, atol=1e-6)
 
 
-def test_rotation_reward_handles_180_degree_rotation():
+def test_rotation_reward_handles_180_degree_twist():
     env = make_env()
     chunk_start_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
     current_pose = make_pose([0.0, 0.0, 0.0], [np.pi, 0.0, 0.0])
-    high_level_action = np.zeros((1, 10), dtype=np.float32)
-    high_level_action[0, 3:9] = current_pose.as_rot_6d() - chunk_start_pose.as_rot_6d()
+    high_level_delta_action = np.zeros((1, 7), dtype=np.float32)
+    high_level_delta_action[0, 3:6] = [np.pi, 0.0, 0.0]
 
     weighted_pose_delta, weighted_delta_path = (
         env._compute_weighted_pose_delta_and_path(
-            current_pose, chunk_start_pose, high_level_action
+            current_pose, chunk_start_pose, high_level_delta_action
         )
     )
 
-    np.testing.assert_allclose(
-        np.linalg.norm(weighted_pose_delta[3:6]), np.pi, atol=1e-6
-    )
-    np.testing.assert_allclose(
-        np.linalg.norm(weighted_delta_path[1, 3:6]), np.pi, atol=1e-6
-    )
+    np.testing.assert_allclose(weighted_pose_delta[3], 0.0, atol=1e-6)
+    np.testing.assert_allclose(weighted_pose_delta[4], np.pi, atol=1e-6)
+    np.testing.assert_allclose(weighted_delta_path[1, 3], 0.0, atol=1e-6)
+    np.testing.assert_allclose(weighted_delta_path[1, 4], np.pi, atol=1e-6)
 
 
 def test_compute_reward_filters_disabled_components_and_sums_breakdown():
@@ -136,14 +138,14 @@ def test_compute_reward_filters_disabled_components_and_sums_breakdown():
     env.tracking_progress_enabled = False
     env.termination_penalty_enabled = False
     chunk_start_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-    high_level_action = np.zeros((1, 10), dtype=np.float32)
+    high_level_delta_action = np.zeros((1, 7), dtype=np.float32)
     requested_action = {"motor": 1.0}
     safe_action = {"motor": 0.5}
 
     reward, breakdown = env.compute_reward(
         requested_action,
         safe_action,
-        high_level_action,
+        high_level_delta_action,
         chunk_start_pose,
         chunk_start_pose,
         chunk_terminated=False,
@@ -158,12 +160,12 @@ def test_compute_reward_updates_tracking_state_after_calculation():
     env = make_env()
     chunk_start_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
     current_pose = make_pose([0.5, 0.5, 0.0], [0.0, 0.0, 0.0])
-    high_level_action = np.zeros((1, 10), dtype=np.float32)
+    high_level_delta_action = np.zeros((1, 7), dtype=np.float32)
 
     env.compute_reward(
         {},
         {},
-        high_level_action,
+        high_level_delta_action,
         current_pose,
         chunk_start_pose,
         chunk_terminated=False,

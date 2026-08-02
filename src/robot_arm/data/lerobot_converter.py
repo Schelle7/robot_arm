@@ -114,7 +114,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
             )
 
             # Action t (the action decided after seeing state t, recorded in frame t+1's metadata)
-            action_raw = data["high_level_action"][frame_idx + 1]
+            action_raw = data["high_level_delta_action"][frame_idx + 1]
             action = torch.tensor(action_raw, dtype=torch.float32)
 
             task = str(data["task"][frame_idx])

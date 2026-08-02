@@ -143,15 +143,24 @@ class WaypointPolicy(Policy):
     ) -> np.ndarray:
         current_flat = privileged_end_effector_pose.as_10d()
 
-        chunk = np.zeros((self.chunk_size, 10), dtype=np.float32)
+        chunk = np.zeros((self.chunk_size, 7), dtype=np.float32)
 
         # If we exhausted waypoints, just stay where we are (zero deltas)
         if self.current_wp_idx >= len(self.waypoints):
             print("WARNING waypoints exhausted")
             return chunk
 
-        target = self.waypoints[self.current_wp_idx]
-        diff = target - current_flat
+        target = Pose.from_10d(self.waypoints[self.current_wp_idx])
+        target_rotation_delta = (
+            privileged_end_effector_pose.rotation.inv() * target.rotation
+        ).as_rotvec()
+        diff = np.concatenate(
+            [
+                target.position - privileged_end_effector_pose.position,
+                target_rotation_delta,
+                [target.gripper - privileged_end_effector_pose.gripper],
+            ]
+        )
         dist = np.linalg.norm(diff)
 
         # Determine the speed of this entire chunk

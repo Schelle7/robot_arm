@@ -150,6 +150,8 @@ The reward and the path following logic is highly questionable whether it works 
 still on debugging the orientation stuff.
 most orientation stuff does work now.
 
+For grasping, represent the target as a 3D grasp position plus the gripper closing direction, leaving rotation around that direction free. In principle the robot can choose either sign of the closing direction, but initially use one fixed convention to simplify IK, waypoint generation, and smooth motion. Later, allow both signs and select the feasible branch with the best approach path and joint-limit margin.
+
 
 I want to make it more unlikely for things to fail.
 I think I should have a python code bit that writes the grippers and ghost grippers with a starting joint pos and then inserts them at the right spot.

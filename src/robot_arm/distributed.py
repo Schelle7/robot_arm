@@ -35,7 +35,7 @@ class DummySpaceEnv(gymnasium.Env):
                 "start_joint_positions": gymnasium.spaces.Box(
                     low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32
                 ),
-                "high_level_action": gymnasium.spaces.Box(
+                "high_level_delta_action": gymnasium.spaces.Box(
                     low=-1.0,
                     high=1.0,
                     shape=(cfg.trajectory_length, cfg.trajectory_dim),

@@ -7,6 +7,7 @@ from scipy.spatial.transform import Rotation
 
 from robot_arm.backends.arm import Arm
 from robot_arm.backends.read_sensors import read_block
+from robot_arm.pose import Pose
 
 
 class RealArm(Arm):
@@ -94,9 +95,7 @@ class RealArm(Arm):
 
         return raw_state
 
-    def get_end_effector_pose_7d_forward_kinematics(
-        self, present_positions: dict
-    ) -> np.ndarray:
+    def _forward_kinematics_pose(self, present_positions: dict) -> Pose:
         # Bind raw Joint radians back into MuJoCo FK structural limits
         for name, rad in present_positions.items():
             if name in self.joint_indices:
@@ -113,25 +112,36 @@ class RealArm(Arm):
         # Pseudo TCP (middle point)
         tcp_pos = (fixed_pos + moving_pos) / 2.0
 
-        # Pseudo Rotation Matrix
-        rot_mat = self.data.site_xmat[self.gripper_frame_id].reshape(3, 3)
-        euler = Rotation.from_matrix(rot_mat).as_euler("xyz")
+        closing_axis = fixed_pos - moving_pos
+        closing_axis = closing_axis / np.linalg.norm(closing_axis)
 
-        # Raw Gripper Aperture Rads
+        hand_matrix = self.data.site_xmat[self.gripper_frame_id].reshape(3, 3)
+        secondary_axis = hand_matrix[:, 1]
+        secondary_axis = secondary_axis - np.dot(
+            closing_axis, secondary_axis
+        ) * closing_axis
+        secondary_axis = secondary_axis / np.linalg.norm(secondary_axis)
+
         gripper_radians = present_positions["gripper"]
 
-        return np.array(
-            [
-                tcp_pos[0],
-                tcp_pos[1],
-                tcp_pos[2],
-                euler[0],
-                euler[1],
-                euler[2],
-                gripper_radians,
-            ],
-            dtype=np.float32,
+        return Pose.from_tcp_axes(
+            tcp_pos,
+            closing_axis,
+            secondary_axis,
+            gripper_radians,
         )
+
+    def get_end_effector_pose_7d_forward_kinematics(
+        self, present_positions: dict
+    ) -> np.ndarray:
+        pose = self._forward_kinematics_pose(present_positions)
+        return np.concatenate(
+            [pose.position, pose.as_euler("XYZ", False), [pose.gripper]]
+        ).astype(np.float32)
+
+    def get_tcp_pose(self) -> Pose:
+        present_positions = self.read_state()["Present_Position"]
+        return self._forward_kinematics_pose(present_positions)
 
     def get_tcp(self) -> np.ndarray:
         raise NotImplementedError("Real arm does not have access to pinch point")

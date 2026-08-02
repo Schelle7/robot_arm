@@ -10,6 +10,7 @@ model_path: "models/so101/scene.xml"
 # Backend configuration
 backend: "sim" # "sim" or "real"
 draw_waypoints: true
+draw_tcp: true
 record_sim_state: true
 
 # Hardware parameters used if backend == "real"
@@ -43,11 +44,12 @@ safety:
   
 # Trajectory parameters
 trajectory_length: 50
-trajectory_dim: 10
+trajectory_dim: 7
 pose_weights:
-  position: [1.0, 1.0, 1.0]
-  rotation: [0.5, 0.5, 0.5]
-  gripper: [1.0]
+  position: 1.0
+  rotation_primary: 0.5
+  rotation_secondary: 0.05
+  gripper: 1.0
 
 # Reward components
 reward:

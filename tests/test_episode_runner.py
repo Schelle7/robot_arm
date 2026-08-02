@@ -32,8 +32,8 @@ class EnvironmentStub:
     def get_privileged_end_effector_pose(self):
         return self.pose
 
-    def step(self, action, high_level_action, chunk_start_pose, chunk_terminated):
-        self.received_paths.append(high_level_action)
+    def step(self, action, high_level_delta_action, chunk_start_pose, chunk_terminated):
+        self.received_paths.append(high_level_delta_action)
         return (
             {
                 "joint_positions": np.ones(6, dtype=np.float32),
@@ -78,7 +78,7 @@ def make_runner(environment, low_level_policy, metrics_queue, detailed_metrics=T
 
 
 def test_run_chunk_reuses_exact_desired_path_for_every_policy_observation():
-    high_level_action = np.arange(20, dtype=np.float32).reshape(2, 10)
+    high_level_delta_action = np.arange(14, dtype=np.float32).reshape(2, 7)
     environment = EnvironmentStub({"safety_penalty": -1.0})
     low_level_policy = LowLevelPolicyStub()
     runner = make_runner(environment, low_level_policy, MetricsQueueStub())
@@ -88,19 +88,19 @@ def test_run_chunk_reuses_exact_desired_path_for_every_policy_observation():
         "joint_velocities": np.zeros(6, dtype=np.float32),
     }
 
-    runner.run_chunk(raw_obs, high_level_action)
+    runner.run_chunk(raw_obs, high_level_delta_action)
 
     assert len(low_level_policy.observations) == runner.chunk_size
     for observation in low_level_policy.observations:
-        assert observation["high_level_action"] is high_level_action
+        assert observation["high_level_delta_action"] is high_level_delta_action
     for received_path in environment.received_paths:
-        assert received_path is high_level_action
+        assert received_path is high_level_delta_action
 
 
 def test_policy_observation_keys_match_declared_observation_space():
-    cfg = SimpleNamespace(trajectory_length=2, trajectory_dim=10)
+    cfg = SimpleNamespace(trajectory_length=2, trajectory_dim=7)
     observation_space = DummySpaceEnv(cfg).observation_space
-    high_level_action = np.zeros((2, 10), dtype=np.float32)
+    high_level_delta_action = np.zeros((2, 7), dtype=np.float32)
     environment = EnvironmentStub({"safety_penalty": -1.0})
     low_level_policy = LowLevelPolicyStub()
     runner = make_runner(environment, low_level_policy, MetricsQueueStub())
@@ -109,7 +109,7 @@ def test_policy_observation_keys_match_declared_observation_space():
         "joint_positions": np.zeros(6, dtype=np.float32),
         "joint_velocities": np.zeros(6, dtype=np.float32),
     }
-    runner.run_chunk(raw_obs, high_level_action)
+    runner.run_chunk(raw_obs, high_level_delta_action)
 
     assert set(low_level_policy.observations[0]) == set(observation_space)
 

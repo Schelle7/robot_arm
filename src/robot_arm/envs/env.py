@@ -39,15 +39,14 @@ class RobotEnv:
             cfg.training.pose_delta_diagnostics_enabled
         )
 
-        self.position_distance_weights = np.array(
-            cfg.pose_weights.position, dtype=np.float32
+        self.position_distance_weight = float(cfg.pose_weights.position)
+        self.rotation_primary_distance_weight = float(
+            cfg.pose_weights.rotation_primary
         )
-        self.rotation_distance_weights = np.array(
-            cfg.pose_weights.rotation, dtype=np.float32
+        self.rotation_secondary_distance_weight = float(
+            cfg.pose_weights.rotation_secondary
         )
-        self.gripper_distance_weights = np.array(
-            cfg.pose_weights.gripper, dtype=np.float32
-        )
+        self.gripper_distance_weight = float(cfg.pose_weights.gripper)
 
         # Hardcoding the ordered list of motors to ensure deterministic vectorization
         self.motor_order = [
@@ -72,24 +71,7 @@ class RobotEnv:
         )
 
     def get_privileged_end_effector_pose(self) -> Pose:
-        if (
-            hasattr(self.arm, "get_end_effector_pose")
-            or hasattr(self.arm, "backend_arm")
-            and hasattr(
-                self.arm.backend_arm, "get_end_effector_pose_forward_kinematics"
-            )
-        ):
-            if (
-                hasattr(self.arm, "backend_arm")
-                and type(self.arm.backend_arm).__name__ == "RealArm"
-            ):
-                state_dict = self.arm.read_state()
-                return self.arm.backend_arm.get_end_effector_pose_forward_kinematics(
-                    state_dict["Present_Position"]
-                )
-            else:
-                return self.arm.get_end_effector_pose()
-        raise NotImplementedError("Arm backend does not support pose retrieval.")
+        return self.arm.get_tcp_pose()
 
     def _get_obs(self) -> Dict[str, np.ndarray]:
         state_dict = self.arm.read_state()
@@ -189,70 +171,77 @@ class RobotEnv:
 
         return float(past_progress + current_progress)
 
-    def _compute_relative_rotation_vectors(
-        self, absolute_rotations_6d: np.ndarray, chunk_start_pose: Pose
-    ) -> np.ndarray:
-        # TODO should probably read this again when I am not tired.
-        # luna wrote this stuff and it seemed convincing enough to keep.
-        first_columns = absolute_rotations_6d[:, :3]
-        second_columns = absolute_rotations_6d[:, 3:]
-
-        first_columns = first_columns / np.linalg.norm(
-            first_columns, axis=1, keepdims=True
-        )
-        second_columns = second_columns - np.sum(
-            first_columns * second_columns, axis=1, keepdims=True
-        ) * first_columns
-        second_columns = second_columns / np.linalg.norm(
-            second_columns, axis=1, keepdims=True
-        )
-        third_columns = np.cross(first_columns, second_columns)
-        matrices = np.stack(
-            [first_columns, second_columns, third_columns], axis=2
-        )
-
-        absolute_rotations = Rotation.from_matrix(matrices)
-        relative_rotations = chunk_start_pose.rotation.inv() * absolute_rotations
-        return relative_rotations.as_rotvec().astype(np.float32)
+    def _axis_angular_distance(
+        self, first_axis: np.ndarray, second_axis: np.ndarray
+    ) -> float:
+        dot_product = np.clip(np.dot(first_axis, second_axis), -1.0, 1.0)
+        return float(np.arccos(dot_product))
 
     def _compute_weighted_pose_delta_and_path(
         self,
         current_pose: Pose,
         chunk_start_pose: Pose,
-        high_level_action: np.ndarray,
+        high_level_delta_action: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        pos_diff = (
-            current_pose.position - chunk_start_pose.position
-        ) * self.position_distance_weights
+        pos_diff = current_pose.position - chunk_start_pose.position
+        chunk_start_primary = chunk_start_pose.closing_axis
+        chunk_start_secondary = chunk_start_pose.secondary_axis
+        current_primary = current_pose.closing_axis
+        current_secondary = current_pose.secondary_axis
+        primary_delta = self._axis_angular_distance(
+            chunk_start_primary, current_primary
+        )
+        secondary_delta = self._axis_angular_distance(
+            chunk_start_secondary, current_secondary
+        )
+        gripper_diff = np.array(
+            [current_pose.gripper - chunk_start_pose.gripper], dtype=np.float32
+        )
 
-        current_relative_rotation = (
-            chunk_start_pose.rotation.inv() * current_pose.rotation
+        pose_delta = np.concatenate(
+            [pos_diff, [primary_delta, secondary_delta], gripper_diff]
         )
-        rotation_delta = current_relative_rotation.as_rotvec().astype(np.float32)
-
-        gripper_diff = (
-            np.array([current_pose.gripper - chunk_start_pose.gripper])
-            * self.gripper_distance_weights
-        )
-
-        weighted_pose_delta = np.concatenate(
-            [pos_diff, rotation_delta * self.rotation_distance_weights, gripper_diff]
-        )
-        # Each row is an absolute pose delta from the chunk start, not an increment.
-        absolute_rotations_6d = (
-            chunk_start_pose.as_rot_6d()[np.newaxis, :] + high_level_action[:, 3:9]
-        )
-        rotation_delta_path = self._compute_relative_rotation_vectors(
-            absolute_rotations_6d, chunk_start_pose
-        )
-        weighted_delta_path = np.concatenate(
+        pose_weights = np.array(
             [
-                high_level_action[:, :3] * self.position_distance_weights,
-                rotation_delta_path * self.rotation_distance_weights,
-                high_level_action[:, 9:] * self.gripper_distance_weights,
+                self.position_distance_weight,
+                self.position_distance_weight,
+                self.position_distance_weight,
+                self.rotation_primary_distance_weight,
+                self.rotation_secondary_distance_weight,
+                self.gripper_distance_weight,
+            ],
+            dtype=np.float32,
+        )
+        weighted_pose_delta = pose_delta * pose_weights
+        delta_rotations = Rotation.from_rotvec(high_level_delta_action[:, 3:6])
+        target_rotations = chunk_start_pose.rotation * delta_rotations
+        target_matrices = target_rotations.as_matrix()
+        target_primary = target_matrices[:, :, 0]
+        target_secondary = target_matrices[:, :, 1]
+        rotation_primary_path = np.array(
+            [
+                self._axis_angular_distance(chunk_start_primary, target)
+                for target in target_primary
+            ],
+            dtype=np.float32,
+        )
+        rotation_secondary_path = np.array(
+            [
+                self._axis_angular_distance(chunk_start_secondary, target)
+                for target in target_secondary
+            ],
+            dtype=np.float32,
+        )
+        delta_path = np.concatenate(
+            [
+                high_level_delta_action[:, :3],
+                rotation_primary_path[:, np.newaxis],
+                rotation_secondary_path[:, np.newaxis],
+                high_level_delta_action[:, 6:7],
             ],
             axis=1,
         )
+        weighted_delta_path = delta_path * pose_weights
         zero_delta = np.zeros((1, weighted_delta_path.shape[1]), dtype=np.float32)
         weighted_delta_path = np.concatenate(
             [zero_delta, weighted_delta_path], axis=0
@@ -322,14 +311,16 @@ class RobotEnv:
         self,
         requested_action: Dict[str, float],
         safe_action: Dict[str, float],
-        high_level_action: np.ndarray,
+        high_level_delta_action: np.ndarray,
         current_pose: Pose,
         chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> Tuple[float, Dict[str, float]]:
         weighted_pose_delta, weighted_delta_path = (
             self._compute_weighted_pose_delta_and_path(
-                current_pose, chunk_start_pose, high_level_action
+                current_pose,
+                chunk_start_pose,
+                high_level_delta_action,
             )
         )
 
@@ -372,7 +363,7 @@ class RobotEnv:
     def step(
         self,
         action: np.ndarray,
-        high_level_action: np.ndarray,
+        high_level_delta_action: np.ndarray,
         privileged_chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> Tuple[Dict[str, np.ndarray], float, Dict[str, float]]:
@@ -397,7 +388,7 @@ class RobotEnv:
         reward, reward_breakdown = self.compute_reward(
             requested_action=action_dict,
             safe_action=safe_action_dict,
-            high_level_action=high_level_action,
+            high_level_delta_action=high_level_delta_action,
             current_pose=self.get_privileged_end_effector_pose(),
             chunk_start_pose=privileged_chunk_start_pose,
             chunk_terminated=chunk_terminated,

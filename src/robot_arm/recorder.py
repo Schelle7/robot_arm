@@ -57,7 +57,7 @@ class EpisodeRecorder:
             "privileged_end_effector_pose": info[
                 "privileged_end_effector_pose"
             ].as_10d(),
-            "high_level_action": info["high_level_action"].copy(),
+            "high_level_delta_action": info["high_level_delta_action"].copy(),
             "reward": float(reward),
             "dense_trajectory": self.dense_trajectory_buffer.copy(),
         }
@@ -131,8 +131,8 @@ class EpisodeRecorder:
                 [f["privileged_end_effector_pose"] for f in self.frames],
                 dtype=np.float32,
             ),
-            "high_level_action": np.array(
-                [f["high_level_action"] for f in self.frames], dtype=object
+            "high_level_delta_action": np.array(
+                [f["high_level_delta_action"] for f in self.frames], dtype=object
             ),
             "reward": np.array([f["reward"] for f in self.frames], dtype=np.float32),
             "dense_trajectory": np.array(

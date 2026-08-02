@@ -63,15 +63,18 @@ class EpisodeRunner:
             if self.recorder:
                 self.recorder.save_waypoints(self.high_level_policy.waypoints)
 
+        if self.cfg.draw_tcp:
+            self.env.arm.draw_tcp()
+
         try:
             for step_idx in range(self.max_high_level_steps):
-                high_level_action = self.high_level_policy.get_action(
+                high_level_delta_action = self.high_level_policy.get_action(
                     obs,
                     privileged_end_effector_pose=self.env.get_privileged_end_effector_pose(),
                     task=task,
                 )
 
-                next_obs, reward = self.run_chunk(obs, high_level_action)
+                next_obs, reward = self.run_chunk(obs, high_level_delta_action)
 
                 if self.recorder:
                     image = self.env.read_camera()
@@ -80,7 +83,7 @@ class EpisodeRunner:
                     info_dict = {
                         "image": image,
                         "privileged_end_effector_pose": pose_ee,
-                        "high_level_action": high_level_action,
+                        "high_level_delta_action": high_level_delta_action,
                     }
 
                     if self.cfg["record_sim_state"]:
@@ -118,7 +121,7 @@ class EpisodeRunner:
             self.low_level_policy.policy.load_state_dict(policy_weights)
 
     def run_chunk(
-        self, raw_obs: Dict[str, np.ndarray], high_level_action: np.ndarray
+        self, raw_obs: Dict[str, np.ndarray], high_level_delta_action: np.ndarray
     ) -> tuple[Dict[str, np.ndarray], float]:
         """
         Executes a single chunk of low-level physics steps to chase the high-level action target.
@@ -133,7 +136,7 @@ class EpisodeRunner:
 
         # Construct the first policy observation before entering the loop
         policy_obs = dict(raw_obs)
-        policy_obs["high_level_action"] = high_level_action
+        policy_obs["high_level_delta_action"] = high_level_delta_action
         policy_obs["start_joint_positions"] = start_positions
         policy_obs["time_left"] = np.array([self.chunk_size], dtype=np.float32)
 
@@ -152,7 +155,7 @@ class EpisodeRunner:
             # Env returns physical state (raw_next_obs) plus step metrics
             raw_next_obs, reward, reward_breakdown = self.env.step(
                 low_level_action,
-                high_level_action,
+                high_level_delta_action,
                 chunk_start_pose_obj,
                 chunk_terminated,
             )
@@ -172,7 +175,7 @@ class EpisodeRunner:
 
             # Construct the next policy observation for the RL transition and next step
             next_policy_obs = dict(raw_next_obs)
-            next_policy_obs["high_level_action"] = high_level_action
+            next_policy_obs["high_level_delta_action"] = high_level_delta_action
             next_policy_obs["start_joint_positions"] = start_positions
             next_policy_obs["time_left"] = np.array(
                 [self.chunk_size - chunk_step - 1], dtype=np.float32
