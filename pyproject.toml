@@ -17,6 +17,7 @@ dependencies = [
     "hydra-core",
     "torch",
     "tensorboard",
+    "tqdm",
     "scipy",
     "black",
     "ruff"

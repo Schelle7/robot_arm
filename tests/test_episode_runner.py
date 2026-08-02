@@ -19,6 +19,11 @@ class LowLevelPolicyStub:
 class EnvironmentStub:
     def __init__(self, reward_breakdown):
         self.reward_breakdown = reward_breakdown
+        self.pose_delta_diagnostics = {
+            "moved_delta_norm": 0.2,
+            "desired_delta_norm": 0.5,
+            "delta_error_norm": 0.3,
+        }
         self.received_paths = []
         self.pose = Pose.from_euler(
             [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False
@@ -51,7 +56,10 @@ def make_cfg(detailed_metrics=True):
     return SimpleNamespace(
         frequencies=SimpleNamespace(high_level=2, low_level=4),
         max_seconds=1,
-        training=SimpleNamespace(detailed_metrics=detailed_metrics),
+        training=SimpleNamespace(
+            detailed_metrics=detailed_metrics,
+            pose_delta_diagnostics_enabled=True,
+        ),
     )
 
 
@@ -123,4 +131,7 @@ def test_detailed_metrics_only_include_returned_reward_components():
     assert metrics_queue.items[0] == {
         "total_reward": -4.0,
         "safety_penalty": [-2.0, -2.0],
+        "moved_delta_norm": [0.2, 0.2],
+        "desired_delta_norm": [0.5, 0.5],
+        "delta_error_norm": [0.3, 0.3],
     }

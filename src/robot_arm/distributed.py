@@ -6,10 +6,12 @@ import torch
 import multiprocessing as mp
 import logging
 import gymnasium
+from collections import deque
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 from stable_baselines3 import SAC
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
@@ -146,7 +148,7 @@ def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_queu
         worker_metrics_buffer.flush()
 
 
-def _log_metrics(metrics_queue, writer, logging_step):
+def _log_metrics(metrics_queue, writer, logging_step, recent_rewards):
     # Drain up to 10 reward batches per loop iteration to avoid starvation
     for _ in range(10):
         try:
@@ -168,6 +170,8 @@ def _log_metrics(metrics_queue, writer, logging_step):
                             logging_step,
                         )
                 else:
+                    if key == "total_reward":
+                        recent_rewards.append(float(val))
                     writer.add_scalar(f"rollout/{key}", val, logging_step)
             logging_step += 1
     writer.flush()
@@ -192,8 +196,6 @@ def _add_transition_and_train(
             )
 
             if sac_training_step % 1000 == 0:
-                model.logger.dump(step=sac_training_step)
-
                 # Sync weights occasionally during heavy training (safely to CPU)
                 cpu_state_dict = {
                     k: v.cpu() for k, v in model.policy.state_dict().items()
@@ -225,9 +227,18 @@ def _training_loop(
 ):
     sac_training_step = 0
     logging_step = 0
+    recent_rewards = deque(maxlen=100)
+    progress = tqdm(
+        total=target_total_steps,
+        desc="Training",
+        unit="step",
+        dynamic_ncols=True,
+    )
     try:
         while sac_training_step < target_total_steps:
-            logging_step = _log_metrics(metrics_queue, writer, logging_step)
+            logging_step = _log_metrics(
+                metrics_queue, writer, logging_step, recent_rewards
+            )
 
             # 1. Blocks until worker chunks arrive
             chunk = transition_queue.get()
@@ -235,9 +246,16 @@ def _training_loop(
             sac_training_step = _add_transition_and_train(
                 chunk, model, sac_training_step, worker_queues, save_checkpoint
             )
+            progress.update(sac_training_step - progress.n)
+            if recent_rewards:
+                progress.set_postfix(
+                    avg_reward=f"{sum(recent_rewards) / len(recent_rewards):.4f}"
+                )
 
     except KeyboardInterrupt:
         log.info("Keyboard interrupt, shutting down workers...")
+    finally:
+        progress.close()
 
     return sac_training_step
 
@@ -247,11 +265,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     Spawns worker processes to collect data using inference, while the main process
     updates a central target model and distributes updated weights.
     """
-    leave_computer_working = 4  # CPUs reserved for OS/Desktop usage
-    # Leave 2 for OS, and subtract 1 more for the Main Learner Process pulling transitions
-    num_workers = cfg.experiment.get(
-        "num_workers", max(1, mp.cpu_count() - leave_computer_working - 1)
-    )
+    num_workers = cfg.num_workers
 
     log.info(
         f"Initializing central learner with {num_workers} parallel workers on {device}..."
@@ -278,14 +292,14 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
         train_freq=cfg.training.train_freq,
         gradient_steps=cfg.training.gradient_steps,
         gamma=1.0,
-        verbose=1,
+        verbose=0,
         device=device,
     )
 
     hydra_cfg = HydraConfig.get()
     from stable_baselines3.common.logger import configure
 
-    logger = configure(hydra_cfg.runtime.output_dir, ["stdout", "csv"])
+    logger = configure(hydra_cfg.runtime.output_dir, ["csv"])
     model.set_logger(logger)
 
     def save_checkpoint(step_name):

@@ -1,0 +1,13 @@
+# @package _global_
+# One low-level control step per high-level action for initial debugging.
+device: "cuda"
+
+frequencies:
+  high_level: 5
+  low_level: 5
+
+trajectory_length: 1  # consider again later whether I should keep it.
+
+training:
+  action_scale_radians: 0.01
+  total_training_steps: 120000

@@ -15,19 +15,29 @@ class RobotEnv:
     def __init__(
         self,
         arm: Arm,
-        delta_action_scale: float,
-        violation_penalty_factor: float,
-        low_level_hz: int,
         cfg: DictConfig,
     ):
+        delta_action_scale = cfg.training.action_scale_radians
+        violation_penalty_factor = cfg.safety.violation_penalty_factor
+        low_level_hz = cfg.frequencies.low_level
+        mujoco_hz = cfg.frequencies.mujoco
+
+        assert mujoco_hz % low_level_hz == 0, (
+            f"mujoco_hz ({mujoco_hz}) must be divisible by low_level_hz ({low_level_hz})"
+        )
+
         self.arm = arm
         self.delta_action_scale = delta_action_scale
         self.violation_penalty_factor = violation_penalty_factor
         self.low_level_hz = low_level_hz
+        self.mujoco_steps_per_low_level_step = mujoco_hz // low_level_hz
         self.tracking_deviation_enabled = cfg.reward.tracking.deviation
         self.tracking_progress_enabled = cfg.reward.tracking.progress
         self.safety_penalty_enabled = cfg.reward.safety_penalty
         self.termination_penalty_enabled = cfg.reward.termination_penalty
+        self.pose_delta_diagnostics_enabled = (
+            cfg.training.pose_delta_diagnostics_enabled
+        )
 
         self.position_distance_weights = np.array(
             cfg.pose_weights.position, dtype=np.float32
@@ -51,6 +61,7 @@ class RobotEnv:
 
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
+        self.pose_delta_diagnostics = {}
 
     @property
     def current_joint_angles(self) -> np.ndarray:
@@ -293,6 +304,20 @@ class RobotEnv:
             termination_penalty = -float(end_distance)
         return termination_penalty
 
+    def _compute_pose_delta_diagnostics(
+        self,
+        weighted_pose_delta: np.ndarray,
+        weighted_delta_path: np.ndarray,
+    ) -> Dict[str, float]:
+        desired_delta = weighted_delta_path[-1]
+        return {
+            "moved_delta_norm": float(np.linalg.norm(weighted_pose_delta)),
+            "desired_delta_norm": float(np.linalg.norm(desired_delta)),
+            "delta_error_norm": float(
+                np.linalg.norm(desired_delta - weighted_pose_delta)
+            ),
+        }
+
     def compute_reward(
         self,
         requested_action: Dict[str, float],
@@ -325,6 +350,11 @@ class RobotEnv:
             chunk_terminated, weighted_pose_delta, weighted_delta_path
         )
 
+        if self.pose_delta_diagnostics_enabled:
+            self.pose_delta_diagnostics = self._compute_pose_delta_diagnostics(
+                weighted_pose_delta, weighted_delta_path
+            )
+
         reward_breakdown = {}
         if self.tracking_deviation_enabled:
             reward_breakdown["dev_reward"] = dev_reward
@@ -356,8 +386,10 @@ class RobotEnv:
             motor: float(pos) for motor, pos in zip(self.motor_order, target_positions)
         }
 
-        # 3. Apply safe action through the wrapper
+        # 3. Hold the joint target while MuJoCo advances through the control interval
         safe_action_dict = self.arm.write_goal(action_dict)
+        for _ in range(1, self.mujoco_steps_per_low_level_step):
+            safe_action_dict = self.arm.write_goal(action_dict)
 
         # 4. Get new observation
         obs = self._get_obs()

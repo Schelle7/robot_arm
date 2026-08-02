@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def train_low_level(cfg: DictConfig):
-    device = torch.device(cfg.experiment.device)
+    device = torch.device(cfg.device)
 
     run_distributed_training(cfg, device)
 

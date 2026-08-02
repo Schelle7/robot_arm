@@ -164,6 +164,11 @@ class EpisodeRunner:
                     if key not in chunk_reward_metrics:
                         chunk_reward_metrics[key] = []
                     chunk_reward_metrics[key].append(value)
+                if self.cfg.training.pose_delta_diagnostics_enabled:
+                    for key, value in self.env.pose_delta_diagnostics.items():
+                        if key not in chunk_reward_metrics:
+                            chunk_reward_metrics[key] = []
+                        chunk_reward_metrics[key].append(value)
 
             # Construct the next policy observation for the RL transition and next step
             next_policy_obs = dict(raw_next_obs)
