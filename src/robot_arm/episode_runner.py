@@ -86,7 +86,7 @@ class EpisodeRunner:
                         "high_level_delta_action": high_level_delta_action,
                     }
 
-                    if self.cfg["record_sim_state"]:
+                    if self.cfg.runtime.record_sim_state:
                         info_dict["sim_state"] = self.env.arm.read_state()["sim_state"]
 
                     self.recorder.record_high_level(

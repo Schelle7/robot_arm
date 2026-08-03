@@ -2,6 +2,7 @@ import os
 import glob
 import numpy as np
 import mujoco
+import mujoco.viewer
 import hydra
 from omegaconf import DictConfig
 from robot_arm.pose import Pose

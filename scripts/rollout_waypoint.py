@@ -6,10 +6,15 @@ import numpy as np
 
 from robot_arm.pose import Pose
 from robot_arm.recorder import EpisodeRecorder
-from robot_arm.policies import WaypointPolicy, load_latest_low_level_policy
+from robot_arm.policies import (
+    WaypointPolicy,
+    find_latest_low_level_checkpoint,
+    load_low_level_policy,
+)
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.factory import make_env
 from robot_arm.model_snapshot import snapshot_model_files
+from robot_arm.rollout_config import build_rollout_config
 
 
 def get_waypoint_list():
@@ -50,6 +55,9 @@ def main(cfg: DictConfig):
     # Setup Policy
     task = "Sanity check: Initial pose, move front, move back."
 
+    checkpoint_path = find_latest_low_level_checkpoint()
+    cfg = build_rollout_config(cfg, checkpoint_path)
+
     # Initialize a WaypointPolicy
     policy = WaypointPolicy(
         trajectory_length=cfg.waypoint.trajectory_length,
@@ -57,7 +65,7 @@ def main(cfg: DictConfig):
     )
 
     # Load the latest trained low-level RL model
-    low_level_policy = load_latest_low_level_policy()
+    low_level_policy = load_low_level_policy(checkpoint_path)
 
     # Initialize recorder inside Hydra's output directory
     hydra_cfg = HydraConfig.get()

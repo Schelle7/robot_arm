@@ -183,7 +183,7 @@ class WaypointPolicy(Policy):
         return chunk
 
 
-def load_latest_low_level_policy():
+def find_latest_low_level_checkpoint() -> str:
     """
     Loads the most recent low-level SAC policy from the outputs/ directory.
     Searches the directory structure for the newest final checkpoint.
@@ -218,5 +218,13 @@ def load_latest_low_level_policy():
 
     latest_checkpoint = max(checkpoints, key=extract_datetime_key)
 
-    print(f"Loading latest low level policy from: {latest_checkpoint}")
-    return SAC.load(latest_checkpoint)
+    return latest_checkpoint
+
+
+def load_low_level_policy(checkpoint_path: str):
+    print(f"Loading low level policy from: {checkpoint_path}")
+    return SAC.load(checkpoint_path)
+
+
+def load_latest_low_level_policy():
+    return load_low_level_policy(find_latest_low_level_checkpoint())
