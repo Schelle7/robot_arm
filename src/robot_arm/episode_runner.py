@@ -46,7 +46,7 @@ class EpisodeRunner:
         self.cfg = cfg
         self.weights_queue = weights_queue
 
-        self.max_high_level_steps = int(cfg.runtime.max_seconds * high_level_hz)
+        self.max_high_level_steps = int(cfg.control.max_seconds * high_level_hz)
         self.episode_low_level_step = 0
 
     def run_episode(self, task: str, generate_waypoints: bool, **waypoint_kwargs):

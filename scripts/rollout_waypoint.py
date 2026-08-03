@@ -21,7 +21,7 @@ def get_waypoint_list():
     # Define our manual waypoints for a grabbing motion
     # 10D target: [x, y, z, r1, r2, r3, r4, r5, r6, gripper]
     # Neutral looking forward, gripper slightly open
-    wp_hover_pose = Pose.from_euler([0.25, 0.0, 0.20], [0, 0.0, 0.0], 0.3, "XYZ", False)
+    wp_hover_pose = Pose.from_euler([0.35, 0.0, 0.20], [0, 0.0, 0.0], 0.3, "XYZ", False)
     wp_hover = wp_hover_pose.as_10d()
 
     # Reach forward low, rotate wrist +45 deg (roll around X)

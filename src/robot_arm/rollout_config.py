@@ -36,7 +36,14 @@ def build_rollout_config(current_cfg: DictConfig, checkpoint_path: str) -> DictC
                 "frequencies": OmegaConf.to_container(
                     saved_cfg.control.frequencies, resolve=True
                 ),
-                "action_scale_radians": saved_cfg.control.action_scale_radians,
+                "action_scale_radians_per_second": saved_cfg.control.action_scale_radians_per_second,
+                "max_seconds": current_cfg.control.max_seconds,
+                "initial_joints": OmegaConf.to_container(
+                    current_cfg.control.initial_joints, resolve=True
+                ),
+                "staging": OmegaConf.to_container(
+                    current_cfg.control.staging, resolve=True
+                ),
             },
             "training": {
                 "detailed_metrics": current_cfg.training.detailed_metrics,

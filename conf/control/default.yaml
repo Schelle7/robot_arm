@@ -2,14 +2,16 @@ frequencies:
   high_level: 5
   low_level: 200
   mujoco: 200
-action_scale_radians: 0.005
+max_seconds: 15
+action_scale_radians_per_second: 0.25
 
 initial_joints:
   range_percent: [45.0, 55.0]
 
 staging:
   enabled: true
-  step_radians: 0.02
+  speed_radians_per_second: 2.6
   tolerance_radians: 0.03
-  max_steps: 300
-  pause_seconds: 0.05
+  max_steps: 1200
+  pause_seconds: 0.1
+  log_path: ${hydra:runtime.output_dir}/staging_log.csv

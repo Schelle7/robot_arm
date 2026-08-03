@@ -55,9 +55,10 @@ class MetricsQueueStub:
 def make_cfg(detailed_metrics=True):
     return SimpleNamespace(
         control=SimpleNamespace(
-            frequencies=SimpleNamespace(high_level=2, low_level=4)
+            frequencies=SimpleNamespace(high_level=2, low_level=4),
+            max_seconds=1,
         ),
-        runtime=SimpleNamespace(max_seconds=1, draw_waypoints=False, draw_tcp=False),
+        runtime=SimpleNamespace(draw_waypoints=False, draw_tcp=False),
         training=SimpleNamespace(
             detailed_metrics=detailed_metrics,
             pose_delta_diagnostics_enabled=True,

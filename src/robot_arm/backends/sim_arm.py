@@ -212,13 +212,13 @@ class SimBackend(Arm):
 
     def randomize_box(self):
         # Randomize box placement
-        # Reach is ~60cm. Goal is 25cm-45cm outward (X-axis) and -10cm to 10cm sideways (Y-axis)
+        # Keep the target around x=0.4 m and centered across y with 3 cm and 5 cm variation.
         box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
         if box_id == -1:
             raise Exception("Box is missing")
 
-        dist = np.random.uniform(0.35, 0.15)
-        y_shift = np.random.uniform(-0.10, 0.10)
+        dist = np.random.uniform(0.37, 0.43)
+        y_shift = np.random.uniform(-0.05, 0.05)
 
         # Directly updating the freejoint associated with the box
         jnt_idx = self.model.body_jntadr[box_id]

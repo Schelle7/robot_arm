@@ -17,7 +17,6 @@ class RobotEnv:
         arm: Arm,
         cfg: DictConfig,
     ):
-        delta_action_scale = cfg.control.action_scale_radians
         violation_penalty_factor = cfg.reward.violation_penalty_factor
         low_level_hz = cfg.control.frequencies.low_level
         mujoco_hz = cfg.control.frequencies.mujoco
@@ -28,7 +27,9 @@ class RobotEnv:
 
         self.arm = arm
         self.backend = cfg.backend
-        self.delta_action_scale = delta_action_scale
+        self.delta_action_scale = (
+            cfg.control.action_scale_radians_per_second / low_level_hz
+        )
         self.violation_penalty_factor = violation_penalty_factor
         self.low_level_hz = low_level_hz
         self.mujoco_steps_per_low_level_step = mujoco_hz // low_level_hz
@@ -43,10 +44,13 @@ class RobotEnv:
         self.initial_joint_range_percent = (
             cfg.control.initial_joints.range_percent
         )
-        self.staging_step_radians = cfg.control.staging.step_radians
+        self.staging_speed_radians_per_second = (
+            cfg.control.staging.speed_radians_per_second
+        )
         self.staging_tolerance_radians = cfg.control.staging.tolerance_radians
         self.staging_max_steps = cfg.control.staging.max_steps
         self.staging_pause_seconds = cfg.control.staging.pause_seconds
+        self.staging_log_path = cfg.control.staging.log_path
 
         self.position_distance_weight = float(cfg.reward.pose_weights.position)
         self.rotation_primary_distance_weight = float(
@@ -109,10 +113,11 @@ class RobotEnv:
         elif self.backend == "real" and self.staging_enabled:
             self.arm.move_to_staging_pose(
                 initial_joint_range_percent=self.initial_joint_range_percent,
-                step_radians=self.staging_step_radians,
+                speed_radians_per_second=self.staging_speed_radians_per_second,
                 tolerance_radians=self.staging_tolerance_radians,
                 max_steps=self.staging_max_steps,
                 pause_seconds=self.staging_pause_seconds,
+                log_path=self.staging_log_path,
             )
 
         return self._get_obs()

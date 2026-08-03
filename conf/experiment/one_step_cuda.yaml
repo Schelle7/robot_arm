@@ -6,7 +6,7 @@ control:
   frequencies:
     high_level: 5
     low_level: 5
-  action_scale_radians: 0.01
+  action_scale_radians_per_second: 0.05
 
 waypoint:
   trajectory_length: 1

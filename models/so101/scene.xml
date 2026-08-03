@@ -33,7 +33,7 @@
     <!-- Target Red Box -->
     <body name="target_box" pos="0.3 0.0 0.05">
       <freejoint/>
-      <geom type="box" size="0.03 0.03 0.03" material="matte_red" mass="0.1"/>
+      <geom type="box" size="0.02 0.02 0.02" material="matte_red" mass="0.1"/>
     </body>
   </worldbody>
 </mujoco>

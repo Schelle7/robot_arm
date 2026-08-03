@@ -15,5 +15,5 @@ def test_one_step_experiment_composes_expected_control_config():
     assert cfg.control.frequencies.low_level == 5
     assert cfg.control.frequencies.mujoco == 200
     assert cfg.waypoint.trajectory_length == 1
-    assert cfg.control.action_scale_radians == 0.01
+    assert cfg.control.action_scale_radians_per_second == 0.05
     assert cfg.waypoint.speed == 0.005

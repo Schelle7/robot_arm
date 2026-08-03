@@ -1,4 +1,3 @@
-max_seconds: 2
 draw_waypoints: true
 draw_tcp: true
 record_sim_state: true

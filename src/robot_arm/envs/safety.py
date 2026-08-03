@@ -1,4 +1,6 @@
 import numpy as np
+import time
+import csv
 from typing import Dict
 from robot_arm.backends.arm import Arm
 
@@ -72,6 +74,91 @@ class SafeArmWrapper(Arm):
         self.backend_arm.write_goal(safe_positions)
 
         return safe_positions
+
+    def move_to_staging_pose(
+        self,
+        initial_joint_range_percent: tuple[float, float],
+        speed_radians_per_second: float,
+        tolerance_radians: float,
+        max_steps: int,
+        pause_seconds: float,
+        log_path: str,
+    ) -> None:
+        min_percent, max_percent = initial_joint_range_percent
+        staging_positions = {
+            name: float(
+                self.backend_arm.model.jnt_range[joint_id][0]
+                + (np.random.uniform(min_percent, max_percent) / 100.0)
+                * (
+                    self.backend_arm.model.jnt_range[joint_id][1]
+                    - self.backend_arm.model.jnt_range[joint_id][0]
+                )
+            )
+            for name, joint_id in self.backend_arm.joint_indices.items()
+        }
+
+        print(f"Staging target positions: {staging_positions}")
+        fieldnames = ["timestamp", "step", "status"]
+        for name in staging_positions:
+            for field in (
+                "target",
+                "present_position",
+                "commanded_position",
+                "present_velocity",
+                "present_load",
+                "present_voltage",
+                "present_temperature",
+            ):
+                fieldnames.append(f"{name}_{field}")
+
+        with open(log_path, "w", newline="") as log_file:
+            writer = csv.DictWriter(log_file, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for step in range(max_steps):
+                state = self.read_state()
+                current_state = state["Present_Position"]
+                errors = {
+                    name: staging_positions[name] - current_state[name]
+                    for name in staging_positions
+                }
+
+                row = {
+                    "timestamp": state["python_recording_time"],
+                    "step": step,
+                    "status": "tracking",
+                }
+                for name in staging_positions:
+                    row[f"{name}_target"] = staging_positions[name]
+                    row[f"{name}_present_position"] = current_state[name]
+                    row[f"{name}_present_velocity"] = state["Present_Velocity"][name]
+                    row[f"{name}_present_load"] = state["Present_Load"][name]
+                    row[f"{name}_present_voltage"] = state["Present_Voltage"][name]
+                    row[f"{name}_present_temperature"] = state["Present_Temperature"][name]
+
+                if max(abs(error) for error in errors.values()) <= tolerance_radians:
+                    row["status"] = "complete"
+                    writer.writerow(row)
+                    print(f"Staging log written to: {log_path}")
+                    return
+
+                next_positions = {
+                    name: current_state[name]
+                    + np.clip(
+                        error,
+                        -speed_radians_per_second * pause_seconds,
+                        speed_radians_per_second * pause_seconds,
+                    )
+                    for name, error in errors.items()
+                }
+                safe_positions = self.write_goal(next_positions)
+                for name in staging_positions:
+                    row[f"{name}_commanded_position"] = safe_positions[name]
+                writer.writerow(row)
+                log_file.flush()
+                time.sleep(pause_seconds)
+
+        raise RuntimeError("Real arm did not reach the staging pose.")
 
     def _check_temperature(self, motor: str, state: Dict[str, Dict[str, float]]):
         temp = state["Present_Temperature"][motor]
