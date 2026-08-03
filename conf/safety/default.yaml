@@ -1,0 +1,5 @@
+max_position_radians: 3.10
+min_position_radians: -3.10
+max_temperature_celsius: 45.0
+load_ema_alpha: 0.1
+max_smoothed_load: 0.6

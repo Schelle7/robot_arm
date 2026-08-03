@@ -17,10 +17,10 @@ class RobotEnv:
         arm: Arm,
         cfg: DictConfig,
     ):
-        delta_action_scale = cfg.training.action_scale_radians
-        violation_penalty_factor = cfg.safety.violation_penalty_factor
-        low_level_hz = cfg.frequencies.low_level
-        mujoco_hz = cfg.frequencies.mujoco
+        delta_action_scale = cfg.control.action_scale_radians
+        violation_penalty_factor = cfg.reward.violation_penalty_factor
+        low_level_hz = cfg.control.frequencies.low_level
+        mujoco_hz = cfg.control.frequencies.mujoco
 
         assert mujoco_hz % low_level_hz == 0, (
             f"mujoco_hz ({mujoco_hz}) must be divisible by low_level_hz ({low_level_hz})"
@@ -39,14 +39,14 @@ class RobotEnv:
             cfg.training.pose_delta_diagnostics_enabled
         )
 
-        self.position_distance_weight = float(cfg.pose_weights.position)
+        self.position_distance_weight = float(cfg.reward.pose_weights.position)
         self.rotation_primary_distance_weight = float(
-            cfg.pose_weights.rotation_primary
+            cfg.reward.pose_weights.rotation_primary
         )
         self.rotation_secondary_distance_weight = float(
-            cfg.pose_weights.rotation_secondary
+            cfg.reward.pose_weights.rotation_secondary
         )
-        self.gripper_distance_weight = float(cfg.pose_weights.gripper)
+        self.gripper_distance_weight = float(cfg.reward.pose_weights.gripper)
 
         # Hardcoding the ordered list of motors to ensure deterministic vectorization
         self.motor_order = [

@@ -22,7 +22,9 @@ def main(cfg: DictConfig):
     target_dir = os.path.join(base_dir, "datasets", target_name)
 
     convert_to_lerobot(
-        source_dir=cfg.source_dir, target_dir=target_dir, fps=cfg.frequencies.high_level
+        source_dir=cfg.source_dir,
+        target_dir=target_dir,
+        fps=cfg.control.frequencies.high_level,
     )
 
 

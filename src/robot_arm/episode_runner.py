@@ -27,8 +27,8 @@ class EpisodeRunner:
         metrics_queue,
         weights_queue,
     ):
-        high_level_hz = cfg.frequencies.high_level
-        low_level_hz = cfg.frequencies.low_level
+        high_level_hz = cfg.control.frequencies.high_level
+        low_level_hz = cfg.control.frequencies.low_level
 
         if low_level_hz % high_level_hz != 0:
             raise ValueError(
@@ -46,7 +46,7 @@ class EpisodeRunner:
         self.cfg = cfg
         self.weights_queue = weights_queue
 
-        self.max_high_level_steps = int(cfg.max_seconds * high_level_hz)
+        self.max_high_level_steps = int(cfg.runtime.max_seconds * high_level_hz)
         self.episode_low_level_step = 0
 
     def run_episode(self, task: str, generate_waypoints: bool, **waypoint_kwargs):
@@ -58,12 +58,12 @@ class EpisodeRunner:
             waypoint_kwargs["box_pose"] = self.env.arm.get_privileged_box_pose()
             self.high_level_policy.generate_grab_waypoints(**waypoint_kwargs)
 
-        if self.cfg.draw_waypoints:
+        if self.cfg.runtime.draw_waypoints:
             self.env.arm.draw_waypoints(self.high_level_policy.waypoints)
             if self.recorder:
                 self.recorder.save_waypoints(self.high_level_policy.waypoints)
 
-        if self.cfg.draw_tcp:
+        if self.cfg.runtime.draw_tcp:
             self.env.arm.draw_tcp()
 
         try:

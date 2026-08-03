@@ -14,8 +14,8 @@ def main(cfg: DictConfig):
 
     # Initialize the Waypoint Policy (Data generator)
     policy = WaypointPolicy(
-        trajectory_length=cfg.trajectory_length,
-        speed=cfg.training.waypoint_speed,
+        trajectory_length=cfg.waypoint.trajectory_length,
+        speed=cfg.waypoint.speed,
     )
 
     # Load the latest trained low-level RL model

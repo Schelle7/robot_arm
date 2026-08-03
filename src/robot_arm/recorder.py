@@ -21,8 +21,10 @@ class EpisodeRecorder:
         self.episode_dir = os.path.join(output_dir, episode_name)
         self.images_dir = os.path.join(self.episode_dir, "images")
         self.jpeg_quality = cfg.camera.jpeg_quality
-        self.chunk_size = cfg.frequencies.low_level // cfg.frequencies.high_level
-        self.record_sim_state = cfg["record_sim_state"]
+        self.chunk_size = (
+            cfg.control.frequencies.low_level // cfg.control.frequencies.high_level
+        )
+        self.record_sim_state = cfg.runtime.record_sim_state
         self.frames: List[Dict[str, Any]] = []
         self.dense_trajectory_buffer: List[Dict[str, Any]] = []
         self.waypoints = None

@@ -9,6 +9,7 @@ from robot_arm.recorder import EpisodeRecorder
 from robot_arm.policies import WaypointPolicy, load_latest_low_level_policy
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.factory import make_env
+from robot_arm.model_snapshot import snapshot_model_files
 
 
 def get_waypoint_list():
@@ -51,8 +52,8 @@ def main(cfg: DictConfig):
 
     # Initialize a WaypointPolicy
     policy = WaypointPolicy(
-        trajectory_length=cfg.trajectory_length,
-        speed=cfg.training.waypoint_speed,
+        trajectory_length=cfg.waypoint.trajectory_length,
+        speed=cfg.waypoint.speed,
     )
 
     # Load the latest trained low-level RL model
@@ -60,6 +61,7 @@ def main(cfg: DictConfig):
 
     # Initialize recorder inside Hydra's output directory
     hydra_cfg = HydraConfig.get()
+    snapshot_model_files(cfg.model_path, hydra_cfg.runtime.output_dir)
     output_dir = os.path.join(hydra_cfg.runtime.output_dir, "waypoint_recording")
 
     recorder = EpisodeRecorder(
@@ -82,6 +84,9 @@ def main(cfg: DictConfig):
         high_level_policy=policy,
         training=False,
         recorder=recorder,
+        replay_buffer=None,
+        metrics_queue=None,
+        weights_queue=None,
     )
 
     # Execute

@@ -79,7 +79,7 @@ class SimBackend(Arm):
             self.tcp,
             closing,
             secondary,
-            self.mujoco_hand_pose().gripper,
+            self.mujoco_hand_pose.gripper,
         )
 
     def get_privileged_box_pose(self) -> Pose:

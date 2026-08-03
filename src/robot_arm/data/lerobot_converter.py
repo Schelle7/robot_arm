@@ -32,8 +32,9 @@ def _validate_and_load_configs(episodes: list[str]):
             if (
                 cfg.camera.height != ref_cfg.camera.height
                 or cfg.camera.width != ref_cfg.camera.width
-                or cfg.trajectory_length != ref_cfg.trajectory_length
-                or cfg.trajectory_dim != ref_cfg.trajectory_dim
+                or cfg.waypoint.trajectory_length
+                != ref_cfg.waypoint.trajectory_length
+                or cfg.waypoint.trajectory_dim != ref_cfg.waypoint.trajectory_dim
             ):
                 raise ValueError(
                     f"Configuration mismatch detected between {ref_dir} and {run_dir}. "
@@ -71,7 +72,10 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
         },
         "action": {
             "dtype": "float32",
-            "shape": (ref_cfg.trajectory_length, ref_cfg.trajectory_dim),
+            "shape": (
+                ref_cfg.waypoint.trajectory_length,
+                ref_cfg.waypoint.trajectory_dim,
+            ),
             "names": ["time", "action_dim"],
         },
     }

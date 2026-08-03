@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
+from robot_arm.model_snapshot import snapshot_model_files
 from robot_arm.policies import WaypointPolicy
 
 log = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class DummySpaceEnv(gymnasium.Env):
                 "high_level_delta_action": gymnasium.spaces.Box(
                     low=-1.0,
                     high=1.0,
-                    shape=(cfg.trajectory_length, cfg.trajectory_dim),
+                    shape=(cfg.waypoint.trajectory_length, cfg.waypoint.trajectory_dim),
                     dtype=np.float32,
                 ),
                 "time_left": gymnasium.spaces.Box(
@@ -107,8 +108,8 @@ def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_queu
     )
 
     high_level_policy = WaypointPolicy(
-        trajectory_length=cfg.trajectory_length,
-        speed=cfg.training.waypoint_speed,
+        trajectory_length=cfg.waypoint.trajectory_length,
+        speed=cfg.waypoint.speed,
     )
 
     worker_transition_buffer = TransitionQueueBuffer(transition_queue)
@@ -138,9 +139,9 @@ def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_queu
         runner.run_episode(
             task="grab the box",
             generate_waypoints=True,
-            lift_height=cfg.training.lift_height,
-            gripper_open=cfg.training.gripper_open,
-            gripper_closed=cfg.training.gripper_closed,
+            lift_height=cfg.waypoint.lift_height,
+            gripper_open=cfg.waypoint.gripper_open,
+            gripper_closed=cfg.waypoint.gripper_closed,
         )
 
         # Batch ship all collected physics steps to the central learner
@@ -265,7 +266,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     Spawns worker processes to collect data using inference, while the main process
     updates a central target model and distributes updated weights.
     """
-    num_workers = cfg.num_workers
+    num_workers = cfg.training.num_workers
 
     log.info(
         f"Initializing central learner with {num_workers} parallel workers on {device}..."
@@ -301,6 +302,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
 
     logger = configure(hydra_cfg.runtime.output_dir, ["csv"])
     model.set_logger(logger)
+    snapshot_model_files(cfg.model_path, hydra_cfg.runtime.output_dir)
 
     def save_checkpoint(step_name):
         output_dir = os.path.join(hydra_cfg.runtime.output_dir, "checkpoints")

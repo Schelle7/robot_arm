@@ -1,0 +1,6 @@
+trajectory_length: 50
+trajectory_dim: 7
+lift_height: 0.15
+gripper_open: 1.0
+gripper_closed: 0.0
+speed: 0.005

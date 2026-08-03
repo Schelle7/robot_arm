@@ -1,0 +1,5 @@
+frequencies:
+  high_level: 5
+  low_level: 200
+  mujoco: 200
+action_scale_radians: 0.005

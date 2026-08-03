@@ -1,0 +1,11 @@
+pose_weights:
+  position: 1.0
+  rotation_primary: 0.5
+  rotation_secondary: 0.05
+  gripper: 1.0
+tracking:
+  deviation: true
+  progress: true
+safety_penalty: true
+termination_penalty: true
+violation_penalty_factor: 10.0

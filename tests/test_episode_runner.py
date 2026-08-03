@@ -54,8 +54,10 @@ class MetricsQueueStub:
 
 def make_cfg(detailed_metrics=True):
     return SimpleNamespace(
-        frequencies=SimpleNamespace(high_level=2, low_level=4),
-        max_seconds=1,
+        control=SimpleNamespace(
+            frequencies=SimpleNamespace(high_level=2, low_level=4)
+        ),
+        runtime=SimpleNamespace(max_seconds=1, draw_waypoints=False, draw_tcp=False),
         training=SimpleNamespace(
             detailed_metrics=detailed_metrics,
             pose_delta_diagnostics_enabled=True,
@@ -98,7 +100,9 @@ def test_run_chunk_reuses_exact_desired_path_for_every_policy_observation():
 
 
 def test_policy_observation_keys_match_declared_observation_space():
-    cfg = SimpleNamespace(trajectory_length=2, trajectory_dim=7)
+    cfg = SimpleNamespace(
+        waypoint=SimpleNamespace(trajectory_length=2, trajectory_dim=7)
+    )
     observation_space = DummySpaceEnv(cfg).observation_space
     high_level_delta_action = np.zeros((2, 7), dtype=np.float32)
     environment = EnvironmentStub({"safety_penalty": -1.0})
