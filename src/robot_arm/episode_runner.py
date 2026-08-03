@@ -160,6 +160,9 @@ class EpisodeRunner:
                 chunk_terminated,
             )
 
+            if self.cfg.runtime.draw_tcp:
+                self.env.arm.draw_tcp()
+
             total_reward += reward
 
             if self.cfg.training.detailed_metrics:

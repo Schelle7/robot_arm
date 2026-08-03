@@ -1,11 +1,15 @@
 <mujoco model="debug_axes">
+  <asset>
+    <mesh name="tcp_arrow_green" file="tcp_arrow.obj" scale="0.02 0.02 0.05"/>
+    <mesh name="tcp_arrow_blue" file="tcp_arrow.obj" scale="0.02 0.02 0.09"/>
+  </asset>
   <worldbody>
     <body name="debug_actual_closing" mocap="true" pos="0 0 -10">
-      <geom name="debug_actual_closing_geom" type="capsule" size="0.002 0.06" group="5"
+      <geom name="debug_actual_closing_arrow" type="mesh" mesh="tcp_arrow_green" group="5"
         rgba="0.1 0.9 0.2 1" contype="0" conaffinity="0"/>
     </body>
     <body name="debug_actual_secondary" mocap="true" pos="0 0 -10">
-      <geom name="debug_actual_secondary_geom" type="capsule" size="0.002 0.045" group="5"
+      <geom name="debug_actual_secondary_arrow" type="mesh" mesh="tcp_arrow_blue" group="5"
         rgba="0.1 0.5 1 1" contype="0" conaffinity="0"/>
     </body>
   </worldbody>

@@ -6,6 +6,7 @@ import mujoco.viewer
 import hydra
 from omegaconf import DictConfig
 from robot_arm.pose import Pose
+from robot_arm.backends.sim_arm import update_tcp_debug_user_scene
 
 
 def find_latest_episode():
@@ -104,11 +105,12 @@ def main(cfg: DictConfig):
         mdata.mocap_quat[mocap_id] = p.as_mujoco_quat()
 
     mujoco.mj_forward(model, mdata)
-
     with mujoco.viewer.launch_passive(
         model, mdata, key_callback=key_callback
     ) as viewer_inst:
         import time
+
+        viewer_inst.opt.geomgroup[5] = 0
 
         while viewer_inst.is_running():
             step_start = time.time()
@@ -119,6 +121,7 @@ def main(cfg: DictConfig):
             mdata.qpos[:] = qpos_recording[current_frame[0]]
             mdata.qvel[:] = qvel_recording[current_frame[0]]
             mujoco.mj_forward(model, mdata)
+            update_tcp_debug_user_scene(viewer_inst.user_scn, model, mdata)
 
             # Print frame index to console (to avoid spamming, only when it changes, but here we print if auto_playing or keyed)
             # Actually, to avoid too much spam, we just use a small sleep. The user can see it's moving.

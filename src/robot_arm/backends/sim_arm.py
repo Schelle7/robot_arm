@@ -7,6 +7,65 @@ from robot_arm.pose import Pose
 from scipy.spatial.transform import Rotation
 
 
+def update_tcp_debug_arrows(model, data):
+    segments = tcp_debug_segments(model, data)
+
+    for body_name, origin, direction in segments:
+        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+        mocap_id = model.body_mocapid[body_id]
+        data.mocap_pos[mocap_id] = origin
+        rotation, _ = Rotation.align_vectors([direction], [[0, 0, 1]])
+        data.mocap_quat[mocap_id] = Pose(
+            origin,
+            rotation,
+            0.0,
+            rotation.as_matrix()[:, 0],
+            rotation.as_matrix()[:, 1],
+        ).as_mujoco_quat()
+
+
+def tcp_debug_segments(model, data):
+    fixed_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip"
+    )
+    moving_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SITE, "moving_finger_tip"
+    )
+    fixed = data.site_xpos[fixed_id].copy()
+    moving = data.site_xpos[moving_id].copy()
+    closing = fixed - moving
+    closing_length = np.linalg.norm(fixed - moving)
+    closing = closing / closing_length
+
+    frame_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
+    )
+    secondary = data.site_xmat[frame_id].reshape(3, 3)[:, 1]
+    secondary = secondary - np.dot(secondary, closing) * closing
+    secondary = secondary / np.linalg.norm(secondary)
+
+    return (
+        ("debug_actual_closing", moving, fixed - moving),
+        ("debug_actual_secondary", (fixed + moving) / 2.0, secondary * 0.09),
+    )
+
+
+def update_tcp_debug_user_scene(scene, model, data):
+    scene.ngeom = 0
+    colors = ((0.1, 0.9, 0.2, 1.0), (0.1, 0.5, 1.0, 1.0))
+    for (_, origin, vector), color in zip(tcp_debug_segments(model, data), colors):
+        geom = scene.geoms[scene.ngeom]
+        mujoco.mjv_connector(
+            geom,
+            mujoco.mjtGeom.mjGEOM_ARROW,
+            0.004,
+            origin,
+            origin + vector,
+        )
+        geom.rgba[:] = color
+        scene.ngeom += 1
+
+
 class SimBackend(Arm):
     """
     Simulation adapter for the SO-101 using MuJoCo.
@@ -209,33 +268,7 @@ class SimBackend(Arm):
 
     def draw_tcp(self):
         """Draw the live finger axes without affecting physics or camera images."""
-        fixed = self.fixed_finger_tip
-        moving = self.moving_finger_tip
-        closing, secondary = self.get_tcp_axes()
-        closing_length = np.linalg.norm(fixed - moving)
-
-        self._draw_debug_arrow(
-            "debug_actual_closing", (fixed + moving) / 2, closing, closing_length
-        )
-        self._draw_debug_arrow(
-            "debug_actual_secondary", (fixed + moving) / 2, secondary, 0.09
-        )
-
-    def _draw_debug_arrow(
-        self, body_name: str, origin: np.ndarray, direction: np.ndarray, length: float
-    ):
-        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-        mocap_id = self.model.body_mocapid[body_id]
-        self.data.mocap_pos[mocap_id] = origin + direction * length / 2
-        rotation, _ = Rotation.align_vectors([direction], [[0, 0, 1]])
-        rotation_matrix = rotation.as_matrix()
-        self.data.mocap_quat[mocap_id] = Pose(
-            origin,
-            rotation,
-            0.0,
-            rotation_matrix[:, 0],
-            rotation_matrix[:, 1],
-        ).as_mujoco_quat()
+        update_tcp_debug_arrows(self.model, self.data)
 
     def draw_waypoints(self, waypoints: np.ndarray):
         """
