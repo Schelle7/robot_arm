@@ -51,6 +51,8 @@ def tcp_debug_segments(model, data):
 
 def update_tcp_debug_user_scene(scene, model, data):
     scene.ngeom = 0
+    draw_scale = 2.0  # Tests were inconclusive; keep the rendered vector unscaled.
+    # draw scale shouldnt be needed but is for whatever reason
     colors = ((0.1, 0.9, 0.2, 1.0), (0.1, 0.5, 1.0, 1.0))
     for (_, origin, vector), color in zip(tcp_debug_segments(model, data), colors):
         geom = scene.geoms[scene.ngeom]
@@ -67,7 +69,7 @@ def update_tcp_debug_user_scene(scene, model, data):
             mujoco.mjtGeom.mjGEOM_ARROW,
             0.004,
             origin,
-            origin + vector,
+            origin + draw_scale * vector,
         )
         scene.ngeom += 1
 
@@ -92,9 +94,16 @@ class SimBackend(Arm):
     Unit conversion is done higher up the stack.
     """
 
-    def __init__(self, model_path: str, height: int, width: int):
+    def __init__(
+        self,
+        model_path: str,
+        height: int,
+        width: int,
+        initial_joint_range_percent: tuple[float, float],
+    ):
         self.model = mujoco.MjModel.from_xml_path(model_path)
         self.data = mujoco.MjData(self.model)
+        self.initial_joint_range_percent = initial_joint_range_percent
 
         self.renderer = mujoco.Renderer(self.model, height=height, width=width)
         self.camera_scene_option = mujoco.MjvOption()
@@ -227,8 +236,9 @@ class SimBackend(Arm):
 
             jmin, jmax = jnt_range[0], jnt_range[1]
             span = jmax - jmin
-            safe_min = jmin + 0.05 * span
-            safe_max = jmax - 0.05 * span
+            min_percent, max_percent = self.initial_joint_range_percent
+            safe_min = jmin + (min_percent / 100.0) * span
+            safe_max = jmin + (max_percent / 100.0) * span
             new_pos = np.random.uniform(safe_min, safe_max)
             self.data.qpos[qpos_idx] = new_pos
 

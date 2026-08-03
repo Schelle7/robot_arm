@@ -3,3 +3,13 @@ frequencies:
   low_level: 200
   mujoco: 200
 action_scale_radians: 0.005
+
+initial_joints:
+  range_percent: [45.0, 55.0]
+
+staging:
+  enabled: true
+  step_radians: 0.02
+  tolerance_radians: 0.03
+  max_steps: 300
+  pause_seconds: 0.05

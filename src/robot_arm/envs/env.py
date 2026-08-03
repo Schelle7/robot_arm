@@ -27,6 +27,7 @@ class RobotEnv:
         )
 
         self.arm = arm
+        self.backend = cfg.backend
         self.delta_action_scale = delta_action_scale
         self.violation_penalty_factor = violation_penalty_factor
         self.low_level_hz = low_level_hz
@@ -38,6 +39,14 @@ class RobotEnv:
         self.pose_delta_diagnostics_enabled = (
             cfg.training.pose_delta_diagnostics_enabled
         )
+        self.staging_enabled = cfg.control.staging.enabled
+        self.initial_joint_range_percent = (
+            cfg.control.initial_joints.range_percent
+        )
+        self.staging_step_radians = cfg.control.staging.step_radians
+        self.staging_tolerance_radians = cfg.control.staging.tolerance_radians
+        self.staging_max_steps = cfg.control.staging.max_steps
+        self.staging_pause_seconds = cfg.control.staging.pause_seconds
 
         self.position_distance_weight = float(cfg.reward.pose_weights.position)
         self.rotation_primary_distance_weight = float(
@@ -95,10 +104,16 @@ class RobotEnv:
         self.previous_deviation = 0.0
         self.previous_progress = 0.0
 
-        # We don't magically reset the physical arm to zero, we just start observing from where it is
-        # However, for simulation, the SimBackend handles advancing time and scene resets
-        if hasattr(self.arm, "reset_sim"):
+        if self.backend == "sim":
             self.arm.reset_sim()
+        elif self.backend == "real" and self.staging_enabled:
+            self.arm.move_to_staging_pose(
+                initial_joint_range_percent=self.initial_joint_range_percent,
+                step_radians=self.staging_step_radians,
+                tolerance_radians=self.staging_tolerance_radians,
+                max_steps=self.staging_max_steps,
+                pause_seconds=self.staging_pause_seconds,
+            )
 
         return self._get_obs()
 

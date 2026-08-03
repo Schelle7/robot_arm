@@ -19,7 +19,12 @@ def make_env(cfg: DictConfig):
     width = cfg.camera.width
 
     if cfg.backend == "sim":
-        backend = SimBackend(model_path=cfg.model_path, height=height, width=width)
+        backend = SimBackend(
+            model_path=cfg.model_path,
+            height=height,
+            width=width,
+            initial_joint_range_percent=cfg.control.initial_joints.range_percent,
+        )
     elif cfg.backend == "real":
         # Imports protected to avoid needing lerobot/hardware on simulation-only machines
         from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig

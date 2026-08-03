@@ -160,6 +160,44 @@ class RealArm(Arm):
         # sync_write handles the broadcast automatically if the bus is capable
         self.bus.sync_write("Goal_Position", raw_positions)
 
+    def move_to_staging_pose(
+        self,
+        initial_joint_range_percent: tuple[float, float],
+        step_radians: float,
+        tolerance_radians: float,
+        max_steps: int,
+        pause_seconds: float,
+    ) -> None:
+        min_percent, max_percent = initial_joint_range_percent
+        staging_positions = {
+            name: float(
+                self.model.jnt_range[joint_id][0]
+                + (np.random.uniform(min_percent, max_percent) / 100.0)
+                * (self.model.jnt_range[joint_id][1] - self.model.jnt_range[joint_id][0])
+            )
+            for name, joint_id in self.joint_indices.items()
+        }
+
+        for _ in range(max_steps):
+            current_state = self.read_state()["Present_Position"]
+            errors = {
+                name: staging_positions[name] - current_state[name]
+                for name in self.joint_indices
+            }
+
+            if max(abs(error) for error in errors.values()) <= tolerance_radians:
+                return
+
+            next_positions = {
+                name: current_state[name]
+                + np.clip(error, -step_radians, step_radians)
+                for name, error in errors.items()
+            }
+            self.write_goal(next_positions)
+            time.sleep(pause_seconds)
+
+        raise RuntimeError("Real arm did not reach the staging pose.")
+
     def disconnect(self):
         # Immediate hardware emergency stop broadcast packet for Feetech servos
         # Packet breakdown:
