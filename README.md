@@ -225,3 +225,9 @@ but for sequence / path understanding something different to keep focus on all p
 
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)
+
+
+
+the starting configs are sometimes really fucked up
+
+I should limit them more (maybe avoid ground interaction)

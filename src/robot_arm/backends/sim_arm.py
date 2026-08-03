@@ -7,24 +7,7 @@ from robot_arm.pose import Pose
 from scipy.spatial.transform import Rotation
 
 
-def update_tcp_debug_arrows(model, data):
-    segments = tcp_debug_segments(model, data)
-
-    for body_name, origin, direction in segments:
-        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-        mocap_id = model.body_mocapid[body_id]
-        data.mocap_pos[mocap_id] = origin
-        rotation, _ = Rotation.align_vectors([direction], [[0, 0, 1]])
-        data.mocap_quat[mocap_id] = Pose(
-            origin,
-            rotation,
-            0.0,
-            rotation.as_matrix()[:, 0],
-            rotation.as_matrix()[:, 1],
-        ).as_mujoco_quat()
-
-
-def tcp_debug_segments(model, data):
+def get_tcp_geometry(model, data):
     fixed_id = mujoco.mj_name2id(
         model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip"
     )
@@ -33,20 +16,36 @@ def tcp_debug_segments(model, data):
     )
     fixed = data.site_xpos[fixed_id].copy()
     moving = data.site_xpos[moving_id].copy()
-    closing = fixed - moving
-    closing_length = np.linalg.norm(fixed - moving)
-    closing = closing / closing_length
 
     frame_id = mujoco.mj_name2id(
         model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
     )
     secondary = data.site_xmat[frame_id].reshape(3, 3)[:, 1]
+    closing = fixed - moving
+    closing = closing / np.linalg.norm(closing)
     secondary = secondary - np.dot(secondary, closing) * closing
     secondary = secondary / np.linalg.norm(secondary)
 
+    gripper_joint_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_JOINT, "gripper"
+    )
+    gripper_qpos_id = model.jnt_qposadr[gripper_joint_id]
+    pose = Pose.from_tcp_axes(
+        (fixed + moving) / 2.0,
+        closing,
+        secondary,
+        float(data.qpos[gripper_qpos_id]),
+    )
+
+    return pose, fixed, moving
+
+
+def tcp_debug_segments(model, data):
+    pose, fixed, moving = get_tcp_geometry(model, data)
+
     return (
         ("debug_actual_closing", moving, fixed - moving),
-        ("debug_actual_secondary", (fixed + moving) / 2.0, secondary * 0.09),
+        ("debug_actual_secondary", pose.position, pose.secondary_axis * 0.09),
     )
 
 
@@ -55,6 +54,14 @@ def update_tcp_debug_user_scene(scene, model, data):
     colors = ((0.1, 0.9, 0.2, 1.0), (0.1, 0.5, 1.0, 1.0))
     for (_, origin, vector), color in zip(tcp_debug_segments(model, data), colors):
         geom = scene.geoms[scene.ngeom]
+        mujoco.mjv_initGeom(
+            geom,
+            mujoco.mjtGeom.mjGEOM_ARROW,
+            np.zeros(3),
+            np.zeros(3),
+            np.eye(3).reshape(-1),
+            color,
+        )
         mujoco.mjv_connector(
             geom,
             mujoco.mjtGeom.mjGEOM_ARROW,
@@ -62,8 +69,19 @@ def update_tcp_debug_user_scene(scene, model, data):
             origin,
             origin + vector,
         )
-        geom.rgba[:] = color
         scene.ngeom += 1
+
+    pose, _, _ = get_tcp_geometry(model, data)
+    tcp_size = np.full(3, 0.003)
+    mujoco.mjv_initGeom(
+        scene.geoms[scene.ngeom],
+        mujoco.mjtGeom.mjGEOM_SPHERE,
+        tcp_size,
+        pose.position,
+        np.eye(3).reshape(-1),
+        (1.0, 0.8, 0.1, 1.0),
+    )
+    scene.ngeom += 1
 
 
 class SimBackend(Arm):
@@ -119,27 +137,9 @@ class SimBackend(Arm):
     def aperture(self) -> float:
         return float(np.linalg.norm(self.moving_finger_tip - self.fixed_finger_tip))
 
-    @property
-    def mujoco_hand_pose(self) -> Pose:
-        site_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
-        )
-        rot_mat = self.data.site_xmat[site_id].copy().reshape(3, 3)
-
-        # Aperture in radians from the servo itself
-        qpos_idx = self.model.jnt_qposadr[self.joint_indices["gripper"]]
-        gripper_radians = float(self.data.qpos[qpos_idx])
-
-        return Pose.from_matrix(self.tcp, rot_mat, gripper_radians)
-
     def get_tcp_pose(self) -> Pose:
-        closing, secondary = self.get_tcp_axes()
-        return Pose.from_tcp_axes(
-            self.tcp,
-            closing,
-            secondary,
-            self.mujoco_hand_pose.gripper,
-        )
+        pose, _, _ = get_tcp_geometry(self.model, self.data)
+        return pose
 
     def get_privileged_box_pose(self) -> Pose:
         # The box is defined as a body named "target_box" in scene.xml
@@ -251,24 +251,11 @@ class SimBackend(Arm):
         return self.renderer.render()
 
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
-        fixed = self.fixed_finger_tip
-        moving = self.moving_finger_tip
-        closing = fixed - moving
-        closing = closing / np.linalg.norm(closing)
-
-        site_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe"
-        )
-        frame = self.data.site_xmat[site_id].reshape(3, 3)
-        secondary = frame[:, 1]
-        secondary = secondary - np.dot(secondary, closing) * closing
-        secondary = secondary / np.linalg.norm(secondary)
-
-        return closing, secondary
+        pose = self.get_tcp_pose()
+        return pose.closing_axis, pose.secondary_axis
 
     def draw_tcp(self):
-        """Draw the live finger axes without affecting physics or camera images."""
-        update_tcp_debug_arrows(self.model, self.data)
+        pass
 
     def draw_waypoints(self, waypoints: np.ndarray):
         """
