@@ -14,4 +14,3 @@ staging:
   tolerance_radians: 0.03
   max_steps: 1200
   pause_seconds: 0.1
-  log_path: ${hydra:runtime.output_dir}/staging_log.csv

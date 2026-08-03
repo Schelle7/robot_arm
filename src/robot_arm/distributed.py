@@ -91,7 +91,14 @@ class MetricsQueueBuffer:
             self.chunk_metrics = []
 
 
-def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_queue):
+def worker_process(
+    worker_id,
+    cfg,
+    output_dir,
+    transition_queue,
+    metrics_queue,
+    weights_queue,
+):
     """
     Subprocess isolated execution: Initializes env, runner, and an inference-only model.
     Steps physics and places transition chunks onto the queue.
@@ -100,7 +107,7 @@ def worker_process(worker_id, cfg, transition_queue, metrics_queue, weights_queu
     torch.set_num_threads(1)
 
     log.info(f"Worker {worker_id}: Initializing Simulation...")
-    env = make_env(cfg)
+    env = make_env(cfg, output_dir)
 
     dummy_env_for_sac = DummySpaceEnv(cfg)
     low_level_policy = SAC(
@@ -298,6 +305,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     )
 
     hydra_cfg = HydraConfig.get()
+    output_dir = hydra_cfg.runtime.output_dir
     from stable_baselines3.common.logger import configure
 
     logger = configure(hydra_cfg.runtime.output_dir, ["csv"])
@@ -324,7 +332,14 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
     for i in range(num_workers):
         p = mp.Process(
             target=worker_process,
-            args=(i, cfg, transition_queue, metrics_queue, worker_queues[i]),
+            args=(
+                i,
+                cfg,
+                output_dir,
+                transition_queue,
+                metrics_queue,
+                worker_queues[i],
+            ),
         )
         p.daemon = True
         p.start()

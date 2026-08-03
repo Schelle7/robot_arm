@@ -15,6 +15,7 @@ def train_low_level(cfg: DictConfig):
     output_dir = HydraConfig.get().runtime.output_dir
 
     print(f"Hydra run directory: {output_dir}", flush=True)
+    print(f"tensorboard --logdir={output_dir}", flush=True)
 
     run_distributed_training(cfg, device)
 

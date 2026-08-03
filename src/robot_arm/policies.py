@@ -8,6 +8,23 @@ import numpy as np
 from robot_arm.pose import Pose
 
 
+def make_waypoint_pose(
+    position: np.ndarray,
+    angles: np.ndarray,
+    gripper: float,
+    seq: str,
+    degrees: bool,
+) -> Pose:
+    euler_pose = Pose.from_euler(position, angles, gripper, seq, degrees)
+    rotation_matrix = euler_pose.rotation.as_matrix()
+    return Pose.from_tcp_axes(
+        position,
+        rotation_matrix[:, 1],
+        rotation_matrix[:, 2],
+        gripper,
+    )
+
+
 class Policy(ABC):
     """
     Base interface for all high-level control policies.
@@ -118,19 +135,39 @@ class WaypointPolicy(Policy):
         2. Close the gripper while remaining in place.
         3. Move straight up along the Z-axis with the gripper closed.
         """
-        # Neutral pre-grasp position: ~35cm out, 30cm high, pitch pointing down, open gripper
-        wp0 = Pose.from_euler(
-            [0.35, 0.0, 0.30], [0.0, 0, 0.0], gripper_open, "XYZ", False
+        pregrasp_position = [
+            np.random.uniform(0.3, 0.5),
+            np.random.uniform(-0.15, 0.15),
+            np.random.uniform(0.2, 0.4),
+        ]
+        pregrasp_x_rotation = np.random.uniform(-np.pi / 4, np.pi / 4)
+        wp0 = make_waypoint_pose(
+            pregrasp_position,
+            [pregrasp_x_rotation, 0.0, 0.0],
+            gripper_open,
+            "XYZ",
+            False,
         ).as_10d()
 
-        wp1 = box_pose.as_10d()
-        wp1[9] = gripper_open
+        wp1 = make_waypoint_pose(
+            box_pose.position,
+            [0.0, 0.0, 0.0],
+            gripper_open,
+            "XYZ",
+            False,
+        ).as_10d()
 
         wp2 = wp1.copy()
         wp2[9] = gripper_closed
 
-        wp3 = wp2.copy()
-        wp3[2] += lift_height
+        lift_x_rotation = np.random.choice([-np.pi / 2, np.pi / 2])
+        wp3 = make_waypoint_pose(
+            [wp2[0], wp2[1], wp2[2] + lift_height],
+            [lift_x_rotation, 0.0, 0.0],
+            gripper_closed,
+            "XYZ",
+            False,
+        ).as_10d()
 
         self.waypoints = [wp0, wp1, wp2, wp3]
         self.current_wp_idx = 0

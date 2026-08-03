@@ -4,6 +4,7 @@ FEEDBACK_REGISTERS = (
     "Present_Load",
     "Present_Voltage",
     "Present_Temperature",
+    "Present_Current",
 )
 
 
@@ -19,13 +20,13 @@ def read_temperature(bus):
 
 def read_block(bus):
     """
-    The smart way: a single 8-byte block read (addr 56 to 63) per cycle.
-    1 round-trip for all 5 values.
+    The smart way: a single 15-byte block read (addr 56 to 70) per cycle.
+    1 round-trip for all 6 values.
     """
     motor_ids = [m.id for m in bus.motors.values()]
 
-    # Address 56 is Present_Position. 8 bytes gets us up to Present_Temperature.
-    bus._setup_sync_reader(motor_ids, 56, 8)
+    # Address 56 is Present_Position. 15 bytes gets us through Present_Current.
+    bus._setup_sync_reader(motor_ids, 56, 15)
 
     comm = bus.sync_reader.txRxPacket()
     if not bus._is_comm_success(comm):
@@ -36,7 +37,7 @@ def read_block(bus):
     results = {reg: {} for reg in FEEDBACK_REGISTERS}
     for name, motor in bus.motors.items():
         i = motor.id
-        if not bus.sync_reader.isAvailable(i, 56, 8):
+        if not bus.sync_reader.isAvailable(i, 56, 15):
             continue
 
         # Extract from the already-fetched buffer
@@ -45,6 +46,7 @@ def read_block(bus):
         load = bus.sync_reader.getData(i, 60, 2)
         volt = bus.sync_reader.getData(i, 62, 1)
         temp = bus.sync_reader.getData(i, 63, 1)
+        current = bus.sync_reader.getData(i, 69, 2)
 
         # Velocity and Load are sign-magnitude encoded, handle decoding
         vel = bus._decode_sign("Present_Velocity", {i: vel})[i]
@@ -55,5 +57,6 @@ def read_block(bus):
         results["Present_Load"][name] = load
         results["Present_Voltage"][name] = volt
         results["Present_Temperature"][name] = temp
+        results["Present_Current"][name] = current
 
     return results

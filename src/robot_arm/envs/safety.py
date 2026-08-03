@@ -1,6 +1,7 @@
 import numpy as np
 import time
 import csv
+from pathlib import Path
 from typing import Dict
 from robot_arm.backends.arm import Arm
 
@@ -82,7 +83,7 @@ class SafeArmWrapper(Arm):
         tolerance_radians: float,
         max_steps: int,
         pause_seconds: float,
-        log_path: str,
+        output_dir: str,
     ) -> None:
         min_percent, max_percent = initial_joint_range_percent
         staging_positions = {
@@ -108,10 +109,12 @@ class SafeArmWrapper(Arm):
                 "present_load",
                 "present_voltage",
                 "present_temperature",
+                "present_current",
             ):
                 fieldnames.append(f"{name}_{field}")
 
-        with open(log_path, "w", newline="") as log_file:
+        staging_log_path = Path(output_dir) / "staging_log.csv"
+        with open(staging_log_path, "w", newline="") as log_file:
             writer = csv.DictWriter(log_file, fieldnames=fieldnames)
             writer.writeheader()
 
@@ -135,11 +138,12 @@ class SafeArmWrapper(Arm):
                     row[f"{name}_present_load"] = state["Present_Load"][name]
                     row[f"{name}_present_voltage"] = state["Present_Voltage"][name]
                     row[f"{name}_present_temperature"] = state["Present_Temperature"][name]
+                    row[f"{name}_present_current"] = state["Present_Current"][name]
 
                 if max(abs(error) for error in errors.values()) <= tolerance_radians:
                     row["status"] = "complete"
                     writer.writerow(row)
-                    print(f"Staging log written to: {log_path}")
+                    print(f"Staging log written to: {staging_log_path}")
                     return
 
                 next_positions = {

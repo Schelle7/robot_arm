@@ -9,7 +9,7 @@ from robot_arm.envs.safety import SafeArmWrapper
 log = logging.getLogger(__name__)
 
 
-def make_env(cfg: DictConfig):
+def make_env(cfg: DictConfig, output_dir: str):
     """
     Creates a standardized instance of the underlying backend and RobotEnv wrapper
     based on the loaded DictConfig. Helper to avoid duplicating this setup between
@@ -53,5 +53,6 @@ def make_env(cfg: DictConfig):
     env = RobotEnv(
         arm=safe_backend,
         cfg=cfg,
+        output_dir=output_dir,
     )
     return env

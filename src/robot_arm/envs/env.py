@@ -16,6 +16,7 @@ class RobotEnv:
         self,
         arm: Arm,
         cfg: DictConfig,
+        output_dir: str,
     ):
         violation_penalty_factor = cfg.reward.violation_penalty_factor
         low_level_hz = cfg.control.frequencies.low_level
@@ -50,7 +51,7 @@ class RobotEnv:
         self.staging_tolerance_radians = cfg.control.staging.tolerance_radians
         self.staging_max_steps = cfg.control.staging.max_steps
         self.staging_pause_seconds = cfg.control.staging.pause_seconds
-        self.staging_log_path = cfg.control.staging.log_path
+        self.output_dir = output_dir
 
         self.position_distance_weight = float(cfg.reward.pose_weights.position)
         self.rotation_primary_distance_weight = float(
@@ -117,10 +118,14 @@ class RobotEnv:
                 tolerance_radians=self.staging_tolerance_radians,
                 max_steps=self.staging_max_steps,
                 pause_seconds=self.staging_pause_seconds,
-                log_path=self.staging_log_path,
+                output_dir=self.output_dir,
             )
 
         return self._get_obs()
+
+    def reset_chunk_reward_tracking(self) -> None:
+        self.previous_deviation = 0.0
+        self.previous_progress = 0.0
 
     def read_camera(self):
         return self.arm.read_camera()

@@ -6,7 +6,12 @@ import mujoco.viewer
 import hydra
 from omegaconf import DictConfig
 from robot_arm.pose import Pose
-from robot_arm.backends.sim_arm import update_tcp_debug_user_scene
+from robot_arm.backends.sim_arm import (
+    build_desired_poses,
+    update_tcp_debug_user_scene,
+    update_waypoint_debug_user_scene,
+    update_desired_pose_debug_user_scene,
+)
 
 
 def find_latest_episode():
@@ -90,19 +95,9 @@ def main(cfg: DictConfig):
     mdata.qpos[:] = qpos_recording[0]
     mdata.qvel[:] = qvel_recording[0]
 
-    # If waypoints are in the recording, inject them into the mocap bodies
     wps = data["waypoints"]
-    num_wp = min(len(wps), 4)
-    for i in range(num_wp):
-        wp = wps[i]
-        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}")
-        mocap_id = model.body_mocapid[body_id]
-
-        # Convert wp (10D representation) back to a Pose object to get the 4D orientation (mujoco_quat)
-        p = Pose.from_10d(wp)
-
-        mdata.mocap_pos[mocap_id] = p.position
-        mdata.mocap_quat[mocap_id] = p.as_mujoco_quat()
+    desired_actions = data["high_level_delta_action"]
+    recorded_poses = data["privileged_end_effector_pose"]
 
     mujoco.mj_forward(model, mdata)
     with mujoco.viewer.launch_passive(
@@ -122,6 +117,14 @@ def main(cfg: DictConfig):
             mdata.qvel[:] = qvel_recording[current_frame[0]]
             mujoco.mj_forward(model, mdata)
             update_tcp_debug_user_scene(viewer_inst.user_scn, model, mdata)
+            update_waypoint_debug_user_scene(viewer_inst.user_scn, wps, 0)
+            desired_start_pose = Pose.from_10d(recorded_poses[current_frame[0]])
+            desired_poses = build_desired_poses(
+                desired_start_pose,
+                desired_actions[current_frame[0]],
+                cfg.runtime.desired_path_visual_exaggeration_factor,
+            )
+            update_desired_pose_debug_user_scene(viewer_inst.user_scn, desired_poses)
 
             # Print frame index to console (to avoid spamming, only when it changes, but here we print if auto_playing or keyed)
             # Actually, to avoid too much spam, we just use a small sleep. The user can see it's moving.

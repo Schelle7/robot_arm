@@ -1,10 +1,10 @@
 from typing import Dict
 import mujoco
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from robot_arm.backends.arm import Arm
 from robot_arm.pose import Pose
-from scipy.spatial.transform import Rotation
 
 
 def get_tcp_geometry(model, data):
@@ -53,7 +53,7 @@ def update_tcp_debug_user_scene(scene, model, data):
     scene.ngeom = 0
     draw_scale = 2.0  # Tests were inconclusive; keep the rendered vector unscaled.
     # draw scale shouldnt be needed but is for whatever reason
-    colors = ((0.1, 0.9, 0.2, 1.0), (0.1, 0.5, 1.0, 1.0))
+    colors = ((0.1, 0.9, 0.2, 0.35), (0.1, 0.5, 1.0, 0.35))
     for (_, origin, vector), color in zip(tcp_debug_segments(model, data), colors):
         geom = scene.geoms[scene.ngeom]
         mujoco.mjv_initGeom(
@@ -86,6 +86,93 @@ def update_tcp_debug_user_scene(scene, model, data):
     scene.ngeom += 1
 
 
+def update_waypoint_debug_user_scene(scene, waypoints, active_waypoint_index):
+    waypoint_arrow_length = 0.09
+    inactive_alpha = 0.25
+    active_alpha = 1.0
+    arrow_specs = (
+        (lambda pose: pose.closing_axis, (0.1, 0.9, 0.2)),
+        (lambda pose: pose.secondary_axis, (0.1, 0.5, 1.0)),
+    )
+    poses = [Pose.from_10d(waypoint) for waypoint in waypoints]
+
+    for index, pose in enumerate(poses):
+        alpha = active_alpha if index == active_waypoint_index else inactive_alpha
+        for vector_getter, color in arrow_specs:
+            origin = pose.position
+            vector = vector_getter(pose) * waypoint_arrow_length
+            geom = scene.geoms[scene.ngeom]
+            mujoco.mjv_initGeom(
+                geom,
+                mujoco.mjtGeom.mjGEOM_ARROW,
+                np.zeros(3),
+                np.zeros(3),
+                np.eye(3).reshape(-1),
+                (*color, alpha),
+            )
+            mujoco.mjv_connector(
+                geom,
+                mujoco.mjtGeom.mjGEOM_ARROW,
+                0.004,
+                origin,
+                origin + vector,
+            )
+            scene.ngeom += 1
+
+
+def build_desired_poses(
+    start_pose: Pose,
+    high_level_delta_action: np.ndarray,
+    desired_path_visual_exaggeration_factor: float,
+):
+    desired_poses = []
+    for delta in high_level_delta_action:
+        displayed_position = (
+            start_pose.position
+            + desired_path_visual_exaggeration_factor * delta[:3]
+        )
+        displayed_rotation = start_pose.rotation * Rotation.from_rotvec(
+            desired_path_visual_exaggeration_factor * delta[3:6]
+        )
+        desired_poses.append(
+            Pose.from_matrix(
+                displayed_position,
+                displayed_rotation.as_matrix(),
+                start_pose.gripper,
+            )
+        )
+    return desired_poses
+
+
+def update_desired_pose_debug_user_scene(scene, desired_poses):
+    arrow_specs = (
+        (lambda pose: pose.closing_axis, (0.0, 0.35, 0.05, 0.75)),
+        (lambda pose: pose.secondary_axis, (0.0, 0.15, 0.45, 0.75)),
+    )
+    desired_arrow_length = 0.09
+    for pose in desired_poses:
+        for vector_getter, color in arrow_specs:
+            if np.linalg.norm(vector_getter(pose)) <= 1e-5:
+                continue
+            geom = scene.geoms[scene.ngeom]
+            mujoco.mjv_initGeom(
+                geom,
+                mujoco.mjtGeom.mjGEOM_ARROW,
+                np.zeros(3),
+                np.zeros(3),
+                np.eye(3).reshape(-1),
+                color,
+            )
+            mujoco.mjv_connector(
+                geom,
+                mujoco.mjtGeom.mjGEOM_ARROW,
+                0.003,
+                pose.position,
+                pose.position + vector_getter(pose) * desired_arrow_length,
+            )
+            scene.ngeom += 1
+
+
 class SimBackend(Arm):
     """
     Simulation adapter for the SO-101 using MuJoCo.
@@ -106,6 +193,9 @@ class SimBackend(Arm):
         self.initial_joint_range_percent = initial_joint_range_percent
 
         self.renderer = mujoco.Renderer(self.model, height=height, width=width)
+        self.waypoints = []
+        self.active_waypoint_index = 0
+        self.desired_poses = []
         self.camera_scene_option = mujoco.MjvOption()
         self.camera_scene_option.geomgroup[5] = 0
 
@@ -258,6 +348,8 @@ class SimBackend(Arm):
         self.renderer.update_scene(
             self.data, camera="pixel_cam", scene_option=self.camera_scene_option
         )
+        self._draw_waypoint_arrows()
+        self._draw_desired_pose_path()
         return self.renderer.render()
 
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
@@ -268,92 +360,64 @@ class SimBackend(Arm):
         pass
 
     def draw_waypoints(self, waypoints: np.ndarray):
-        """
-        Takes up to 4 waypoints of 10D arrays
-        and updates the 'ghost_wp_X' mocap models to visualize them.
-        Lines ('ghost_line_X') are drawn between them.
-        """
-        num_wp = min(len(waypoints), 4)
+        self.waypoints = [Pose.from_10d(waypoint) for waypoint in waypoints]
+        self.active_waypoint_index = 0
 
-        for i in range(num_wp):
-            wp = waypoints[i]
-            pose = Pose.from_10d(wp)
+    def update_waypoint_index(self, active_waypoint_index: int):
+        self.active_waypoint_index = active_waypoint_index
 
-            body_id = mujoco.mj_name2id(
-                self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}"
-            )
-            if body_id == -1:
-                raise KeyError(
-                    f"Body 'ghost_wp_{i}' not found in MuJoCo model. Ensure ghost_waypoints.xml is included."
-                )
-            mocap_id = self.model.body_mocapid[body_id]
-            self.data.mocap_pos[mocap_id] = pose.position
-            self.data.mocap_quat[mocap_id] = pose.as_mujoco_quat()
+    def draw_desired_path(
+        self,
+        start_pose: Pose,
+        high_level_delta_action: np.ndarray,
+        desired_path_visual_exaggeration_factor: float,
+    ):
+        self.desired_poses = build_desired_poses(
+            start_pose,
+            high_level_delta_action,
+            desired_path_visual_exaggeration_factor,
+        )
 
-        # Draw cylinders between waypoints
-        for i in range(num_wp - 1):
-            p1_pose = Pose.from_10d(waypoints[i])
-            p2_pose = Pose.from_10d(waypoints[i + 1])
-            p1 = p1_pose.position
-            p2 = p2_pose.position
+    def _draw_waypoint_arrows(self):
+        waypoint_arrow_length = 0.09
+        inactive_alpha = 0.25
+        active_alpha = 1.0
+        arrow_specs = (
+            (lambda pose: pose.closing_axis, (0.1, 0.9, 0.2)),
+            (lambda pose: pose.secondary_axis, (0.1, 0.5, 1.0)),
+        )
 
-            line_body_id = mujoco.mj_name2id(
-                self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_line_{i}"
-            )
-            line_geom_id = mujoco.mj_name2id(
-                self.model, mujoco.mjtObj.mjOBJ_GEOM, f"ghost_line_{i}_geom"
-            )
-
-            if line_body_id == -1 or line_geom_id == -1:
-                raise KeyError(
-                    f"Body or geom for 'ghost_line_{i}' not found in MuJoCo model."
+        for index, pose in enumerate(self.waypoints):
+            alpha = active_alpha if index == self.active_waypoint_index else inactive_alpha
+            for vector_getter, color in arrow_specs:
+                self._add_arrow(
+                    pose.position,
+                    vector_getter(pose) * waypoint_arrow_length,
+                    (*color, alpha),
+                    0.004,
                 )
 
-            mocap_id = self.model.body_mocapid[line_body_id]
+    def _draw_desired_pose_path(self):
+        update_desired_pose_debug_user_scene(self.renderer.scene, self.desired_poses)
 
-            # Position is midpoint
-            midpoint = (p1 + p2) / 2.0
-            self.data.mocap_pos[mocap_id] = midpoint
+    def _add_arrow(self, origin, vector, color, width):
+        if np.linalg.norm(vector) <= 1e-5:
+            return
 
-            # Rotation to align z-axis of cylinder with the direction vector
-            vec = p2 - p1
-            dist = np.linalg.norm(vec)
-
-            if dist > 1e-5:
-                vec = vec / dist
-                # Default cylinder acts along Z (0, 0, 1)
-                # We compute quaternion that maps (0,0,1) to vec
-                z_axis = np.array([0, 0, 1])
-                rot, _ = Rotation.align_vectors([vec], [z_axis])
-
-                rotation_matrix = rot.as_matrix()
-                quat = Pose(
-                    midpoint,
-                    rot,
-                    1.0,
-                    rotation_matrix[:, 0],
-                    rotation_matrix[:, 1],
-                ).as_mujoco_quat()
-                self.data.mocap_quat[mocap_id] = quat
-
-            # Update geom length (size is [radius, half-length])
-            self.model.geom_size[line_geom_id][1] = dist / 2.0
-
-        # Send unused waypoints / lines underground
-        for i in range(num_wp, 4):
-            body_id = mujoco.mj_name2id(
-                self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_wp_{i}"
-            )
-            if body_id == -1:
-                raise KeyError(f"Body 'ghost_wp_{i}' not found in MuJoCo model.")
-            mocap_id = self.model.body_mocapid[body_id]
-            self.data.mocap_pos[mocap_id] = [0, 0, -10]
-
-        for i in range(max(0, num_wp - 1), 3):
-            line_body_id = mujoco.mj_name2id(
-                self.model, mujoco.mjtObj.mjOBJ_BODY, f"ghost_line_{i}"
-            )
-            if line_body_id == -1:
-                raise KeyError(f"Body 'ghost_line_{i}' not found in MuJoCo model.")
-            mocap_id = self.model.body_mocapid[line_body_id]
-            self.data.mocap_pos[mocap_id] = [0, 0, -10]
+        geom = self.renderer.scene.geoms[self.renderer.scene.ngeom]
+        mujoco.mjv_initGeom(
+            geom,
+            mujoco.mjtGeom.mjGEOM_ARROW,
+            np.zeros(3),
+            np.zeros(3),
+            np.eye(3).reshape(-1),
+            color,
+        )
+        mujoco.mjv_connector(
+            geom,
+            mujoco.mjtGeom.mjGEOM_ARROW,
+            width,
+            origin,
+            origin + vector,
+        )
+        self.renderer.scene.ngeom += 1

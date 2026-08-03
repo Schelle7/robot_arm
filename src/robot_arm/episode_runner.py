@@ -73,6 +73,15 @@ class EpisodeRunner:
                     privileged_end_effector_pose=self.env.get_privileged_end_effector_pose(),
                     task=task,
                 )
+                if self.cfg.runtime.draw_waypoints:
+                    self.env.arm.update_waypoint_index(
+                        self.high_level_policy.current_wp_idx
+                    )
+                    self.env.arm.draw_desired_path(
+                        self.env.get_privileged_end_effector_pose(),
+                        high_level_delta_action,
+                        self.cfg.runtime.desired_path_visual_exaggeration_factor,
+                    )
 
                 next_obs, reward = self.run_chunk(obs, high_level_delta_action)
 
@@ -126,6 +135,7 @@ class EpisodeRunner:
         """
         Executes a single chunk of low-level physics steps to chase the high-level action target.
         """
+        self.env.reset_chunk_reward_tracking()
         start_positions = raw_obs["joint_positions"].copy()
 
         # We need the physical cartesian start pose explicitly to calculate rewards
