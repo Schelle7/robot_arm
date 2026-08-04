@@ -15,7 +15,11 @@ from robot_arm.policies import (
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.factory import make_env
 from robot_arm.model_snapshot import snapshot_model_files
-from robot_arm.rollout_config import build_rollout_config
+from robot_arm.rollout_config import (
+    assert_matching_policy_constraints,
+    load_policy_config,
+    policy_model_path,
+)
 
 
 def get_waypoint_list():
@@ -53,18 +57,24 @@ def get_waypoint_list():
     ]
 
 
-@hydra.main(version_base=None, config_path="../conf", config_name="config")
+@hydra.main(version_base=None, config_path="../conf", config_name="rollout")
 def main(cfg: DictConfig):
     # Setup Policy
     task = "Sanity check: Initial pose, move front, move back."
 
     checkpoint_path = find_latest_low_level_checkpoint()
-    cfg = build_rollout_config(cfg, checkpoint_path)
+    policy_cfg = load_policy_config(checkpoint_path)
+    assert_matching_policy_constraints(cfg, policy_cfg)
+    cfg = policy_cfg
+    cfg.model_path = policy_model_path(checkpoint_path, policy_cfg)
 
     # Initialize a WaypointPolicy
     policy = WaypointPolicy(
         trajectory_length=cfg.waypoint.trajectory_length,
-        speed=cfg.waypoint.speed,
+        low_level_hz=cfg.control.frequencies.low_level,
+        position_speed_meters_per_second=cfg.waypoint.position_speed_meters_per_second,
+        rotation_speed_radians_per_second=cfg.waypoint.rotation_speed_radians_per_second,
+        gripper_speed_units_per_second=cfg.waypoint.gripper_speed_units_per_second,
     )
 
     # Load the latest trained low-level RL model

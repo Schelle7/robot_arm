@@ -89,7 +89,7 @@ def update_tcp_debug_user_scene(scene, model, data):
 def update_waypoint_debug_user_scene(scene, waypoints, active_waypoint_index):
     waypoint_arrow_length = 0.09
     inactive_alpha = 0.25
-    active_alpha = 1.0
+    active_alpha = 0.6
     arrow_specs = (
         (lambda pose: pose.closing_axis, (0.1, 0.9, 0.2)),
         (lambda pose: pose.secondary_axis, (0.1, 0.5, 1.0)),
@@ -123,16 +123,12 @@ def update_waypoint_debug_user_scene(scene, waypoints, active_waypoint_index):
 def build_desired_poses(
     start_pose: Pose,
     high_level_delta_action: np.ndarray,
-    desired_path_visual_exaggeration_factor: float,
 ):
     desired_poses = []
     for delta in high_level_delta_action:
-        displayed_position = (
-            start_pose.position
-            + desired_path_visual_exaggeration_factor * delta[:3]
-        )
+        displayed_position = start_pose.position + delta[:3]
         displayed_rotation = start_pose.rotation * Rotation.from_rotvec(
-            desired_path_visual_exaggeration_factor * delta[3:6]
+            delta[3:6]
         )
         desired_poses.append(
             Pose.from_matrix(
@@ -166,7 +162,7 @@ def update_desired_pose_debug_user_scene(scene, desired_poses):
             mujoco.mjv_connector(
                 geom,
                 mujoco.mjtGeom.mjGEOM_ARROW,
-                0.003,
+                .003,
                 pose.position,
                 pose.position + vector_getter(pose) * desired_arrow_length,
             )
@@ -370,18 +366,16 @@ class SimBackend(Arm):
         self,
         start_pose: Pose,
         high_level_delta_action: np.ndarray,
-        desired_path_visual_exaggeration_factor: float,
     ):
         self.desired_poses = build_desired_poses(
             start_pose,
             high_level_delta_action,
-            desired_path_visual_exaggeration_factor,
         )
 
     def _draw_waypoint_arrows(self):
         waypoint_arrow_length = 0.09
         inactive_alpha = 0.25
-        active_alpha = 1.0
+        active_alpha = 0.6
         arrow_specs = (
             (lambda pose: pose.closing_axis, (0.1, 0.9, 0.2)),
             (lambda pose: pose.secondary_axis, (0.1, 0.5, 1.0)),

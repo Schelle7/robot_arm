@@ -25,7 +25,8 @@ class EpisodeRecorder:
             cfg.control.frequencies.low_level // cfg.control.frequencies.high_level
         )
         self.record_sim_state = cfg.runtime.record_sim_state
-        self.frames: List[Dict[str, Any]] = []
+        self.states: List[Dict[str, Any]] = []
+        self.transitions: List[Dict[str, Any]] = []
         self.dense_trajectory_buffer: List[Dict[str, Any]] = []
         self.waypoints = None
 
@@ -37,39 +38,62 @@ class EpisodeRecorder:
         """
         self.waypoints = waypoints.copy()
 
-    def record_high_level(
+    def record_initial_state(
+        self,
+        obs: Dict[str, np.ndarray],
+        pose,
+        sim_state: Dict[str, np.ndarray] | None,
+        image: np.ndarray,
+    ):
+        self.states.append(
+            self._make_state(
+                step_idx=0,
+                obs=obs,
+                pose=pose,
+                sim_state=sim_state,
+                image=image,
+            )
+        )
+
+    def record_transition(
         self,
         step_idx: int,
-        obs: Dict[str, np.ndarray],
+        next_obs: Dict[str, np.ndarray],
         reward: float,
-        info: Dict[str, Any],
+        action: np.ndarray,
+        pose,
+        sim_state: Dict[str, np.ndarray] | None,
+        image: np.ndarray,
         task: str = "",
     ):
-        """
-        Record a single transition step in the environment.
-        """
-        image_path = self._save_image(step_idx, info["image"])
-
-        # Buffer numeric state
-        frame_data = {
-            "step": step_idx,
-            "task": task,
-            "image_path": image_path,
-            "joint_positions": obs["joint_positions"].copy(),
-            "privileged_end_effector_pose": info[
-                "privileged_end_effector_pose"
-            ].as_10d(),
-            "high_level_delta_action": info["high_level_delta_action"].copy(),
-            "reward": float(reward),
-            "dense_trajectory": self.dense_trajectory_buffer.copy(),
-        }
-
-        if self.record_sim_state:
-            frame_data["qpos"] = info["sim_state"]["qpos"].copy()
-            frame_data["qvel"] = info["sim_state"]["qvel"].copy()
-
-        self.frames.append(frame_data)
+        self.states.append(
+            self._make_state(
+                step_idx=step_idx + 1,
+                obs=next_obs,
+                pose=pose,
+                sim_state=sim_state,
+                image=image,
+            )
+        )
+        self.transitions.append(
+            {
+                "step": step_idx,
+                "task": task,
+                "action": action.copy(),  # the action indexes are all wrong by one too much, maybe put in separate list
+                "reward": float(reward),
+                "dense_trajectory": self.dense_trajectory_buffer.copy(),
+            }
+        )
         self.dense_trajectory_buffer.clear()
+
+    def _make_state(self, step_idx, obs, pose, sim_state, image):
+        return {
+            "step": step_idx,
+            "image_path": self._save_image(step_idx, image),
+            "joint_positions": obs["joint_positions"].copy(),
+            "privileged_end_effector_pose": pose.as_10d(),
+            "sim_state": sim_state,
+        }
 
     def append_low_level_transition(
         self,
@@ -122,32 +146,39 @@ class EpisodeRecorder:
         """
         episode_path = os.path.join(self.episode_dir, "episode.npz")
 
+        # TODO(lerobot): Review this state/transition layout against LeRobot's dataset schema.
+
         data_dict = {
-            "step": np.array([f["step"] for f in self.frames], dtype=np.int32),
-            "task": np.array([f["task"] for f in self.frames], dtype=str),
-            "image_path": np.array([f["image_path"] for f in self.frames], dtype=str),
-            "joint_positions": np.array(
-                [f["joint_positions"] for f in self.frames], dtype=np.float32
+            "state_step": np.array([s["step"] for s in self.states], dtype=np.int32),
+            "task": np.array([t["task"] for t in self.transitions], dtype=str),
+            "image_path": np.array(
+                [s["image_path"] for s in self.states], dtype=str
             ),
             "privileged_end_effector_pose": np.array(
-                [f["privileged_end_effector_pose"] for f in self.frames],
+                [s["privileged_end_effector_pose"] for s in self.states],
+                dtype=np.float32,
+            ),
+            "joint_positions": np.array(
+                [s["joint_positions"] for s in self.states],
                 dtype=np.float32,
             ),
             "high_level_delta_action": np.array(
-                [f["high_level_delta_action"] for f in self.frames], dtype=object
+                [t["action"] for t in self.transitions], dtype=object
             ),
-            "reward": np.array([f["reward"] for f in self.frames], dtype=np.float32),
+            "reward": np.array(
+                [t["reward"] for t in self.transitions], dtype=np.float32
+            ),
             "dense_trajectory": np.array(
-                [f["dense_trajectory"] for f in self.frames], dtype=object
+                [t["dense_trajectory"] for t in self.transitions], dtype=object
             ),
         }
 
         if self.record_sim_state:
             data_dict["qpos"] = np.array(
-                [f["qpos"] for f in self.frames], dtype=np.float32
+                [s["sim_state"]["qpos"] for s in self.states], dtype=np.float32
             )
             data_dict["qvel"] = np.array(
-                [f["qvel"] for f in self.frames], dtype=np.float32
+                [s["sim_state"]["qvel"] for s in self.states], dtype=np.float32
             )
 
         if self.waypoints:

@@ -16,4 +16,6 @@ def test_one_step_experiment_composes_expected_control_config():
     assert cfg.control.frequencies.mujoco == 200
     assert cfg.waypoint.trajectory_length == 1
     assert cfg.control.action_scale_radians_per_second == 0.05
-    assert cfg.waypoint.speed == 0.005
+    assert cfg.waypoint.position_speed_meters_per_second == 0.30
+    assert cfg.waypoint.rotation_speed_radians_per_second == 1.5707963267948966
+    assert cfg.waypoint.gripper_speed_units_per_second == 1.0

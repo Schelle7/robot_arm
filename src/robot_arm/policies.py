@@ -114,10 +114,24 @@ class WaypointPolicy(Policy):
     def __init__(
         self,
         trajectory_length: int,
-        speed: float,
+        low_level_hz: int,
+        position_speed_meters_per_second: float,
+        rotation_speed_radians_per_second: float,
+        gripper_speed_units_per_second: float,
     ):
         self.chunk_size = trajectory_length
-        self.speed = speed
+        self.max_step_delta = np.array(
+            [
+                position_speed_meters_per_second / low_level_hz,
+                position_speed_meters_per_second / low_level_hz,
+                position_speed_meters_per_second / low_level_hz,
+                rotation_speed_radians_per_second / low_level_hz,
+                rotation_speed_radians_per_second / low_level_hz,
+                rotation_speed_radians_per_second / low_level_hz,
+                gripper_speed_units_per_second / low_level_hz,
+            ],
+            dtype=np.float32,
+        )
         self.waypoints = []
         self.current_wp_idx = 0
 
@@ -198,24 +212,24 @@ class WaypointPolicy(Policy):
                 [target.gripper - privileged_end_effector_pose.gripper],
             ]
         )
-        dist = np.linalg.norm(diff)
+        max_chunk_delta = self.max_step_delta * self.chunk_size
+        reaches_waypoint = np.all(np.abs(diff) <= max_chunk_delta)
 
-        # Determine the speed of this entire chunk
-        # Max distance this chunk can cover at nominal speed
-        max_chunk_dist = self.speed * self.chunk_size
-
-        if dist <= max_chunk_dist:
-            # Close enough to finish in this chunk.
-            # Scale the per-step velocity so the final step lands exactly on the waypoint.
+        if reaches_waypoint:
             step_vector = diff / self.chunk_size
             self.current_wp_idx += 1
         else:
-            # Far away. Go straight toward the waypoint at full speed.
-            step_vector = diff * (self.speed / dist)
+            step_vector = np.clip(
+                diff,
+                -self.max_step_delta,
+                self.max_step_delta,
+            )
 
         # Build the chunk as cumulative deltas pushing outward from the current pose
         for i in range(self.chunk_size):
-            chunk[i] = step_vector * (i + 1)
+            chunk[i] = np.minimum(
+                np.abs(diff), np.abs(step_vector) * (i + 1)
+            ) * np.sign(diff)
 
         return chunk
 

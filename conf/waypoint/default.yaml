@@ -1,6 +1,8 @@
-trajectory_length: 50
+trajectory_length: 40
 trajectory_dim: 7
 lift_height: 0.15
 gripper_open: 1.0
 gripper_closed: 0.0
-speed: 0.005
+position_speed_meters_per_second: 0.30
+rotation_speed_radians_per_second: 1.5
+gripper_speed_units_per_second: 1.0

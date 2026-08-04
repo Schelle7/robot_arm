@@ -1,0 +1,15 @@
+defaults:
+  - _self_
+
+control:
+  frequencies:
+    high_level: 5
+    low_level: 5
+    mujoco: 200
+
+safety:
+  max_position_radians: 3.10
+  min_position_radians: -3.10
+  max_temperature_celsius: 45.0
+  load_ema_alpha: 0.1
+  max_smoothed_load: 0.6

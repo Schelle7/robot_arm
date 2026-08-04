@@ -1,6 +1,3 @@
-defaults:
-  - config
-  - _self_
-
 episode_path: null
-model_path: "models/so101/scene.xml"  # TODO save this file instead and then load from repo
+draw_waypoints: true
+draw_tcp: true

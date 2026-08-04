@@ -116,7 +116,10 @@ def worker_process(
 
     high_level_policy = WaypointPolicy(
         trajectory_length=cfg.waypoint.trajectory_length,
-        speed=cfg.waypoint.speed,
+        low_level_hz=cfg.control.frequencies.low_level,
+        position_speed_meters_per_second=cfg.waypoint.position_speed_meters_per_second,
+        rotation_speed_radians_per_second=cfg.waypoint.rotation_speed_radians_per_second,
+        gripper_speed_units_per_second=cfg.waypoint.gripper_speed_units_per_second,
     )
 
     worker_transition_buffer = TransitionQueueBuffer(transition_queue)

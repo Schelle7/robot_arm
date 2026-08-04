@@ -222,6 +222,10 @@ consider using a custom policy (not mlp)
 but for sequence / path understanding something different to keep focus on all parts.
 
 
+somehow over the progression of training the training measured in sac training steps gets faster. Why?
+also pretty suddenly training steps jump from ~30/s to 90/s
+at step 9000 mroe or less
+
 
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)

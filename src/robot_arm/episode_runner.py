@@ -67,10 +67,24 @@ class EpisodeRunner:
             self.env.arm.draw_tcp()
 
         try:
+            initial_pose = self.env.get_privileged_end_effector_pose()
+            initial_sim_state = None
+            if self.cfg.runtime.record_sim_state:
+                initial_sim_state = self.env.arm.read_state()["sim_state"]
+            initial_image = self.env.read_camera() if self.recorder else None
+            if self.recorder:
+                self.recorder.record_initial_state(
+                    obs=obs,
+                    pose=initial_pose,
+                    sim_state=initial_sim_state,
+                    image=initial_image,
+                )
+
+            current_pose = initial_pose
             for step_idx in range(self.max_high_level_steps):
                 high_level_delta_action = self.high_level_policy.get_action(
                     obs,
-                    privileged_end_effector_pose=self.env.get_privileged_end_effector_pose(),
+                    privileged_end_effector_pose=current_pose,
                     task=task,
                 )
                 if self.cfg.runtime.draw_waypoints:
@@ -78,35 +92,30 @@ class EpisodeRunner:
                         self.high_level_policy.current_wp_idx
                     )
                     self.env.arm.draw_desired_path(
-                        self.env.get_privileged_end_effector_pose(),
+                        current_pose,
                         high_level_delta_action,
-                        self.cfg.runtime.desired_path_visual_exaggeration_factor,
                     )
 
                 next_obs, reward = self.run_chunk(obs, high_level_delta_action)
+                next_pose = self.env.get_privileged_end_effector_pose()
+                next_sim_state = None
+                if self.cfg.runtime.record_sim_state:
+                    next_sim_state = self.env.arm.read_state()["sim_state"]
 
                 if self.recorder:
-                    image = self.env.read_camera()
-                    pose_ee = self.env.get_privileged_end_effector_pose()
-
-                    info_dict = {
-                        "image": image,
-                        "privileged_end_effector_pose": pose_ee,
-                        "high_level_delta_action": high_level_delta_action,
-                    }
-
-                    if self.cfg.runtime.record_sim_state:
-                        info_dict["sim_state"] = self.env.arm.read_state()["sim_state"]
-
-                    self.recorder.record_high_level(
+                    self.recorder.record_transition(
                         step_idx,
-                        obs,
+                        next_obs,
                         reward=reward,
-                        info=info_dict,
+                        action=high_level_delta_action,
+                        pose=next_pose,
+                        sim_state=next_sim_state,
+                        image=self.env.read_camera(),
                         task=task,
                     )
 
                 obs = next_obs
+                current_pose = next_pose
 
         except BaseException as e:
             print(f"\nExecution interrupted by {type(e).__name__}: {e}")
