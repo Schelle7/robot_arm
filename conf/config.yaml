@@ -20,4 +20,3 @@ backend: "sim" # "sim" or "real"
 hardware:
   port: "/dev/ttyACM0"
   calibration_id: "my_follower"
-

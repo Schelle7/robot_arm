@@ -227,6 +227,11 @@ also pretty suddenly training steps jump from ~30/s to 90/s
 at step 9000 mroe or less
 
 
+
+maybe now do a different bigger policy and critic network?
+
+
+
 ### longer term plans
 (at some point I want to set up adaptation to the specific robot via the past transitions and a latent sysid vector)
 
@@ -235,3 +240,9 @@ at step 9000 mroe or less
 the starting configs are sometimes really fucked up
 
 I should limit them more (maybe avoid ground interaction)
+
+
+
+
+
+at the current 5hz low level and speed its far too violent and the robot just smashes about everywhere

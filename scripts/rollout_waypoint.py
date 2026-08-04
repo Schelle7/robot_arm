@@ -1,6 +1,6 @@
 import os
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
 import numpy as np
 
@@ -80,10 +80,12 @@ def main(cfg: DictConfig):
     # Load the latest trained low-level RL model
     low_level_policy = load_low_level_policy(checkpoint_path)
 
-    # Initialize recorder inside Hydra's output directory
     hydra_cfg = HydraConfig.get()
-    snapshot_model_files(cfg.model_path, hydra_cfg.runtime.output_dir)
-    output_dir = os.path.join(hydra_cfg.runtime.output_dir, "waypoint_recording")
+    run_dir = hydra_cfg.runtime.output_dir
+    OmegaConf.save(cfg, os.path.join(run_dir, ".hydra", "config.yaml"))
+
+    snapshot_model_files(cfg.model_path, run_dir)
+    output_dir = os.path.join(run_dir, "waypoint_recording")
 
     recorder = EpisodeRecorder(
         output_dir=output_dir,
@@ -96,7 +98,7 @@ def main(cfg: DictConfig):
 
     policy.current_wp_idx = 0
 
-    env = make_env(cfg, hydra_cfg.runtime.output_dir)
+    env = make_env(cfg, run_dir)
 
     runner = EpisodeRunner(
         cfg=cfg,

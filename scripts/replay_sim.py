@@ -16,11 +16,9 @@ from robot_arm.backends.sim_arm import (
 
 
 def find_latest_episode():
-    outputs_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "outputs")
-    )
+    outputs_dir = Path(__file__).resolve().parents[1] / "outputs"
     search_pattern = os.path.join(
-        outputs_dir, "rollout_waypoint", "*", "*", "**", "episode.npz"
+        str(outputs_dir), "rollout_waypoint", "*", "*", "**", "episode.npz"
     )
     files = glob.glob(search_pattern, recursive=True)
 
