@@ -1,0 +1,25 @@
+# @package _global_
+# One low-level control step per high-level action for initial debugging.
+device: "cuda"
+
+runtime:
+  record_policy_debug: false
+
+reward:
+  tracking:
+    deviation: false
+
+control:
+  frequencies:
+    mid_level: 5
+    low_level: 5
+  action_scale_radians_per_second: 0.5
+
+waypoint:
+  trajectory_length: 1
+  position_speed_meters_per_second: 0.05
+  rotation_speed_radians_per_second: 0.2
+  gripper_speed_radians_per_second: 0.5
+
+training:
+  total_training_steps: 240000

@@ -1,0 +1,27 @@
+defaults:
+  - _self_
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+# policy_name: latest
+policy_name: /home/jelle/Desktop/robot_arm/fallback_checkpoint/2026-08-12/12-24-20/checkpoints/sac_manual_step_final_240000.zip
+
+control:
+  max_seconds: 45
+  frequencies:
+    mid_level: 5
+    low_level: 5
+    mujoco: 200
+
+safety:
+  max_position_radians: 3.10
+  min_position_radians: -3.10
+  max_temperature_celsius: 45.0
+  load_ema_alpha: 0.1
+  max_smoothed_load: 0.6
+
+runtime:
+  disable_box_collisions: true
+  record_policy_debug: true

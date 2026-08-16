@@ -1,0 +1,48 @@
+import abc
+from typing import Dict
+import numpy as np
+from robot_arm.pose import Pose
+
+
+class Arm(abc.ABC):
+    """
+    Unified interface for hardware and simulation backends.
+    """
+
+    @abc.abstractmethod
+    def read_state(self) -> Dict[str, Dict[str, float]]:
+        """
+        Returns a dictionary of registers to motor name to value.
+        e.g., {'Present_Position': {'shoulder_pan': 0.0, ...}, ...}
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_tcp(self) -> np.ndarray:
+        """
+        Returns the Tool Center Point (TCP) pose as a 7D array:
+        [x, y, z, roll, pitch, yaw, aperture]
+        Raises NotImplementedError if the backend cannot compute this.
+        """
+        pass
+
+    def get_tcp_pose(self) -> Pose:
+        raise NotImplementedError("Arm backend does not expose a TCP pose.")
+
+    def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError("Arm backend does not expose TCP axes.")
+
+    @abc.abstractmethod
+    def disconnect(self):
+        """
+        Emergency power cutoff or safe shutdown routine.
+        """
+        pass
+
+    @abc.abstractmethod
+    def write_goal(self, positions: Dict[str, float]) -> None:
+        """
+        Send goal positions to the arm.
+        `positions` maps motor name to target position.
+        """
+        pass

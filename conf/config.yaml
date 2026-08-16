@@ -1,0 +1,23 @@
+defaults:
+  - _self_
+  - camera: default
+  - control: default
+  - policy: default
+  - reward: default
+  - runtime: default
+  - safety: default
+  - training: default
+  - waypoint: default
+  - experiment: baseline_cuda
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+model_path: "models/so101/scene.xml"
+backend: "sim" # "sim" or "real"
+
+# Hardware parameters used if backend == "real"
+hardware:
+  port: "/dev/ttyACM0"
+  calibration_id: "my_follower"

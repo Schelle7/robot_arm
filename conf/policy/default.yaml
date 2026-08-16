@@ -1,0 +1,8 @@
+features_extractor:
+  class_path: robot_arm.feature_extractors.MLPFeatureExtractor
+  hidden_dims:
+    - 512
+    - 512
+net_arch:
+  - 256
+  - 256

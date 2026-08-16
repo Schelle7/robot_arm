@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robot_arm"
+version = "0.1.0"
+description = "Personal control code and experiments for an SO-101 follower arm using LeRobot."
+requires-python = ">=3.12"
+dependencies = [
+    "lerobot[feetech, smolvla]",
+    "pytest",
+    "mujoco",
+    "gymnasium",
+    "numpy",
+    "stable-baselines3",
+    "hydra-core",
+    "torch",
+    "tensorboard",
+    "tqdm",
+    "scipy",
+    "black",
+    "ruff"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 175
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 175

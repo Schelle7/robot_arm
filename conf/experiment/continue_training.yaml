@@ -1,0 +1,5 @@
+# @package _global_
+continue_from: /home/jelle/Desktop/robot_arm/outputs/train_low_level/2026-08-06/16-53-07/checkpoints/sac_manual_step_final_195075.zip
+training:
+  learning_starts: 10000
+  total_training_steps: 30000

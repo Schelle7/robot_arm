@@ -1,0 +1,124 @@
+model_path: models/so101/scene.xml
+backend: sim
+hardware:
+  port: /dev/ttyACM0
+  calibration_id: my_follower
+camera:
+  height: 480
+  width: 640
+  jpeg_quality: 90
+control:
+  frequencies:
+    mid_level: 5
+    low_level: 5
+    mujoco: 200
+  max_seconds: 15
+  action_scale_radians_per_second: 0.5
+  initial_joints:
+    range_percent:
+    - 45.0
+    - 55.0
+  staging:
+    enabled: true
+    speed_radians_per_second: 2.6
+    tolerance_radians: 0.03
+    max_steps: 1200
+    pause_seconds: 0.1
+policy:
+  features_extractor:
+    class_path: robot_arm.feature_extractors.MLPFeatureExtractor
+    hidden_dims:
+    - 512
+    - 512
+  net_arch:
+  - 256
+  - 256
+reward:
+  pose_weights:
+    position: 1.0
+    rotation_primary: 1.0
+    rotation_secondary: 0.5
+    gripper: 1.0
+  tracking:
+    deviation: false
+    progress: true
+  safety_penalty: true
+  termination_penalty: true
+  violation_penalty_factor: 10.0
+runtime:
+  draw_waypoints: true
+  draw_tcp: true
+  disable_box_collisions: true
+  record_sim_state: true
+  record_policy_debug: false
+safety:
+  max_position_radians: 3.1
+  min_position_radians: -3.1
+  max_temperature_celsius: 45.0
+  load_ema_alpha: 0.1
+  max_smoothed_load: 0.6
+training:
+  num_workers: 10
+  detailed_metrics: true
+  pose_delta_diagnostics_enabled: true
+  sync_weights_every_n_chunks: 10
+  total_training_steps: 240000
+  learning_rate: 0.0003
+  buffer_size: 100000
+  learning_starts: 5000
+  batch_size: 256
+  gamma: 1.0
+  terminate_at_chunk_end: true
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: 1
+  save_episodes_freq: 20
+waypoint:
+  trajectory_length: 1
+  trajectory_dim: 7
+  num_waypoints: 3
+  position_speed_meters_per_second: 0.05
+  rotation_speed_radians_per_second: 0.2
+  gripper_speed_radians_per_second: 0.5
+  primitive_probabilities:
+    pick_and_place: 0.4
+    relative_move: 0.3
+    random_waypoint: 0.3  # not the real checkpoint values
+  random_pose:
+    gripper_radians:
+    - 0.0
+    - 1.7453292
+    shoulder_distance_meters:
+    - 0.3
+    - 0.45
+    base_rotation_degrees:
+    - -90.0
+    - 90.0
+    height_meters:
+    - 0.1
+    - 0.4
+    pointing_axis_tilt_degrees:
+    - -45.0
+    - 45.0
+    pointing_axis_rotation_degrees:
+    - -150.0
+    - 150.0
+  pick_and_place:
+    grasp_z_offset_meters: 0.01
+    lift_z_offset_meters: 0.08
+    gripper_open_radians: 0.8
+    gripper_closed_radians: 0.0
+  relative_move:
+    dx_range_meters:
+    - -0.08
+    - 0.08
+    dy_range_meters:
+    - -0.06
+    - 0.06
+    dz_range_meters:
+    - -0.08
+    - 0.08
+    min_displacement_threshold_meters: 0.02
+    fallback_displacement_meters: 0.05
+device: cuda
+continue_from: false

@@ -1,0 +1,30 @@
+trajectory_length: 40
+trajectory_dim: 7
+num_waypoints: 3
+position_speed_meters_per_second: 0.30
+rotation_speed_radians_per_second: 0.5
+gripper_speed_radians_per_second: 0.5
+primitive_probabilities:
+  pick_and_place: 0.4
+  relative_move: 0.3
+  random_waypoint: 0.3
+random_pose:
+  gripper_radians: [0.0, 1.7453292]
+  shoulder_distance_meters: [0.30, 0.45]
+  base_rotation_degrees: [-90.0, 90.0]
+  height_meters: [0.1, 0.40]
+  pointing_axis_tilt_degrees: [-45.0, 45.0]
+  pointing_axis_rotation_degrees: [-150.0, 150.0]
+
+pick_and_place:
+  grasp_z_offset_meters: 0.01
+  lift_z_offset_meters: 0.08
+  gripper_open_radians: 0.8
+  gripper_closed_radians: 0.0
+
+relative_move:
+  dx_range_meters: [-0.08, 0.08]
+  dy_range_meters: [-0.06, 0.06]
+  dz_range_meters: [-0.08, 0.08]
+  min_displacement_threshold_meters: 0.02
+  fallback_displacement_meters: 0.05
