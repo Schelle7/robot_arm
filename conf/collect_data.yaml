@@ -6,6 +6,7 @@ hydra:
     dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 policy_name: latest
+# policy_name: fallback_checkpoint/2026-08-12/12-24-20/checkpoints/sac_manual_step_final_240000.zip
 num_episodes: 10
 
 control:

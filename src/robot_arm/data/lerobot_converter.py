@@ -167,7 +167,10 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
             action = torch.from_numpy(action_raw)
 
             task = str(data["primitive_prompt"][frame_idx])
-            primitive_completion = float(data["completes_active_primitive"][frame_idx])
+            primitive_completion = np.asarray(
+                [data["completes_active_primitive"][frame_idx]],
+                dtype=np.float32,
+            )
 
             # Add frame to the dataset
             dataset.add_frame(
