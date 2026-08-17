@@ -259,12 +259,11 @@ class EpisodeRunner:
         primitive_index: int,
         completed_steps: int,
     ) -> tuple[EnvironmentState, int, bool]:
-        vla_input_state = self.primitive_policy.build_vla_input_state(primitive)
-
         while True:
             if completed_steps >= self.max_mid_level_steps:
                 return state, completed_steps, True
             current_pose = state.privileged_state["end_effector_pose"]
+            vla_input_state = self.primitive_policy.build_vla_input_state(primitive, current_pose)
             image = self.env.read_camera()
             cartesian_action = self.cartesian_policy.get_action(
                 current_pose=current_pose,

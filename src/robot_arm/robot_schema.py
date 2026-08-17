@@ -17,14 +17,16 @@ CARTESIAN_ACTION_NAMES = (
     "gripper",
 )
 
-INITIAL_POSE_NAMES = (
-    "initial_x",
-    "initial_y",
-    "initial_z",
-    "initial_roll",
-    "initial_pitch",
-    "initial_yaw",
-    "initial_gripper",
+PRIMITIVE_COMPLETION = "observation.environment_state"  # hacky way to use smolvla
+
+CURRENT_POSE_NAMES = (
+    "current_x",
+    "current_y",
+    "current_z",
+    "current_roll",
+    "current_pitch",
+    "current_yaw",
+    "current_gripper",
 )
 
 TARGET_OFFSET_NAMES = (

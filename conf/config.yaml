@@ -8,7 +8,7 @@ defaults:
   - safety: default
   - training: default
   - waypoint: default
-  - experiment: baseline_cuda
+  - experiment: debug
 
 hydra:
   run:

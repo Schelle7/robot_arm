@@ -16,17 +16,24 @@ def main() -> None:
     subprocess.run(
         [
             "lerobot-train",
-            "--policy.path=lerobot/smolvla_base",
+            "--policy.type=cartesian_smolvla",
+            "--policy.pretrained_path=lerobot/smolvla_base",
+            "--policy.discover_packages_path=robot_arm.cartesian_smolvla",
+            "--policy.n_action_steps=1",
             f"--dataset.repo_id={dataset_root.name}",
             f"--dataset.root={dataset_root}",
             f"--output_dir={output_dir}",
             "--job_name=robot_arm_smolvla",
             f"--steps={args.steps}",
             f"--batch_size={args.batch_size}",
+            "--policy.push_to_hub=false",
             "--wandb.enable=false",
         ],
         check=True,
     )
+    project_root = Path(__file__).resolve().parent.parent
+    latest_run_file = project_root / "outputs" / "train_vla" / "latest_run.txt"
+    latest_run_file.write_text(str(output_dir))
 
 
 if __name__ == "__main__":

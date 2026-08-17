@@ -12,6 +12,13 @@ from robot_arm.pose import Pose, axis_angular_distance
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES
 
 
+def latest_vla_checkpoint_path() -> str:
+    latest_run_file = Path(__file__).resolve().parents[2] / "outputs" / "train_vla" / "latest_run.txt"
+    training_output_dir = Path(latest_run_file.read_text().strip())
+    checkpoint_path = training_output_dir / "checkpoints" / "last" / "pretrained_model"
+    return str(checkpoint_path)
+
+
 def waypoint_action_limits(
     trajectory_length: int,
     low_level_hz: int,
@@ -99,18 +106,18 @@ class VLACartesianPolicy(CartesianPolicy):
     the problem is that not every pose can be reached
     """
 
-    def __init__(self, model_id: str = "lerobot/smolvla_base"):
-        from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+    def __init__(self, model_path: str):
+        from robot_arm.cartesian_smolvla.modeling_cartesian_smolvla import CartesianSmolVLAPolicy
         from lerobot.policies.factory import make_pre_post_processors
         import torch
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.policy = SmolVLAPolicy.from_pretrained(model_id).to(self.device)
+        self.policy = CartesianSmolVLAPolicy.from_pretrained(model_path, strict=True).to(self.device)
         self.policy.eval()
 
         self.preprocessor, self.postprocessor = make_pre_post_processors(
             policy_cfg=self.policy.config,
-            pretrained_path=model_id,
+            pretrained_path=model_path,
         )
 
     def get_action(
@@ -134,13 +141,13 @@ class VLACartesianPolicy(CartesianPolicy):
         with torch.inference_mode():
             batch = {k: (torch.tensor(v).unsqueeze(0).to(self.device) if isinstance(v, np.ndarray) else [v]) for k, v in raw_obs.items()}
             processed_batch = self.preprocessor(batch)
-            out = self.policy.select_action(processed_batch)
+            out, completion_probability = self.policy.select_action_with_completion(processed_batch)
             action = self.postprocessor(out)
 
         return CartesianAction(
             cartesian_action_path=action.squeeze(0).cpu().numpy().reshape(-1, len(CARTESIAN_ACTION_NAMES)),
-            diagnostics={},
-            completes_active_primitive=False,
+            diagnostics={"completion_probability": float(completion_probability.item())},
+            completes_active_primitive=bool(completion_probability.item() >= 0.5),
         )
 
 

@@ -58,7 +58,7 @@ def test_waypoint_translation_preserves_direction():
     np.testing.assert_allclose(output.cartesian_action_path[0, :3], np.array([2.0, 1.0, 0.0]) / np.sqrt(5.0))
 
 
-def test_scripted_primitive_policy_builds_fixed_vla_context_and_advances_immediately():
+def test_scripted_primitive_policy_builds_current_vla_context_and_advances_immediately():
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(OmegaConf.create({}))
     start_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
     target_pose = Pose.from_euler([0.1, 0.0, 0.0], [0.0, 0.0, 0.0], 0.2, "XYZ", False)
@@ -79,7 +79,7 @@ def test_scripted_primitive_policy_builds_fixed_vla_context_and_advances_immedia
     ]
 
     primitive_index, primitive = primitive_policy.get_next_primitive(start_pose)
-    vla_input_state = primitive_policy.build_vla_input_state(primitive)
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, start_pose)
 
     np.testing.assert_allclose(vla_input_state[:7], start_pose.as_7d())
     np.testing.assert_allclose(vla_input_state[7:10], [0.1, 0.0, 0.0])
@@ -90,8 +90,26 @@ def test_scripted_primitive_policy_builds_fixed_vla_context_and_advances_immedia
 
     actual_next_start_pose = Pose.from_euler([0.09, 0.0, 0.0], [0.0, 0.0, 0.0], 0.19, "XYZ", False)
     _, next_primitive = primitive_policy.get_next_primitive(actual_next_start_pose)
-    next_vla_input_state = primitive_policy.build_vla_input_state(next_primitive)
+    next_vla_input_state = primitive_policy.build_vla_input_state(next_primitive, actual_next_start_pose)
     np.testing.assert_allclose(next_vla_input_state[:7], actual_next_start_pose.as_7d())
+
+
+def test_scripted_primitive_policy_updates_remaining_target_offset():
+    primitive_policy = ScriptedPrimitiveGeneratorPolicy(OmegaConf.create({}))
+    start_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    current_pose = Pose.from_euler([0.04, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    target_pose = Pose.from_euler([0.1, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    primitive = ActionPrimitive(
+        start_pose=start_pose,
+        target_pose=target_pose,
+        prompt="move right",
+        has_explicit_goal=True,
+    )
+
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, current_pose)
+
+    np.testing.assert_allclose(vla_input_state[:7], current_pose.as_7d())
+    np.testing.assert_allclose(vla_input_state[7:10], [0.06, 0.0, 0.0])
 
 
 def test_action_primitive_generation_uses_configured_ranges():

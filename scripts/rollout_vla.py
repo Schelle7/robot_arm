@@ -4,7 +4,7 @@ from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 
 from robot_arm.recorder import EpisodeRecorder
-from robot_arm.policies import VLACartesianPolicy
+from robot_arm.policies import VLACartesianPolicy, latest_vla_checkpoint_path
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.rollout_config import setup_rollout_context
@@ -17,7 +17,9 @@ def main(rollout_cfg: DictConfig):
 
     merged_cfg, env, low_level_policy = setup_rollout_context(rollout_cfg, run_dir)
 
-    cartesian_policy = VLACartesianPolicy()
+    vla_checkpoint_path = latest_vla_checkpoint_path()
+    print(f"Loading VLA policy from: {vla_checkpoint_path}")
+    cartesian_policy = VLACartesianPolicy(vla_checkpoint_path)
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
 
     output_dir = os.path.join(run_dir, "recordings")
@@ -40,9 +42,7 @@ def main(rollout_cfg: DictConfig):
         weights_queue=None,
     )
 
-    raise NotImplementedError(
-        "SmolVLA rollout needs a trained primitive-completion output before it can advance the scripted primitive policy."
-    )
+    runner.run_episode(generate_primitives=True)
 
 
 if __name__ == "__main__":

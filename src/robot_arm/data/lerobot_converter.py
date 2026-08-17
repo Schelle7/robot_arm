@@ -13,7 +13,8 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, INITIAL_POSE_NAMES, TARGET_OFFSET_NAMES
+from robot_arm.pose import Pose
+from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
 
 
 @contextmanager
@@ -62,6 +63,52 @@ def _validate_and_load_configs(episodes: list[str]):
     return ref_cfg
 
 
+def _build_dataset_features(ref_cfg):
+    path_length = int(ref_cfg.waypoint.trajectory_length)
+    cartesian_action_dim = int(ref_cfg.waypoint.trajectory_dim)
+    assert cartesian_action_dim == len(CARTESIAN_ACTION_NAMES)
+    action_names = [
+        f"step_{path_index:02d}_{action_name}"
+        for path_index in range(path_length)
+        for action_name in CARTESIAN_ACTION_NAMES
+    ]
+    return {
+        "observation.images.camera1": {
+            "dtype": "video",
+            "shape": (ref_cfg.camera.height, ref_cfg.camera.width, 3),
+            "names": ["height", "width", "channel"],
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (15,),
+            "names": CURRENT_POSE_NAMES + TARGET_OFFSET_NAMES,
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": (path_length * cartesian_action_dim,),
+            "names": action_names,
+        },
+        PRIMITIVE_COMPLETION: {
+            "dtype": "float32",
+            "shape": (1,),
+            "names": [PRIMITIVE_COMPLETION],
+        },
+    }
+
+
+def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
+    current_pose = Pose.from_10d(data["privileged_end_effector_pose"][frame_idx])
+    goal_flag = float(data["vla_input_state"][frame_idx, -1])
+    if goal_flag == 1.0:
+        primitive_index = int(data["primitive_index"][frame_idx])
+        target_pose = Pose.from_10d(data["waypoints"][primitive_index])
+        target_offset = current_pose.delta_to(target_pose)
+    else:
+        target_offset = np.zeros(7, dtype=np.float32)
+    state = np.concatenate([current_pose.as_7d(), target_offset, [goal_flag]]).astype(np.float32)
+    return torch.from_numpy(state)
+
+
 def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
     """
     Parses flat .npz tracking outputs and corresponding jpegs,
@@ -77,33 +124,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
 
     # Discover and validate run configurations
     ref_cfg = _validate_and_load_configs(episodes)
-    path_length = int(ref_cfg.waypoint.trajectory_length)
-    cartesian_action_dim = int(ref_cfg.waypoint.trajectory_dim)
-    assert cartesian_action_dim == len(CARTESIAN_ACTION_NAMES)
-    action_names = [
-        f"step_{path_index:02d}_{action_name}"
-        for path_index in range(path_length)
-        for action_name in CARTESIAN_ACTION_NAMES
-    ]
-
-    # 1. Define the dataset features dynamically based on verified config
-    features = {
-        "observation.images.camera1": {
-            "dtype": "video",
-            "shape": (ref_cfg.camera.height, ref_cfg.camera.width, 3),
-            "names": ["height", "width", "channel"],
-        },
-        "observation.state": {
-            "dtype": "float32",
-            "shape": (15,),
-            "names": INITIAL_POSE_NAMES + TARGET_OFFSET_NAMES,
-        },
-        "action": {
-            "dtype": "float32",
-            "shape": (path_length * cartesian_action_dim,),
-            "names": action_names,
-        },
-    }
+    features = _build_dataset_features(ref_cfg)
 
     # Use the target_dir name as the repo_id (e.g. "robot_arm_vla_dataset")
     repo_id = os.path.basename(os.path.normpath(target_dir))
@@ -136,8 +157,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
 
             img = Image.open(image_abs_path).convert("RGB")
 
-            # State t (15D VLA input state)
-            state = torch.tensor(data["vla_input_state"][frame_idx], dtype=torch.float32)
+            state = _reconstruct_vla_input_state(data, frame_idx)
 
             # Action t is selected from state t.
             action_raw = np.asarray(
@@ -147,6 +167,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
             action = torch.from_numpy(action_raw)
 
             task = str(data["primitive_prompt"][frame_idx])
+            primitive_completion = float(data["completes_active_primitive"][frame_idx])
 
             # Add frame to the dataset
             dataset.add_frame(
@@ -154,6 +175,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
                     "observation.images.camera1": img,
                     "observation.state": state,
                     "action": action,
+                    PRIMITIVE_COMPLETION: primitive_completion,
                     "task": task,
                 }
             )
