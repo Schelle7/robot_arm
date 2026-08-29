@@ -46,8 +46,8 @@ class SafeArmWrapper(Arm):
     def get_tcp(self) -> np.ndarray:
         return self.backend_arm.get_tcp()
 
-    def get_tcp_pose(self):
-        return self.backend_arm.get_tcp_pose()
+    def get_tcp_pose(self, state: Dict[str, Dict[str, float]]):
+        return self.backend_arm.get_tcp_pose(state)
 
     def get_tcp_axes(self):
         return self.backend_arm.get_tcp_axes()

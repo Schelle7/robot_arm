@@ -121,6 +121,10 @@ class CartesianSmolVLAPolicy(SmolVLAPolicy):
         loss_dict["losses_after_rm_padding"] = flow_losses.clone().mean().item()
         per_sample_action_loss = flow_losses.mean(dim=(1, 2))
         completion_targets = batch[PRIMITIVE_COMPLETION].float().reshape(-1)
+        # The flag rides on a declared dataset feature, so the pipeline normalizer can rescale it away from 0/1.
+        assert bool(((completion_targets == 0.0) | (completion_targets == 1.0)).all()), (
+            f"{PRIMITIVE_COMPLETION} reached the loss rescaled: {completion_targets.unique().tolist()}"
+        )
         per_sample_completion_loss = F.binary_cross_entropy_with_logits(
             completion_logits,
             completion_targets,

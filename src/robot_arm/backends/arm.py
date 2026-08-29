@@ -26,7 +26,11 @@ class Arm(abc.ABC):
         """
         pass
 
-    def get_tcp_pose(self) -> Pose:
+    def get_tcp_pose(self, state: Dict[str, Dict[str, float]]) -> Pose:
+        """
+        Returns the TCP pose for an already-read state. The state is passed in so that
+        backends deriving the pose from joint readings do not add a bus round trip.
+        """
         raise NotImplementedError("Arm backend does not expose a TCP pose.")
 
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:

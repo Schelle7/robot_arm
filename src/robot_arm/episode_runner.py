@@ -200,6 +200,7 @@ class EpisodeRunner:
         low_level_action, _ = self.low_level_policy.predict(policy_observation, deterministic=not self.training)
         next_state, reward, reward_breakdown = self.env.step(
             low_level_action,
+            policy_observation["joint_positions"],
             cartesian_action_path,
             chunk_start_pose,
             chunk_terminated,

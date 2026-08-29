@@ -34,7 +34,7 @@ class EpisodeRecorder:
 
         os.makedirs(self.images_dir, exist_ok=True)
 
-    def save_waypoints(self, waypoints: np.ndarray):
+    def save_waypoints(self, waypoints: list[np.ndarray]):
         """
         Record the raw waypoints provided by the high level policy layout.
         """
@@ -205,7 +205,7 @@ class EpisodeRecorder:
             data_dict["qpos"] = np.array([s["sim_state"]["qpos"] for s in self.states], dtype=np.float32)
             data_dict["qvel"] = np.array([s["sim_state"]["qvel"] for s in self.states], dtype=np.float32)
 
-        if self.waypoints:
+        if self.waypoints is not None:
             data_dict["waypoints"] = self.waypoints
 
         np.savez_compressed(episode_path, **data_dict)

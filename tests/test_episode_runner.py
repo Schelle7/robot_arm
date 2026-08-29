@@ -31,7 +31,7 @@ class EnvironmentStub:
     def get_privileged_end_effector_pose(self):
         return self.pose
 
-    def step(self, action, cartesian_action_path, chunk_start_pose, chunk_terminated):
+    def step(self, action, joint_positions, cartesian_action_path, chunk_start_pose, chunk_terminated):
         self.received_paths.append(cartesian_action_path)
         return (
             EnvironmentState(

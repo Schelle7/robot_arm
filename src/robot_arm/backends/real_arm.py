@@ -119,9 +119,8 @@ class RealArm(Arm):
         pose = self._forward_kinematics_pose(present_positions)
         return np.concatenate([pose.position, pose.as_euler("XYZ", False), [pose.gripper]]).astype(np.float32)
 
-    def get_tcp_pose(self) -> Pose:
-        present_positions = self.read_state()["Present_Position"]
-        return self._forward_kinematics_pose(present_positions)
+    def get_tcp_pose(self, state: Dict[str, Dict[str, float]]) -> Pose:
+        return self._forward_kinematics_pose(state["Present_Position"])
 
     def get_tcp(self) -> np.ndarray:
         raise NotImplementedError("Real arm does not have access to pinch point")

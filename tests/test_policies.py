@@ -6,7 +6,7 @@ from robot_arm.experimental_waypoints import base_rotation_for_position, generat
 from robot_arm.policies import ScriptedCartesianPolicy
 from robot_arm.pose import Pose
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.primitives import ActionPrimitive
+from robot_arm.primitives import ActionPrimitive, generate_relative_moves
 
 
 def make_policy():
@@ -56,6 +56,24 @@ def test_waypoint_translation_preserves_direction():
     output = get_scripted_action(policy, current_pose, target_pose)
 
     np.testing.assert_allclose(output.cartesian_action_path[0, :3], np.array([2.0, 1.0, 0.0]) / np.sqrt(5.0))
+
+
+def test_waypoint_rotation_is_limited_by_vector_length():
+    policy = make_policy()
+    current_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    rotation_delta = np.full(3, 1.5 / np.sqrt(3.0))
+    target_pose = current_pose.apply_delta(np.concatenate([np.zeros(3), rotation_delta, [0.0]]))
+
+    # Every component sits inside the per-axis limit, so only a norm-based limit constrains this rotation.
+    assert np.all(np.abs(rotation_delta) < policy.max_rotation_delta)
+
+    output = get_scripted_action(policy, current_pose, target_pose)
+
+    np.testing.assert_allclose(
+        np.linalg.norm(output.cartesian_action_path[0, 3:6]),
+        policy.max_rotation_delta,
+        rtol=1e-6,
+    )
 
 
 def test_scripted_primitive_policy_builds_current_vla_context_and_advances_immediately():
@@ -112,55 +130,39 @@ def test_scripted_primitive_policy_updates_remaining_target_offset():
     np.testing.assert_allclose(vla_input_state[7:10], [0.06, 0.0, 0.0])
 
 
-def test_action_primitive_generation_uses_configured_ranges():
+def test_relative_move_prompt_states_the_commanded_offset_exactly():
     model = mujoco.MjModel.from_xml_path("models/so101/scene.xml")
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     cfg = OmegaConf.create(
         {
             "waypoint": {
-                "num_waypoints": 3,
-                "primitive_probabilities": {
-                    "pick_and_place": 0.0,
-                    "relative_move": 0.0,
-                    "random_waypoint": 1.0,
+                "relative_move": {
+                    "dx_range_meters": [-0.08, 0.08],
+                    "dy_range_meters": [-0.06, 0.06],
+                    "dz_range_meters": [-0.08, 0.08],
                 },
                 "random_pose": {
-                    "gripper_radians": [0.2, 0.7],
-                    "shoulder_distance_meters": [0.35, 0.35],
-                    "base_rotation_degrees": [0.0, 0.0],
-                    "height_meters": [0.2, 0.2],
-                    "pointing_axis_tilt_degrees": [0.0, 0.0],
-                    "pointing_axis_rotation_degrees": [0.0, 0.0],
-                },
-                "pick_and_place": {
-                    "grasp_z_offset_meters": 0.01,
-                    "lift_z_offset_meters": 0.08,
-                    "gripper_open_radians": 0.8,
-                    "gripper_closed_radians": 0.0,
-                },
-                "relative_move": {
-                    "dx_range_meters": [0.05, 0.05],
-                    "dy_range_meters": [0.05, 0.05],
-                    "dz_range_meters": [0.05, 0.05],
-                    "min_displacement_threshold_meters": 0.02,
-                    "fallback_displacement_meters": 0.05,
+                    "shoulder_distance_meters": [0.30, 0.45],
+                    "height_meters": [0.1, 0.40],
                 },
             }
         }
     )
-    primitive_policy = ScriptedPrimitiveGeneratorPolicy(cfg)
+    start_pose = Pose.from_euler([0.35, 0.0, 0.25], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
 
-    primitive_policy.generate(
-        model,
-        data,
-        Pose.from_euler([0.3, 0.0, 0.2], [0.0, 0.0, 0.0], 0.0, "XYZ", False),
-    )
+    for _ in range(50):
+        primitive = generate_relative_moves(model, data, cfg, start_pose)[0]
+        offset = primitive.target_pose.position - start_pose.position
+        offset_cm = np.rint(offset * 100).astype(int)
 
-    assert len(primitive_policy.primitives) >= 1
-    for primitive in primitive_policy.primitives:
-        assert isinstance(primitive.prompt, str)
-        assert len(primitive.prompt) > 0
+        np.testing.assert_allclose(offset, offset_cm / 100.0, atol=1e-6)
+        assert primitive.prompt.count("cm along") == int(np.count_nonzero(offset_cm))
+        for axis, centimeters in zip("xyz", offset_cm):
+            if centimeters:
+                assert f"{centimeters}cm along {axis}" in primitive.prompt
+        if not offset_cm.any():
+            assert primitive.prompt == "hold position"
 
 
 def test_experimental_waypoint_derives_azimuth_from_position():

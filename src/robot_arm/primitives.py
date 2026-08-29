@@ -129,59 +129,44 @@ def generate_pick_and_place(
     return [p1, p2, p3, p4]
 
 
+def _sample_displacement_centimeters(value_range) -> int:
+    low, high = round(value_range[0] * 100), round(value_range[1] * 100)
+    return int(np.random.randint(low, high + 1))
+
+
+def _is_reachable_position(model, data, cfg: DictConfig, position: np.ndarray) -> bool:
+    min_height, max_height = cfg.waypoint.random_pose.height_meters
+    _, max_distance = cfg.waypoint.random_pose.shoulder_distance_meters
+    shoulder_distance = float(np.linalg.norm(position - shoulder_pan_position(model, data)))
+    return min_height <= position[2] <= max_height and shoulder_distance <= max_distance
+
+
+def _relative_move_prompt(x_cm: int, y_cm: int, z_cm: int) -> str:
+    axes = (("x", x_cm), ("y", y_cm), ("z", z_cm))
+    parts = [f"{centimeters}cm along {axis}" for axis, centimeters in axes if centimeters != 0]
+    if not parts:
+        return "hold position"
+    return f"move {' and '.join(parts)}"
+
+
 def generate_relative_moves(
     model,
     data,
     cfg: DictConfig,
     start_pose: Pose,
 ) -> List[ActionPrimitive]:
-    cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "pixel_cam")
-    assert cam_id != -1, "Camera 'pixel_cam' not found in MuJoCo model."
-    cam_rot = data.cam_xmat[cam_id].reshape(3, 3)
-
     rel_cfg = cfg.waypoint.relative_move
-    dx = float(np.random.uniform(*rel_cfg.dx_range_meters))
-    dy = float(np.random.uniform(*rel_cfg.dy_range_meters))
-    dz = float(np.random.uniform(*rel_cfg.dz_range_meters))
+    x_cm = _sample_displacement_centimeters(rel_cfg.dx_range_meters)
+    y_cm = _sample_displacement_centimeters(rel_cfg.dy_range_meters)
+    z_cm = _sample_displacement_centimeters(rel_cfg.dz_range_meters)
 
-    min_disp = float(rel_cfg.min_displacement_threshold_meters)
-    parts = []
-    if abs(dx) >= min_disp:
-        parts.append(f"{int(round(abs(dx) * 100))}cm {'right' if dx > 0 else 'left'}")
-    if abs(dz) >= min_disp:
-        parts.append(f"{int(round(abs(dz) * 100))}cm {'forward' if dz > 0 else 'backward'}")
-    if abs(dy) >= min_disp:
-        parts.append(f"{int(round(abs(dy) * 100))}cm {'up' if dy > 0 else 'down'}")
-
-    if not parts:
-        dx = float(rel_cfg.fallback_displacement_meters)
-        parts.append(f"{int(round(dx * 100))}cm right")
-
-    prompt = f"move {' and '.join(parts)} relative to camera"
-
-    # MuJoCo camera coordinate convention: optical axis points in -z direction
-    cam_delta = np.array([dx, dy, -dz], dtype=np.float32)
-    world_delta = cam_rot @ cam_delta
-
-    target_pos = start_pose.position + world_delta
-
-    # Bound target position to reachable workspace
-    pivot = shoulder_pan_position(model, data)
-    diff = target_pos - pivot
-    min_h, max_h = cfg.waypoint.random_pose.height_meters
-    target_pos[2] = np.clip(target_pos[2], min_h, max_h)
-    diff = target_pos - pivot
-    min_distance, max_distance = cfg.waypoint.random_pose.shoulder_distance_meters
-    assert abs(diff[2]) <= max_distance
-    min_planar_radius = np.sqrt(max(min_distance**2 - diff[2] ** 2, 0.0))
-    max_planar_radius = np.sqrt(max_distance**2 - diff[2] ** 2)
-    planar_radius = np.linalg.norm(diff[:2])
-    if planar_radius < min_planar_radius or planar_radius > max_planar_radius:
-        target_pos[:2] = pivot[:2] + diff[:2] / planar_radius * np.clip(
-            planar_radius,
-            min_planar_radius,
-            max_planar_radius,
-        )
+    # Shortened by whole centimetres rather than clipped, so the prompt states the commanded offset exactly.
+    target_pos = start_pose.position + np.array([x_cm, y_cm, z_cm], dtype=np.float32) / 100.0
+    while not _is_reachable_position(model, data, cfg, target_pos) and (x_cm or y_cm or z_cm):
+        x_cm -= int(np.sign(x_cm))
+        y_cm -= int(np.sign(y_cm))
+        z_cm -= int(np.sign(z_cm))
+        target_pos = start_pose.position + np.array([x_cm, y_cm, z_cm], dtype=np.float32) / 100.0
 
     target_pose = Pose.from_tcp_axes(
         position=target_pos,
@@ -193,7 +178,7 @@ def generate_relative_moves(
     primitive = ActionPrimitive(
         start_pose=start_pose,
         target_pose=target_pose,
-        prompt=prompt,
+        prompt=_relative_move_prompt(x_cm, y_cm, z_cm),
         has_explicit_goal=True,
     )
 

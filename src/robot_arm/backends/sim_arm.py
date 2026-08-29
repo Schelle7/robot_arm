@@ -208,7 +208,7 @@ class SimBackend(Arm):
     def aperture(self) -> float:
         return float(np.linalg.norm(self.moving_finger_tip - self.fixed_finger_tip))
 
-    def get_tcp_pose(self) -> Pose:
+    def get_tcp_pose(self, state: Dict[str, Dict[str, float]]) -> Pose:
         pose, _, _ = get_tcp_geometry(self.model, self.data)
         return pose
 
@@ -321,7 +321,7 @@ class SimBackend(Arm):
         return self.renderer.render()
 
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
-        pose = self.get_tcp_pose()
+        pose, _, _ = get_tcp_geometry(self.model, self.data)
         return pose.closing_axis, pose.secondary_axis
 
     def draw_tcp(self):

@@ -103,6 +103,24 @@ The persistent option is to add the user to the `dialout` group, then log out an
 sudo usermod -aG dialout $USER
 ```
 
+## One bus read per control step
+
+On the real backend every `read_state()` is a serial round trip, and it also advances the
+safety load EMA in `SafeArmWrapper`. The loop used to read three times per step, which both
+ate bus bandwidth and made `load_ema_alpha: 0.1` behave like 0.27. It now reads once and
+threads the result through:
+
+- `Arm.get_tcp_pose(state)` takes an already-read state rather than reading for itself.
+  `RealArm` runs forward kinematics on `state["Present_Position"]`; `SimBackend` ignores the
+  argument and reads MuJoCo directly.
+- `RobotEnv.step(action, joint_positions, ...)` takes the joint positions the caller already
+  observed, passed by `EpisodeRunner` as `policy_observation["joint_positions"]`.
+
+The trade is deliberate: the commanded target is built from a reading one control period old
+instead of a fresh one. At 200 Hz that is 5 ms of staleness against 1 to 3 ms of round trip
+latency plus a third of the bus. Do not add a bare `read_state()` back into anything that
+runs per control step.
+
 ## Project Layout
 
 ```text

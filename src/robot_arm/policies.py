@@ -229,9 +229,14 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             if position_step_norm > self.max_position_delta:
                 position_step *= self.max_position_delta / position_step_norm
 
+            rotation_step = waypoint_delta[3:6].copy()
+            rotation_step_norm = np.linalg.norm(rotation_step)
+            if rotation_step_norm > self.max_rotation_delta:
+                rotation_step *= self.max_rotation_delta / rotation_step_norm
+
             step_vector = np.empty(7, dtype=np.float32)
             step_vector[:3] = position_step
-            step_vector[3:6] = np.clip(waypoint_delta[3:6], -self.max_rotation_delta, self.max_rotation_delta)
+            step_vector[3:6] = rotation_step
             step_vector[6] = np.clip(waypoint_delta[6], -self.max_gripper_delta, self.max_gripper_delta)
 
         # Build the action sequence as cumulative deltas pushing outward from the current pose

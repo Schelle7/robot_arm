@@ -255,7 +255,7 @@ def worker_process(
         worker_metrics_buffer.flush()
 
 
-def _log_metrics(metrics_queue, writer, logging_step, recent_rewards):
+def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
     # Drain up to 10 reward batches per loop iteration to avoid starvation
     for _ in range(10):
         try:
@@ -274,15 +274,13 @@ def _log_metrics(metrics_queue, writer, logging_step, recent_rewards):
                                 "max": max(val),
                                 "min": min(val),
                             },
-                            logging_step,
+                            sac_training_step,
                         )
                 else:
                     if key == "total_reward":
                         recent_rewards.append(float(val))
-                    writer.add_scalar(f"rollout/{key}", val, logging_step)
-            logging_step += 1
+                    writer.add_scalar(f"rollout/{key}", val, sac_training_step)
     writer.flush()
-    return logging_step
 
 
 def _add_transition_and_train(chunk, model, sac_training_step, worker_queues, save_checkpoint):
@@ -326,7 +324,6 @@ def _training_loop(
 ):
     target_total_steps = cfg.training.total_training_steps
     sac_training_step = 0
-    logging_step = 0
     recent_rewards = deque(maxlen=100)
     progress = tqdm(
         total=target_total_steps,
@@ -336,7 +333,7 @@ def _training_loop(
     )
     try:
         while sac_training_step < target_total_steps:
-            logging_step = _log_metrics(metrics_queue, writer, logging_step, recent_rewards)
+            _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards)
 
             # 1. Blocks until worker chunks arrive
             chunk = transition_queue.get()

@@ -49,3 +49,6 @@ Putting force in Pose would make methods such as delta_to(), apply_delta(), wayp
 the gripper closed part needs some form of force and then it cannot and does not even want to close component.
 
 I have to think about how to implement this.
+
+maybe it is also ok to have to define the exact position?
+I am not sure. That would complicate the scripted policy though.

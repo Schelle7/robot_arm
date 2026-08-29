@@ -1,3 +1,6 @@
+# 40 is the intended multi-step design, not a working default: RobotEnv._compute_desired_pose
+# still asserts a single-row Cartesian path, so only trajectory_length: 1 runs today
+# (conf/experiment/debug.yaml and debug_nonterminal_chunks.yaml both override it).
 trajectory_length: 40
 trajectory_dim: 7
 num_waypoints: 3
@@ -26,5 +29,3 @@ relative_move:
   dx_range_meters: [-0.08, 0.08]
   dy_range_meters: [-0.06, 0.06]
   dz_range_meters: [-0.08, 0.08]
-  min_displacement_threshold_meters: 0.02
-  fallback_displacement_meters: 0.05

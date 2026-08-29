@@ -73,16 +73,8 @@ class RobotEnv:
         self.reset_reward_tracking()
         self.pose_delta_diagnostics = {}
 
-    @property
-    def current_joint_angles(self) -> np.ndarray:
-        state_dict = self.arm.read_state()
-        return np.array(
-            [state_dict["Present_Position"][m] for m in self.motor_order],
-            dtype=np.float32,
-        )
-
-    def get_privileged_end_effector_pose(self) -> Pose:
-        return self.arm.get_tcp_pose()
+    def get_privileged_end_effector_pose(self, state_dict: Dict[str, Any]) -> Pose:
+        return self.arm.get_tcp_pose(state_dict)
 
     def _get_obs(self) -> EnvironmentState:
         state_dict = self.arm.read_state()
@@ -101,7 +93,7 @@ class RobotEnv:
         }
 
         privileged_state = {
-            "end_effector_pose": self.get_privileged_end_effector_pose(),
+            "end_effector_pose": self.get_privileged_end_effector_pose(state_dict),
         }
         if self.backend == "sim":
             privileged_state["sim_state"] = state_dict["sim_state"]
@@ -148,7 +140,10 @@ class RobotEnv:
         return self.arm.read_camera()
 
     def _compute_desired_pose(self, chunk_start_pose: Pose, cartesian_action_path: np.ndarray) -> Pose:
-        assert cartesian_action_path.shape[0] == 1, "Only one desired pose is supported temporarily."
+        assert cartesian_action_path.shape[0] == 1, (
+            "Only one desired pose is supported temporarily. "
+            "Override waypoint.trajectory_length to 1, as conf/experiment/debug.yaml does."
+        )
         return chunk_start_pose.apply_delta(cartesian_action_path[0])
 
     def _compute_pose_distances(
@@ -331,14 +326,16 @@ class RobotEnv:
     def step(
         self,
         action: np.ndarray,
+        joint_positions: np.ndarray,
         cartesian_action_path: np.ndarray,
         privileged_chunk_start_pose: Pose,
         chunk_terminated: bool,
     ) -> Tuple[EnvironmentState, float, Dict[str, float]]:
 
-        # 1. Unscale delta action and add to current joint angles
+        # 1. Unscale delta action and add to the joint angles the caller already observed.
+        # Re-reading them here would cost a bus round trip and advance the safety load EMA twice per step.
         delta = action * self.delta_action_scale
-        target_positions = self.current_joint_angles + delta
+        target_positions = joint_positions + delta
 
         # 2. Map target positions vector to dictionary and send to arm
         action_dict = {motor: float(pos) for motor, pos in zip(self.motor_order, target_positions)}
