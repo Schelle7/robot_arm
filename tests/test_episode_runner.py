@@ -31,6 +31,9 @@ class EnvironmentStub:
     def get_privileged_end_effector_pose(self):
         return self.pose
 
+    def reset_chunk_reward_tracking(self, chunk_start_pose, cartesian_action_path):
+        pass
+
     def step(self, action, joint_positions, cartesian_action_path, chunk_start_pose, chunk_terminated):
         self.received_paths.append(cartesian_action_path)
         return (
@@ -66,6 +69,7 @@ def make_cfg(detailed_metrics=True):
             detailed_metrics=detailed_metrics,
             pose_delta_diagnostics_enabled=True,
             sync_weights_every_n_chunks=2,
+            terminate_at_chunk_end=True,
         ),
     )
 
@@ -81,6 +85,9 @@ def make_runner(environment, low_level_policy, metrics_queue, detailed_metrics=T
     runner.metrics_queue = metrics_queue
     runner.cfg = make_cfg(detailed_metrics)
     runner.episode_low_level_step = 0
+    # Unit scales keep the normalized policy observation identical to the raw one.
+    runner.action_scale_radians_per_second = 1.0
+    runner.cartesian_action_scale = 1.0
     return runner
 
 
@@ -106,7 +113,7 @@ def test_run_chunk_reuses_exact_desired_path_for_every_policy_observation():
 
     assert len(low_level_policy.observations) == runner.chunk_size
     for observation in low_level_policy.observations:
-        assert observation["cartesian_action_path"] is cartesian_action_path
+        np.testing.assert_array_equal(observation["cartesian_action_path"], cartesian_action_path)
     for received_path in environment.received_paths:
         assert received_path is cartesian_action_path
 

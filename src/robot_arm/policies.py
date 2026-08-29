@@ -98,6 +98,21 @@ class CartesianPolicy(ABC):
         raise NotImplementedError
 
 
+def build_vla_observation(image: np.ndarray, vla_input_state: np.ndarray, primitive_prompt: str) -> Dict[str, Any]:
+    """
+    Builds the observation the rollout hands the shared LeRobot preprocessor. It has to match what
+    LeRobotDataset yields for a recorded frame, or inference silently disagrees with training.
+    LeRobot serves images in [0, 1] and SmolVLA normalizes VISUAL features as identity, so nothing
+    downstream rescales what is passed in here.
+    """
+    assert image.dtype == np.uint8, f"Camera frames must be uint8, got {image.dtype}."
+    return {
+        "observation.state": vla_input_state.astype(np.float32),
+        "observation.images.camera1": np.transpose(image.astype(np.float32) / 255.0, (2, 0, 1)),
+        "task": primitive_prompt,
+    }
+
+
 class VLACartesianPolicy(CartesianPolicy):
     """
     Wrapper for the lerobot SmolVLAPolicy.
@@ -130,13 +145,7 @@ class VLACartesianPolicy(CartesianPolicy):
     ) -> CartesianAction:
         import torch
 
-        img_chw = np.transpose(image.astype(np.float32), (2, 0, 1))
-
-        raw_obs = {
-            "observation.state": vla_input_state.astype(np.float32),
-            "observation.images.camera1": img_chw,
-            "task": primitive_prompt,
-        }
+        raw_obs = build_vla_observation(image, vla_input_state, primitive_prompt)
 
         with torch.inference_mode():
             batch = {k: (torch.tensor(v).unsqueeze(0).to(self.device) if isinstance(v, np.ndarray) else [v]) for k, v in raw_obs.items()}
@@ -178,6 +187,7 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             rotation_speed_radians_per_second,
             gripper_speed_radians_per_second,
         )
+
     def _evaluate_target(self, current_pose: Pose, target_pose: Pose):
         waypoint_delta = current_pose.delta_to(target_pose)
         position_distance = float(np.linalg.norm(waypoint_delta[:3]))

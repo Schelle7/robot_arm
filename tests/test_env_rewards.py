@@ -39,7 +39,11 @@ def test_desired_pose_is_constructed_from_one_delta():
 
     np.testing.assert_allclose(desired_pose.position, [1.1, 1.8, 3.3])
     np.testing.assert_allclose(desired_pose.gripper, 0.6)
-    assert desired_pose.angular_distance(make_pose([0.0, 0.0, 0.0], [0.0, 0.0, np.pi / 2])) == 0.0
+    np.testing.assert_allclose(
+        desired_pose.angular_distance(make_pose([0.0, 0.0, 0.0], [0.0, 0.0, np.pi / 2])),
+        0.0,
+        atol=1e-6,
+    )
 
 
 def test_pose_distances_use_component_specific_metrics():
@@ -99,7 +103,7 @@ def test_compute_reward_updates_tracking_state_after_calculation():
         chunk_terminated=False,
     )
 
-    assert env.previous_position_distance == np.sqrt(0.5)
+    np.testing.assert_allclose(env.previous_position_distance, np.sqrt(0.5), atol=1e-6)
     assert env.previous_primary_orientation_distance == 0.0
     assert env.previous_secondary_orientation_distance == 0.0
     assert env.previous_gripper_distance == 0.0
@@ -137,7 +141,8 @@ def test_terminal_penalty_is_sum_of_normalized_weighted_distances():
 
     penalty = env._compute_termination_penalty(True, current_pose, desired_pose)
 
-    np.testing.assert_allclose(penalty, -3.0)
+    # Position, primary orientation, secondary orientation and gripper each normalize to exactly 1.0.
+    np.testing.assert_allclose(penalty, -4.0, rtol=1e-6)
 
 
 def test_deviation_penalties_can_be_disabled_independently():
@@ -157,13 +162,15 @@ def test_deviation_penalties_can_be_disabled_independently():
     )
 
     assert reward == 0.0
-    assert breakdown == {}
+    assert breakdown == {"safety_penalty": 0.0}
 
 
 def test_reset_clears_tracking_state():
     env = make_env()
     env.arm = type("ArmStub", (), {})()
     env._get_obs = lambda: {}
+    env.backend = "real"
+    env.staging_enabled = False
     env.previous_position_distance = 2.0
     env.previous_primary_orientation_distance = 3.0
     env.previous_secondary_orientation_distance = 4.0

@@ -16,10 +16,7 @@ def assert_matching_policy_constraints(
         current_value = current_cfg.control.frequencies[field]
         saved_value = saved_cfg.control.frequencies[field]
         if current_value != saved_value:
-            raise ValueError(
-                f"Rollout frequency {field!r} ({current_value}) does not match "
-                f"the policy frequency ({saved_value})."
-            )
+            raise ValueError(f"Rollout frequency {field!r} ({current_value}) does not match " f"the policy frequency ({saved_value}).")
 
     safety_fields = (
         "max_position_radians",

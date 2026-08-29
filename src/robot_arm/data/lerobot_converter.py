@@ -67,11 +67,7 @@ def _build_dataset_features(ref_cfg):
     path_length = int(ref_cfg.waypoint.trajectory_length)
     cartesian_action_dim = int(ref_cfg.waypoint.trajectory_dim)
     assert cartesian_action_dim == len(CARTESIAN_ACTION_NAMES)
-    action_names = [
-        f"step_{path_index:02d}_{action_name}"
-        for path_index in range(path_length)
-        for action_name in CARTESIAN_ACTION_NAMES
-    ]
+    action_names = [f"step_{path_index:02d}_{action_name}" for path_index in range(path_length) for action_name in CARTESIAN_ACTION_NAMES]
     return {
         "observation.images.camera1": {
             "dtype": "video",

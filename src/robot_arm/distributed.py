@@ -161,10 +161,7 @@ def print_training_info(cfg, device):
     training_minutes, training_seconds = divmod(remaining_seconds, 60)
 
     log.info(f"Initializing central learner with {num_workers} parallel workers on {device}...")
-    print(
-        f"Training for {target_total_steps} steps at {low_level_hz} Hz "
-        f"equates to {int(training_hours)}h {int(training_minutes):02d}m {training_seconds:05.2f}s."
-    )
+    print(f"Training for {target_total_steps} steps at {low_level_hz} Hz " f"equates to {int(training_hours)}h {int(training_minutes):02d}m {training_seconds:05.2f}s.")
 
 
 def start_workers(

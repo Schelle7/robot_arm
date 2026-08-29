@@ -150,4 +150,4 @@ I will later extend this to use pwm control on the real robot and hope to achiev
 I will focus next on smol vla and etaching it some tasks.
 smolvla is there to define the desired path in 3d space + 3d orientation + 1d gripepr open/closed
 
-I also want to work on function calling and etaching llms that so I will probably add a third level a general llm that can tell the vla what to do. Like grab box. move it to the right and so on. (as function calls).
+I also want to work on function calling and teaching llms that so I will probably add a third level a general llm that can tell the vla what to do. Like grab box. move it to the right and so on. (as function calls).

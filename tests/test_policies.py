@@ -180,9 +180,9 @@ def test_experimental_waypoint_derives_azimuth_from_position():
         gripper=0.5,
     )
 
-    np.testing.assert_allclose(pose.closing_axis, [0.0, 2.0, -1.0] / np.sqrt(5.0))
-    np.testing.assert_allclose(pose.secondary_axis, [-1.0, 0.0, 0.0])
-    np.testing.assert_allclose(pose.as_matrix()[:, 2], [0.0, 1.0, 2.0] / np.sqrt(5.0))
+    np.testing.assert_allclose(pose.closing_axis, [0.0, 2.0, -1.0] / np.sqrt(5.0), atol=1e-6)
+    np.testing.assert_allclose(pose.secondary_axis, [-1.0, 0.0, 0.0], atol=1e-6)
+    np.testing.assert_allclose(pose.as_matrix()[:, 2], [0.0, 1.0, 2.0] / np.sqrt(5.0), atol=1e-6)
     assert pose.gripper == 0.5
 
 

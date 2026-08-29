@@ -45,21 +45,9 @@ def generate_oriented_waypoint(
     base_rotation = base_rotation_for_position(model, data, position)
     secondary_axis = np.array([-np.sin(base_rotation), np.cos(base_rotation), 0.0], dtype=np.float32)
     closing_axis = np.cross(secondary_axis, pointing_axis)
-    tilted_pointing_axis = (
-        np.cos(pointing_axis_tilt) * pointing_axis
-        + np.sin(pointing_axis_tilt) * np.cross(secondary_axis, pointing_axis)
-    )
-    tilted_closing_axis = (
-        np.cos(pointing_axis_tilt) * closing_axis
-        + np.sin(pointing_axis_tilt) * np.cross(secondary_axis, closing_axis)
-    )
-    rotated_closing_axis = (
-        np.cos(pointing_axis_rotation) * tilted_closing_axis
-        + np.sin(pointing_axis_rotation) * np.cross(tilted_pointing_axis, tilted_closing_axis)
-    )
-    rotated_secondary_axis = (
-        np.cos(pointing_axis_rotation) * secondary_axis
-        + np.sin(pointing_axis_rotation) * np.cross(tilted_pointing_axis, secondary_axis)
-    )
+    tilted_pointing_axis = np.cos(pointing_axis_tilt) * pointing_axis + np.sin(pointing_axis_tilt) * np.cross(secondary_axis, pointing_axis)
+    tilted_closing_axis = np.cos(pointing_axis_tilt) * closing_axis + np.sin(pointing_axis_tilt) * np.cross(secondary_axis, closing_axis)
+    rotated_closing_axis = np.cos(pointing_axis_rotation) * tilted_closing_axis + np.sin(pointing_axis_rotation) * np.cross(tilted_pointing_axis, tilted_closing_axis)
+    rotated_secondary_axis = np.cos(pointing_axis_rotation) * secondary_axis + np.sin(pointing_axis_rotation) * np.cross(tilted_pointing_axis, secondary_axis)
 
     return Pose.from_tcp_axes(position, rotated_closing_axis, rotated_secondary_axis, gripper)

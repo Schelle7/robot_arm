@@ -31,12 +31,12 @@ class RobotEnv:
         mujoco_hz = cfg.control.frequencies.mujoco
 
         assert mujoco_hz % low_level_hz == 0, f"mujoco_hz ({mujoco_hz}) must be divisible by low_level_hz ({low_level_hz})"
-        assert cfg.control.action_scale_radians_per_second >= cfg.waypoint.rotation_speed_radians_per_second, (
-            "control.action_scale_radians_per_second must be at least waypoint.rotation_speed_radians_per_second"
-        )
-        assert cfg.control.action_scale_radians_per_second >= cfg.waypoint.gripper_speed_radians_per_second, (
-            "control.action_scale_radians_per_second must be at least waypoint.gripper_speed_radians_per_second"
-        )
+        assert (
+            cfg.control.action_scale_radians_per_second >= cfg.waypoint.rotation_speed_radians_per_second
+        ), "control.action_scale_radians_per_second must be at least waypoint.rotation_speed_radians_per_second"
+        assert (
+            cfg.control.action_scale_radians_per_second >= cfg.waypoint.gripper_speed_radians_per_second
+        ), "control.action_scale_radians_per_second must be at least waypoint.gripper_speed_radians_per_second"
 
         self.arm = arm
         self.backend = cfg.backend
@@ -141,8 +141,7 @@ class RobotEnv:
 
     def _compute_desired_pose(self, chunk_start_pose: Pose, cartesian_action_path: np.ndarray) -> Pose:
         assert cartesian_action_path.shape[0] == 1, (
-            "Only one desired pose is supported temporarily. "
-            "Override waypoint.trajectory_length to 1, as conf/experiment/debug.yaml does."
+            "Only one desired pose is supported temporarily. " "Override waypoint.trajectory_length to 1, as conf/experiment/debug.yaml does."
         )
         return chunk_start_pose.apply_delta(cartesian_action_path[0])
 
@@ -207,12 +206,8 @@ class RobotEnv:
     ) -> Dict[str, float]:
         return {
             "position_deviation_penalty": -self.position_distance_weight * position_distance / self.position_distance_scale,
-            "primary_orientation_deviation_penalty": -self.rotation_primary_distance_weight
-            * primary_orientation_distance
-            / self.rotation_distance_scale,
-            "secondary_orientation_deviation_penalty": -self.rotation_secondary_distance_weight
-            * secondary_orientation_distance
-            / self.rotation_distance_scale,
+            "primary_orientation_deviation_penalty": -self.rotation_primary_distance_weight * primary_orientation_distance / self.rotation_distance_scale,
+            "secondary_orientation_deviation_penalty": -self.rotation_secondary_distance_weight * secondary_orientation_distance / self.rotation_distance_scale,
             "gripper_deviation_penalty": -self.gripper_distance_weight * gripper_distance / self.gripper_distance_scale,
         }
 
@@ -273,14 +268,10 @@ class RobotEnv:
         )
         position_reward = self.position_distance_weight * (self.previous_position_distance - position_distance) / self.position_distance_scale
         primary_orientation_reward = (
-            self.rotation_primary_distance_weight
-            * (self.previous_primary_orientation_distance - primary_orientation_distance)
-            / self.rotation_distance_scale
+            self.rotation_primary_distance_weight * (self.previous_primary_orientation_distance - primary_orientation_distance) / self.rotation_distance_scale
         )
         secondary_orientation_reward = (
-            self.rotation_secondary_distance_weight
-            * (self.previous_secondary_orientation_distance - secondary_orientation_distance)
-            / self.rotation_distance_scale
+            self.rotation_secondary_distance_weight * (self.previous_secondary_orientation_distance - secondary_orientation_distance) / self.rotation_distance_scale
         )
         gripper_reward = self.gripper_distance_weight * (self.previous_gripper_distance - gripper_distance) / self.gripper_distance_scale
         self.previous_position_distance = position_distance

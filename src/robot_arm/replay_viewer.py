@@ -72,11 +72,7 @@ class ReplayViewer:
         return desired_poses, (observed_pose_delta, pose_tracking_error)
 
     def update_debug_scene(self, viewer_inst, desired_poses):
-        current_action_diagnostics = (
-            self.action_diagnostics[self.current_frame]
-            if self.current_frame < self.num_actions
-            else {}
-        )
+        current_action_diagnostics = self.action_diagnostics[self.current_frame] if self.current_frame < self.num_actions else {}
         active_primitive_index = self.primitive_indices[self.current_frame]
         update_tcp_debug_user_scene(viewer_inst.user_scn, self.model, self.mdata)
         update_waypoint_debug_user_scene(
@@ -94,18 +90,12 @@ class ReplayViewer:
             self.mdata,
             self.joint_positions[self.current_frame],
             self.joint_velocities[self.current_frame],
-            self.desired_actions[self.current_frame]
-            if self.current_frame < self.num_actions
-            else None,
-            self.dense_trajectory[self.current_frame]
-            if self.current_frame < self.num_actions
-            else [],
+            self.desired_actions[self.current_frame] if self.current_frame < self.num_actions else None,
+            self.dense_trajectory[self.current_frame] if self.current_frame < self.num_actions else [],
             observed_pose_delta,
             pose_tracking_error,
             action_diagnostics,
-            self.completes_active_primitives[self.current_frame]
-            if self.current_frame < self.num_actions
-            else False,
+            self.completes_active_primitives[self.current_frame] if self.current_frame < self.num_actions else False,
             self.current_frame,
             self.recorded_cfg,
         )

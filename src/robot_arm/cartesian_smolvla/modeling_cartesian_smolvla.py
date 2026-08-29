@@ -122,23 +122,23 @@ class CartesianSmolVLAPolicy(SmolVLAPolicy):
         per_sample_action_loss = flow_losses.mean(dim=(1, 2))
         completion_targets = batch[PRIMITIVE_COMPLETION].float().reshape(-1)
         # The flag rides on a declared dataset feature, so the pipeline normalizer can rescale it away from 0/1.
-        assert bool(((completion_targets == 0.0) | (completion_targets == 1.0)).all()), (
-            f"{PRIMITIVE_COMPLETION} reached the loss rescaled: {completion_targets.unique().tolist()}"
-        )
+        assert bool(
+            ((completion_targets == 0.0) | (completion_targets == 1.0)).all()
+        ), f"{PRIMITIVE_COMPLETION} reached the loss rescaled: {completion_targets.unique().tolist()}"
         per_sample_completion_loss = F.binary_cross_entropy_with_logits(
             completion_logits,
             completion_targets,
             reduction="none",
         )
         per_sample_loss = per_sample_action_loss + per_sample_completion_loss
-        loss_dict.update({
-            "action_loss": per_sample_action_loss.mean().item(),
-            "completion_loss": per_sample_completion_loss.mean().item(),
-            "completion_accuracy": (
-                (completion_logits >= 0) == completion_targets.bool()
-            ).float().mean().item(),
-            "loss": per_sample_loss.mean().item(),
-        })
+        loss_dict.update(
+            {
+                "action_loss": per_sample_action_loss.mean().item(),
+                "completion_loss": per_sample_completion_loss.mean().item(),
+                "completion_accuracy": ((completion_logits >= 0) == completion_targets.bool()).float().mean().item(),
+                "loss": per_sample_loss.mean().item(),
+            }
+        )
         if reduction == "none":
             return per_sample_loss, loss_dict
         return per_sample_loss.mean(), loss_dict

@@ -4,7 +4,6 @@ import numpy as np
 from robot_arm.backends.sim_arm import get_tcp_geometry
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
-
 VALUE_WIDTH = 12
 VALUE_PRECISION = 4
 VALUE_SEPARATOR = "  "
@@ -20,34 +19,19 @@ Controls:
 
 
 def format_values(values):
-    return VALUE_SEPARATOR.join(
-        f"{float(value):+{VALUE_WIDTH}.{VALUE_PRECISION}f}"
-        for value in np.asarray(values).reshape(-1)
-    )
+    return VALUE_SEPARATOR.join(f"{float(value):+{VALUE_WIDTH}.{VALUE_PRECISION}f}" for value in np.asarray(values).reshape(-1))
 
 
 def format_action_values(values):
-    return ACTION_SEPARATOR.join(
-        f"{float(value):+{ACTION_WIDTH}.{VALUE_PRECISION}f}"
-        for value in np.asarray(values).reshape(-1)
-    )
+    return ACTION_SEPARATOR.join(f"{float(value):+{ACTION_WIDTH}.{VALUE_PRECISION}f}" for value in np.asarray(values).reshape(-1))
 
 
 def format_desired_pose(cartesian_action):
-    return (
-        f"desired_pose=[{format_action_values(cartesian_action)}]"
-        if cartesian_action is not None
-        else "desired_pose: not available for this step"
-    )
+    return f"desired_pose=[{format_action_values(cartesian_action)}]" if cartesian_action is not None else "desired_pose: not available for this step"
 
 
 def format_pose_delta(delta):
-    return (
-        f"position=[{format_values(delta[:3])}] "
-        f"primary_orientation={delta[3]:+.4f}rad "
-        f"secondary_orientation={delta[4]:+.4f}rad "
-        f"gripper={delta[5]:+.4f}"
-    )
+    return f"position=[{format_values(delta[:3])}] " f"primary_orientation={delta[3]:+.4f}rad " f"secondary_orientation={delta[4]:+.4f}rad " f"gripper={delta[5]:+.4f}"
 
 
 def format_low_level_observation(observation):
@@ -61,6 +45,10 @@ def format_low_level_observation(observation):
 def format_primitive_status(action_diagnostics, completes_active_primitive):
     if not action_diagnostics:
         return "primitive: no outgoing transition"
+
+    # The scripted policy measures distances against thresholds; the VLA only knows its own completion probability.
+    if "completion_probability" in action_diagnostics:
+        return f"completes_active_primitive={completes_active_primitive} " f"completion_probability={action_diagnostics['completion_probability']:.4f}"
 
     return (
         f"completes_active_primitive={completes_active_primitive} "
@@ -86,10 +74,7 @@ def format_reward_line(dense_trajectory):
         return "last_low_level_reward: not available for this step"
 
     reward = dense_trajectory[-1]
-    reward_parts = "  ".join(
-        f"{key.removesuffix('_reward').removesuffix('_penalty')}={value:+.4f}"
-        for key, value in reward["reward_breakdown"].items()
-    )
+    reward_parts = "  ".join(f"{key.removesuffix('_reward').removesuffix('_penalty')}={value:+.4f}" for key, value in reward["reward_breakdown"].items())
     return f"last_low_level_reward={reward['reward']:+.4f}  {reward_parts}"
 
 
