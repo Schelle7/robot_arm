@@ -1,0 +1,26 @@
+# Read off the arm into outputs/characterize_gripper/2026-08-31/17-47-08/servo_configuration.json,
+# except where marked. lerobot's SO101Follower.configure() rewrites several of these on every
+# connect, so they are the servo's settings rather than ours to choose.
+ticks_per_revolution: 4096
+full_scale_duty: 1000
+dead_zone_ticks: 1
+min_startup_duty: 16
+
+# Max_Torque_Limit on the servo, but its units are duty rather than torque.
+max_duty:
+  shoulder_pan: 1000
+  shoulder_lift: 1000
+  elbow_flex: 1000
+  wrist_flex: 1000
+  wrist_roll: 1000
+  gripper: 500
+
+# DERIVED, not read: the gripper held 40 ticks of error against an object and reported 184 duty.
+duty_per_tick: 4.6
+
+# DERIVED, not read: 19 kg-cm at 7.4 V, scaled to the 5.2 V measured on the rail.
+stall_torque_newton_meters: 1.31
+
+# ESTIMATED, not measured: ~0.22 s/60 deg at 7.4 V scaled to 5.2 V, biased low for gearbox friction
+# in the 1/345 train. Only matters while a joint is moving quickly; it vanishes at stall.
+no_load_speed_radians_per_second: 3.3

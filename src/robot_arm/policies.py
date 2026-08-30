@@ -9,6 +9,7 @@ import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.pose import Pose, axis_angular_distance
+from robot_arm.primitives import ActionPrimitive
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES
 
 
@@ -20,29 +21,26 @@ def latest_vla_checkpoint_path() -> str:
 
 
 def waypoint_action_limits(
-    trajectory_length: int,
-    low_level_hz: int,
+    cartesian_hz: int,
     position_speed_meters_per_second: float,
     rotation_speed_radians_per_second: float,
     gripper_speed_radians_per_second: float,
 ) -> tuple[float, float, float]:
     return (
-        position_speed_meters_per_second * trajectory_length / low_level_hz,
-        rotation_speed_radians_per_second * trajectory_length / low_level_hz,
-        gripper_speed_radians_per_second * trajectory_length / low_level_hz,
+        position_speed_meters_per_second / cartesian_hz,
+        rotation_speed_radians_per_second / cartesian_hz,
+        gripper_speed_radians_per_second / cartesian_hz,
     )
 
 
 def waypoint_action_scale(
-    trajectory_length: int,
-    low_level_hz: int,
+    cartesian_hz: int,
     position_speed_meters_per_second: float,
     rotation_speed_radians_per_second: float,
     gripper_speed_radians_per_second: float,
 ) -> np.ndarray:
     position_limit, rotation_limit, gripper_limit = waypoint_action_limits(
-        trajectory_length,
-        low_level_hz,
+        cartesian_hz,
         position_speed_meters_per_second,
         rotation_speed_radians_per_second,
         gripper_speed_radians_per_second,
@@ -80,9 +78,17 @@ def make_waypoint_pose(
 
 @dataclass
 class CartesianAction:
-    cartesian_action_path: np.ndarray
+    cartesian_action: np.ndarray
     diagnostics: Dict[str, Any]
     completes_active_primitive: bool
+
+
+class FixedDutyPolicy:
+    def __init__(self, duties: np.ndarray):
+        self.duties = np.asarray(duties, dtype=np.float32)
+
+    def predict(self, observation, deterministic):
+        return self.duties.copy(), None
 
 
 class CartesianPolicy(ABC):
@@ -92,8 +98,8 @@ class CartesianPolicy(ABC):
         current_pose: Pose,
         image: np.ndarray,
         vla_input_state: np.ndarray,
-        primitive_prompt: str,
-        privileged_target_pose: Pose | None,
+        gripper_duty: float,
+        primitive: ActionPrimitive,
     ) -> CartesianAction:
         raise NotImplementedError
 
@@ -140,12 +146,12 @@ class VLACartesianPolicy(CartesianPolicy):
         current_pose: Pose,
         image: np.ndarray,
         vla_input_state: np.ndarray,
-        primitive_prompt: str,
-        privileged_target_pose: Pose | None,
+        gripper_duty: float,
+        primitive: ActionPrimitive,
     ) -> CartesianAction:
         import torch
 
-        raw_obs = build_vla_observation(image, vla_input_state, primitive_prompt)
+        raw_obs = build_vla_observation(image, vla_input_state, primitive.prompt)
 
         with torch.inference_mode():
             batch = {k: (torch.tensor(v).unsqueeze(0).to(self.device) if isinstance(v, np.ndarray) else [v]) for k, v in raw_obs.items()}
@@ -154,7 +160,7 @@ class VLACartesianPolicy(CartesianPolicy):
             action = self.postprocessor(out)
 
         return CartesianAction(
-            cartesian_action_path=action.squeeze(0).cpu().numpy().reshape(-1, len(CARTESIAN_ACTION_NAMES)),
+            cartesian_action=action.squeeze(0).cpu().numpy().reshape(len(CARTESIAN_ACTION_NAMES)),
             diagnostics={"completion_probability": float(completion_probability.item())},
             completes_active_primitive=bool(completion_probability.item() >= 0.5),
         )
@@ -162,33 +168,28 @@ class VLACartesianPolicy(CartesianPolicy):
 
 class ScriptedCartesianPolicy(CartesianPolicy):
     """
-    Produces Cartesian action paths toward privileged primitive targets.
+    Produces Cartesian actions toward the primitive's target pose.
     """
 
     def __init__(self, cfg: DictConfig):
-        trajectory_length = cfg.waypoint.trajectory_length
-        low_level_hz = cfg.control.frequencies.low_level
+        cartesian_hz = cfg.control.frequencies.cartesian
         position_speed_meters_per_second = cfg.waypoint.position_speed_meters_per_second
         rotation_speed_radians_per_second = cfg.waypoint.rotation_speed_radians_per_second
         gripper_speed_radians_per_second = cfg.waypoint.gripper_speed_radians_per_second
 
-        self.action_horizon = trajectory_length
-        self.max_position_delta = position_speed_meters_per_second / low_level_hz
-        self.max_rotation_delta = rotation_speed_radians_per_second / low_level_hz
-        self.max_gripper_delta = gripper_speed_radians_per_second / low_level_hz
+        self.duty_completion_tolerance = float(cfg.waypoint.duty_completion_tolerance)
         (
-            self.max_position_delta_over_horizon,
-            self.max_orientation_distance_over_horizon,
-            self.max_gripper_delta_over_horizon,
+            self.max_position_delta,
+            self.max_rotation_delta,
+            self.max_gripper_delta,
         ) = waypoint_action_limits(
-            trajectory_length,
-            low_level_hz,
+            cartesian_hz,
             position_speed_meters_per_second,
             rotation_speed_radians_per_second,
             gripper_speed_radians_per_second,
         )
 
-    def _evaluate_target(self, current_pose: Pose, target_pose: Pose):
+    def _evaluate_target(self, current_pose: Pose, target_pose: Pose, gripper_duty: float, primitive: ActionPrimitive):
         waypoint_delta = current_pose.delta_to(target_pose)
         position_distance = float(np.linalg.norm(waypoint_delta[:3]))
         primary_orientation_distance = axis_angular_distance(
@@ -200,21 +201,30 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             target_pose.secondary_axis,
         )
         gripper_distance = float(abs(waypoint_delta[6]))
+        gripper_duty_distance = abs(primitive.desired_gripper_duty - gripper_duty)
+
+        if primitive.desired_gripper_duty_active:
+            gripper_channel_reached = gripper_duty_distance <= self.duty_completion_tolerance
+        else:
+            gripper_channel_reached = gripper_distance <= self.max_gripper_delta
+
         completes_active_primitive = (
-            position_distance <= self.max_position_delta_over_horizon
-            and primary_orientation_distance <= self.max_orientation_distance_over_horizon
-            and secondary_orientation_distance <= self.max_orientation_distance_over_horizon
-            and gripper_distance <= self.max_gripper_delta_over_horizon
+            position_distance <= self.max_position_delta
+            and primary_orientation_distance <= self.max_rotation_delta
+            and secondary_orientation_distance <= self.max_rotation_delta
+            and gripper_channel_reached
         )
 
         diagnostics = {
             "position_distance": position_distance,
-            "position_threshold": float(self.max_position_delta_over_horizon),
+            "position_threshold": float(self.max_position_delta),
             "primary_orientation_distance": primary_orientation_distance,
             "secondary_orientation_distance": secondary_orientation_distance,
-            "orientation_threshold": float(self.max_orientation_distance_over_horizon),
+            "orientation_threshold": float(self.max_rotation_delta),
             "gripper_distance": gripper_distance,
-            "gripper_threshold": float(self.max_gripper_delta_over_horizon),
+            "gripper_threshold": float(self.max_gripper_delta),
+            "gripper_duty_distance": gripper_duty_distance,
+            "duty_threshold": float(self.duty_completion_tolerance),
         }
         return waypoint_delta, diagnostics, completes_active_primitive
 
@@ -223,38 +233,33 @@ class ScriptedCartesianPolicy(CartesianPolicy):
         current_pose: Pose,
         image: np.ndarray,
         vla_input_state: np.ndarray,
-        primitive_prompt: str,
-        privileged_target_pose: Pose | None,
+        gripper_duty: float,
+        primitive: ActionPrimitive,
     ) -> CartesianAction:
-        action_sequence = np.zeros((self.action_horizon, 7), dtype=np.float32)
+        waypoint_delta, diagnostics, completes_active_primitive = self._evaluate_target(
+            current_pose,
+            primitive.target_pose,
+            gripper_duty,
+            primitive,
+        )
 
-        assert privileged_target_pose is not None
-        waypoint_delta, diagnostics, completes_active_primitive = self._evaluate_target(current_pose, privileged_target_pose)
+        # Reaching the target already fits inside one command when the primitive completes, so only
+        # the unfinished case needs shortening to what one command is allowed to travel.
+        if not completes_active_primitive:
+            position = waypoint_delta[:3]
+            position_norm = np.linalg.norm(position)
+            if position_norm > self.max_position_delta:
+                position *= self.max_position_delta / position_norm
 
-        if completes_active_primitive:
-            step_vector = waypoint_delta / self.action_horizon
-        else:
-            position_step = waypoint_delta[:3].copy()
-            position_step_norm = np.linalg.norm(position_step)
-            if position_step_norm > self.max_position_delta:
-                position_step *= self.max_position_delta / position_step_norm
+            rotation = waypoint_delta[3:6]
+            rotation_norm = np.linalg.norm(rotation)
+            if rotation_norm > self.max_rotation_delta:
+                rotation *= self.max_rotation_delta / rotation_norm
 
-            rotation_step = waypoint_delta[3:6].copy()
-            rotation_step_norm = np.linalg.norm(rotation_step)
-            if rotation_step_norm > self.max_rotation_delta:
-                rotation_step *= self.max_rotation_delta / rotation_step_norm
-
-            step_vector = np.empty(7, dtype=np.float32)
-            step_vector[:3] = position_step
-            step_vector[3:6] = rotation_step
-            step_vector[6] = np.clip(waypoint_delta[6], -self.max_gripper_delta, self.max_gripper_delta)
-
-        # Build the action sequence as cumulative deltas pushing outward from the current pose
-        for i in range(self.action_horizon):
-            action_sequence[i] = np.minimum(np.abs(waypoint_delta), np.abs(step_vector) * (i + 1)) * np.sign(waypoint_delta)
+            waypoint_delta[6] = np.clip(waypoint_delta[6], -self.max_gripper_delta, self.max_gripper_delta)
 
         return CartesianAction(
-            cartesian_action_path=action_sequence,
+            cartesian_action=waypoint_delta,
             diagnostics=diagnostics,
             completes_active_primitive=completes_active_primitive,
         )

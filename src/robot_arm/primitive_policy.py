@@ -31,7 +31,7 @@ class ScriptedPrimitiveGeneratorPolicy:
         self.next_primitive_index += 1
         return primitive_index, primitive
 
-    def build_vla_input_state(self, primitive: ActionPrimitive, current_pose: Pose) -> np.ndarray:
+    def build_vla_input_state(self, primitive: ActionPrimitive, current_pose: Pose, gripper_duty: float) -> np.ndarray:
         current_pose_7d = current_pose.as_7d()
         if primitive.has_explicit_goal:
             target_offset_7d = current_pose.delta_to(primitive.target_pose)
@@ -40,4 +40,4 @@ class ScriptedPrimitiveGeneratorPolicy:
             target_offset_7d = np.zeros(7, dtype=np.float32)
             goal_flag = 0.0
 
-        return np.concatenate([current_pose_7d, target_offset_7d, [goal_flag]]).astype(np.float32)
+        return np.concatenate([current_pose_7d, target_offset_7d, [goal_flag], [gripper_duty]]).astype(np.float32)

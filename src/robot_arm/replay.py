@@ -1,5 +1,6 @@
 import glob
 import os
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -30,20 +31,21 @@ def calculate_pose_delta(start_pose_10d, end_pose_10d):
     )
 
 
+def rollout_timestamp(episode_path: str) -> datetime:
+    """Every rollout script writes outputs/rollout/<script>/<date>/<time>/<recordings>/<episode>/episode.npz."""
+    run_directory = Path(episode_path).resolve().parents[2]
+    return datetime.strptime(f"{run_directory.parent.name} {run_directory.name}", "%Y-%m-%d %H-%M-%S")
+
+
 def find_latest_episode():
     outputs_dir = Path(__file__).resolve().parents[2] / "outputs"
-    search_pattern = os.path.join(str(outputs_dir), "rollout_waypoint", "*", "*", "**", "episode.npz")
+    search_pattern = os.path.join(str(outputs_dir), "rollout", "*", "*", "*", "**", "episode.npz")
     files = glob.glob(search_pattern, recursive=True)
 
     if not files:
         return None
 
-    def extract_datetime_key(filepath):
-        parts = filepath.split(os.sep)
-        idx = parts.index("rollout_waypoint")
-        return (parts[idx + 1], parts[idx + 2])
-
-    return max(files, key=extract_datetime_key)
+    return max(files, key=rollout_timestamp)
 
 
 def load_recorded_config(episode_path: str) -> DictConfig:
@@ -70,12 +72,12 @@ def load_replay_recording(cfg: DictConfig):
     if episode_path is None:
         episode_path = find_latest_episode()
         if episode_path is None:
-            raise FileNotFoundError("Could not find any episode.npz files in outputs/rollout_waypoint.")
+            raise FileNotFoundError("Could not find any episode.npz files under outputs/rollout.")
 
     recorded_cfg = load_recorded_timing(episode_path)
     data = np.load(episode_path, allow_pickle=True)
     num_states = len(data["qpos"])
-    num_actions = len(data["cartesian_action_path"])
+    num_actions = len(data["cartesian_action"])
     if num_states != num_actions + 1:
         raise ValueError("Replay recording must contain one more state than Cartesian action paths.")
     return episode_path, recorded_cfg, data

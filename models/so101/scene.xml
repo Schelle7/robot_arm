@@ -12,7 +12,12 @@
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
       markrgb="0.8 0.8 0.8" width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <!-- Object colours are drawn from this pool at reset by swapping geom_matid. -->
     <material name="matte_red" rgba="1 0.1 0.1 1" specular="0" shininess="0"/>
+    <material name="matte_green" rgba="0.1 0.65 0.2 1" specular="0" shininess="0"/>
+    <material name="matte_blue" rgba="0.15 0.3 0.9 1" specular="0" shininess="0"/>
+    <material name="matte_yellow" rgba="0.9 0.8 0.1 1" specular="0" shininess="0"/>
+    <material name="matte_purple" rgba="0.6 0.2 0.8 1" specular="0" shininess="0"/>
   </asset>
 
   <worldbody>
@@ -29,10 +34,19 @@
       <camera name="pixel_cam" pos="0 0 -0.02" mode="fixed" fovy="45"/>
     </body>
 
-    <!-- Target Red Box -->
-    <body name="target_box" pos="0.3 0.0 0.05">
+    <!-- Boxes to pick up. Position and colour are reassigned every reset. -->
+    <body name="box_0" pos="0.35 0.10 0.02">
       <freejoint/>
-      <geom type="box" size="0.02 0.02 0.02" material="matte_red" mass="0.1"/>
+      <geom name="box_0_geom" type="box" size="0.02 0.02 0.02" material="matte_red" mass="0.1"/>
+    </body>
+    <body name="box_1" pos="0.35 -0.10 0.02">
+      <freejoint/>
+      <geom name="box_1_geom" type="box" size="0.02 0.02 0.02" material="matte_green" mass="0.1"/>
+    </body>
+
+    <!-- Placement target. Fixed to the world, moved between episodes via model.body_pos. -->
+    <body name="tile" pos="0.40 0.0 0.0001">
+      <geom name="tile_geom" type="box" size="0.02 0.02 0.0001" material="matte_blue"/>
     </body>
   </worldbody>
 </mujoco>

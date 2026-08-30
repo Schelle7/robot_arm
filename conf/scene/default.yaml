@@ -1,0 +1,4 @@
+object_placement:
+  shoulder_distance_meters: [0.25, 0.40]
+  base_rotation_degrees: [-50.0, 50.0]
+  min_separation_meters: 0.10

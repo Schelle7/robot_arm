@@ -14,7 +14,7 @@ from omegaconf import OmegaConf
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from robot_arm.pose import Pose
-from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
+from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
 
 
 @contextmanager
@@ -56,18 +56,15 @@ def _validate_and_load_configs(episodes: list[str]):
             if (
                 cfg.camera.height != ref_cfg.camera.height
                 or cfg.camera.width != ref_cfg.camera.width
-                or cfg.waypoint.trajectory_length != ref_cfg.waypoint.trajectory_length
-                or cfg.waypoint.trajectory_dim != ref_cfg.waypoint.trajectory_dim
+                or cfg.waypoint.cartesian_action_dim != ref_cfg.waypoint.cartesian_action_dim
             ):
                 raise ValueError(f"Configuration mismatch detected between {ref_dir} and {run_dir}. " f"Datasets must have identical dimensions.")
     return ref_cfg
 
 
 def _build_dataset_features(ref_cfg):
-    path_length = int(ref_cfg.waypoint.trajectory_length)
-    cartesian_action_dim = int(ref_cfg.waypoint.trajectory_dim)
+    cartesian_action_dim = int(ref_cfg.waypoint.cartesian_action_dim)
     assert cartesian_action_dim == len(CARTESIAN_ACTION_NAMES)
-    action_names = [f"step_{path_index:02d}_{action_name}" for path_index in range(path_length) for action_name in CARTESIAN_ACTION_NAMES]
     return {
         "observation.images.camera1": {
             "dtype": "video",
@@ -76,13 +73,13 @@ def _build_dataset_features(ref_cfg):
         },
         "observation.state": {
             "dtype": "float32",
-            "shape": (15,),
-            "names": CURRENT_POSE_NAMES + TARGET_OFFSET_NAMES,
+            "shape": (len(CURRENT_POSE_NAMES) + len(TARGET_OFFSET_NAMES) + len(DUTY_NAMES),),
+            "names": CURRENT_POSE_NAMES + TARGET_OFFSET_NAMES + DUTY_NAMES,
         },
         "action": {
             "dtype": "float32",
-            "shape": (path_length * cartesian_action_dim,),
-            "names": action_names,
+            "shape": (cartesian_action_dim,),
+            "names": list(CARTESIAN_ACTION_NAMES),
         },
         PRIMITIVE_COMPLETION: {
             "dtype": "float32",
@@ -93,15 +90,17 @@ def _build_dataset_features(ref_cfg):
 
 
 def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
-    current_pose = Pose.from_10d(data["privileged_end_effector_pose"][frame_idx])
-    goal_flag = float(data["vla_input_state"][frame_idx, -1])
+    current_pose = Pose.from_10d(data["end_effector_pose"][frame_idx])
+    recorded_state = data["vla_input_state"][frame_idx]
+    goal_flag = float(recorded_state[len(CURRENT_POSE_NAMES) + len(TARGET_OFFSET_NAMES) - 1])
+    gripper_duty = float(recorded_state[-1])
     if goal_flag == 1.0:
         primitive_index = int(data["primitive_index"][frame_idx])
         target_pose = Pose.from_10d(data["waypoints"][primitive_index])
         target_offset = current_pose.delta_to(target_pose)
     else:
         target_offset = np.zeros(7, dtype=np.float32)
-    state = np.concatenate([current_pose.as_7d(), target_offset, [goal_flag]]).astype(np.float32)
+    state = np.concatenate([current_pose.as_7d(), target_offset, [goal_flag], [gripper_duty]]).astype(np.float32)
     return torch.from_numpy(state)
 
 
@@ -157,7 +156,7 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
 
             # Action t is selected from state t.
             action_raw = np.asarray(
-                data["cartesian_action_path"][frame_idx],
+                data["cartesian_action"][frame_idx],
                 dtype=np.float32,
             ).reshape(-1)
             action = torch.from_numpy(action_raw)

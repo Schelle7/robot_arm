@@ -22,7 +22,7 @@ def main(cfg: DictConfig):
     convert_to_lerobot(
         source_dir=cfg.source_dir,
         target_dir=target_dir,
-        fps=cfg.control.frequencies.mid_level,
+        fps=cfg.control.frequencies.cartesian,
     )
 
 

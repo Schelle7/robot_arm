@@ -25,6 +25,9 @@ def make_env(cfg: DictConfig, output_dir: str):
             width=width,
             initial_joint_range_percent=cfg.control.initial_joints.range_percent,
             disable_box_collisions=cfg.runtime.disable_box_collisions,
+            object_placement=cfg.scene.object_placement,
+            mujoco_steps_per_control_step=cfg.control.frequencies.mujoco // cfg.control.frequencies.joint,
+            servo=cfg.servo,
         )
     elif cfg.backend == "real":
         # Imports protected to avoid needing lerobot/hardware on simulation-only machines
@@ -35,7 +38,11 @@ def make_env(cfg: DictConfig, output_dir: str):
         follower.connect(calibrate=True)
 
         # Initialize our wrapper using the raw connected bus natively
-        backend = RealArm(bus=follower.bus, model_path=cfg.model_path)
+        backend = RealArm(
+            bus=follower.bus,
+            model_path=cfg.model_path,
+            control_step_seconds=1.0 / cfg.control.frequencies.joint,
+        )
         # Prevent garbage collection of the follower object
         backend.follower_keepalive = follower
     else:
@@ -43,11 +50,10 @@ def make_env(cfg: DictConfig, output_dir: str):
 
     safe_backend = SafeArmWrapper(
         backend_arm=backend,
-        min_pos=cfg.safety.min_position_radians,
-        max_pos=cfg.safety.max_position_radians,
         max_temperature=cfg.safety.max_temperature_celsius,
-        load_ema_alpha=cfg.safety.load_ema_alpha,
-        max_smoothed_load=cfg.safety.max_smoothed_load,
+        duty_ema_seconds=cfg.safety.duty_ema_seconds,
+        max_smoothed_duty=cfg.safety.max_smoothed_duty,
+        read_hz=cfg.control.frequencies.joint,
     )
     env = RobotEnv(
         arm=safe_backend,

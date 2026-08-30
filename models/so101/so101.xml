@@ -31,11 +31,6 @@
     <default class="sts3215">
       <geom contype="0" conaffinity="0"/>
       <joint damping="0.60" frictionloss="0.052" armature="0.028"/>
-      <!-- These gains are not a 1-to-1 mapping of the servo gains used in
-           Lerobot. These position gains and forces were calculated according to
-           https://github.com/Gregory119/RBE501-RL-arm-project/blob/main/gymnasium_env/README.md,
-           assuming that the servo proportional gain is set to 16. -->
-      <position kp="998.22" kv="2.731" forcerange="-2.94 2.94"/>
     </default>
 
     <default class="backlash">
@@ -250,12 +245,16 @@
     </body>
   </worldbody>
 
+  <!-- Torque in, not target angle. The servo's own control law lives in backends/servo.py, because
+       MuJoCo's position actuator has no encoder quantization, dead zone or startup threshold and so
+       cannot reproduce what the real STS3215 does with a commanded position. ctrlrange is only a
+       backstop against a bug; the real limit is Max_Torque_Limit inside that law. -->
   <actuator>
-    <position class="sts3215" name="shoulder_pan" joint="shoulder_pan" ctrlrange="-1.91986 1.91986"/>
-    <position class="sts3215" name="shoulder_lift" joint="shoulder_lift" ctrlrange="-1.74533 1.74533"/>
-    <position class="sts3215" name="elbow_flex" joint="elbow_flex" ctrlrange="-1.69 1.69"/>
-    <position class="sts3215" name="wrist_flex" joint="wrist_flex" ctrlrange="-1.65806 1.65806"/>
-    <position class="sts3215" name="wrist_roll" joint="wrist_roll" ctrlrange="-2.74385 2.84121"/>
-    <position class="sts3215" name="gripper" joint="gripper" ctrlrange="-0.17453 1.74533"/>
+    <motor class="sts3215" name="shoulder_pan" joint="shoulder_pan"/>
+    <motor class="sts3215" name="shoulder_lift" joint="shoulder_lift"/>
+    <motor class="sts3215" name="elbow_flex" joint="elbow_flex"/>
+    <motor class="sts3215" name="wrist_flex" joint="wrist_flex"/>
+    <motor class="sts3215" name="wrist_roll" joint="wrist_roll"/>
+    <motor class="sts3215" name="gripper" joint="gripper"/>
   </actuator>
 </mujoco>

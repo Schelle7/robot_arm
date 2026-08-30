@@ -20,7 +20,7 @@ class ReplayViewer:
         self.mdata = mujoco.MjData(self.model)
         self.qpos_recording = data["qpos"]
         self.qvel_recording = data["qvel"]
-        self.desired_actions = data["cartesian_action_path"]
+        self.desired_actions = data["cartesian_action"]
         self.joint_positions = data["joint_positions"]
         self.joint_velocities = data["joint_velocities"]
         self.dense_trajectory = data["dense_trajectory"]
@@ -28,7 +28,7 @@ class ReplayViewer:
         self.completes_active_primitives = data["completes_active_primitive"]
         self.primitive_indices = data["primitive_index"]
         self.waypoints = data["waypoints"]
-        self.recorded_poses = data["privileged_end_effector_pose"]
+        self.recorded_poses = data["end_effector_pose"]
         self.num_states = len(self.qpos_recording)
         self.num_actions = len(self.desired_actions)
         if self.num_actions == 0:
@@ -44,8 +44,18 @@ class ReplayViewer:
         elif keycode == 32:
             self.auto_play = not self.auto_play
 
-    def update_frame(self):
-        if self.auto_play:
+    def apply_commands(self, take_commands):
+        frame_requested = False
+        for command, value in take_commands():
+            if command == "frame":
+                self.current_frame = value
+                frame_requested = True
+            elif command == "toggle_play":
+                self.auto_play = not self.auto_play
+        return frame_requested
+
+    def update_frame(self, advance):
+        if advance:
             self.current_frame = (self.current_frame + 1) % self.num_states
 
         self.mdata.qpos[:] = self.qpos_recording[self.current_frame]
@@ -99,11 +109,11 @@ class ReplayViewer:
             self.current_frame,
             self.recorded_cfg,
         )
-        display(display_lines, warnings)
+        display(display_lines, warnings, self.current_frame, self.auto_play)
 
-    def run(self, display):
-        mid_level_hz = self.recorded_cfg.control.frequencies.mid_level
-        frame_period = 1.0 / mid_level_hz
+    def run(self, display, take_commands):
+        cartesian_hz = self.recorded_cfg.control.frequencies.cartesian
+        frame_period = 1.0 / cartesian_hz
         self.mdata.qpos[:] = self.qpos_recording[0]
         self.mdata.qvel[:] = self.qvel_recording[0]
         mujoco.mj_forward(self.model, self.mdata)
@@ -113,7 +123,8 @@ class ReplayViewer:
             viewer_inst.opt.geomgroup[5] = 0
             while viewer_inst.is_running():
                 step_start = time.time()
-                self.update_frame()
+                frame_requested = self.apply_commands(take_commands)
+                self.update_frame(self.auto_play and not frame_requested)
                 desired_poses, metrics = self.transition_metrics()
                 action_diagnostics = self.update_debug_scene(viewer_inst, desired_poses)
                 self.render_frame(display, metrics, action_diagnostics)

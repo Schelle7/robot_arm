@@ -1,0 +1,62 @@
+defaults:
+  - camera: default
+  - control: default
+  - reward: default
+  - runtime: default
+  - safety: default
+  - servo: default
+  - scene: default
+  - training: default
+  - waypoint: default
+  - _self_
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+model_path: "models/so101/scene.xml"
+backend: "sim"
+
+# No low-level policy drives this sweep; the replay viewer shows this as the episode's origin.
+policy_name: "characterize_gripper"
+
+control:
+  frequencies:
+    joint: 100
+  staging:
+    # The staging move travels to a random pose. The arm is placed by hand here instead.
+    enabled: false
+
+safety:
+  # Tighter than the default while the real servo's response is unknown, but above the duty
+  # shoulder_lift already draws just holding the arm up at this pose.
+  max_smoothed_duty: 0.4
+
+hardware:
+  port: "/dev/ttyACM0"
+  calibration_id: "my_follower"
+
+sweep:
+  countdown_seconds: 5
+
+  # Jaws straddling a box that rests on the floor, read off the MuJoCo viewer. On the real arm the
+  # same geometry is set by hand before power-on, so these are only applied to the sim backend.
+  start_joint_positions:
+    shoulder_pan: 0.115
+    shoulder_lift: 0.838
+    elbow_flex: 0.558
+    wrist_flex: -1.33
+    wrist_roll: -1.56
+    gripper: 1.1
+
+  # Each entry is held as a constant position error below the measured gripper angle.
+  # Ascending, and the sweep stops at the first safety trip, so the first hardware runs start well
+  # below the 0.001 that already reaches 0.33 in sim. The real servo's gain is not the model's.
+  commanded_deltas_radians: [0.0002, 0.0004, 0.0006, 0.0008, 0.001, 0.0013, 0.0016, 0.002]
+  open_radians: 1.1
+  # Slow enough that opening does not cost much damping force on its own.
+  release_step_radians: 0.004
+  release_steps: 300
+  idle_steps: 80
+  # The smallest delta needs roughly 570 steps just to close the 0.77 rad onto the box.
+  hold_steps: 1000

@@ -3,6 +3,7 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 from robot_arm.envs.factory import make_env
+from robot_arm.git_snapshot import snapshot_git_state
 from robot_arm.model_snapshot import snapshot_model_files
 from robot_arm.policies import load_low_level_policy, resolve_low_level_checkpoint
 
@@ -11,7 +12,7 @@ def assert_matching_policy_constraints(
     current_cfg: DictConfig,
     saved_cfg: DictConfig,
 ) -> None:
-    frequency_fields = ("mid_level", "low_level", "mujoco")
+    frequency_fields = ("cartesian", "joint", "mujoco")
     for field in frequency_fields:
         current_value = current_cfg.control.frequencies[field]
         saved_value = saved_cfg.control.frequencies[field]
@@ -19,11 +20,9 @@ def assert_matching_policy_constraints(
             raise ValueError(f"Rollout frequency {field!r} ({current_value}) does not match " f"the policy frequency ({saved_value}).")
 
     safety_fields = (
-        "max_position_radians",
-        "min_position_radians",
         "max_temperature_celsius",
-        "load_ema_alpha",
-        "max_smoothed_load",
+        "duty_ema_seconds",
+        "max_smoothed_duty",
     )
     for field in safety_fields:
         current_value = current_cfg.safety[field]
@@ -58,6 +57,7 @@ def setup_rollout_context(cfg: DictConfig, run_dir: str):
     OmegaConf.save(merged_cfg, hydra_dir / "config.yaml")
 
     snapshot_model_files(merged_cfg.model_path, run_dir)
+    snapshot_git_state(run_dir)
 
     low_level_policy = load_low_level_policy(checkpoint_path)
     env = make_env(merged_cfg, run_dir)

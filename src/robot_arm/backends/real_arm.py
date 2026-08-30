@@ -1,3 +1,4 @@
+import logging
 import math
 import time
 import numpy as np
@@ -5,23 +6,28 @@ from typing import Dict
 import mujoco
 
 from robot_arm.backends.arm import Arm
-from robot_arm.backends.read_sensors import read_block
+from robot_arm.backends.read_sensors import read_block, read_configuration
 from robot_arm.pose import Pose
 from robot_arm.robot_schema import MOTOR_ORDER
+
+log = logging.getLogger(__name__)
 
 
 class RealArm(Arm):
     """
     Hardware adapter for the SO-101 using the LeRobot bus.
     Translates hardware integer ticks to standard SI radians for position.
-    Uses a headless MuJoCo model to compute Forward Kinematics (FK) for pseudo-privileged poses.
+    Uses a headless MuJoCo model to compute Forward Kinematics (FK) for the TCP pose.
     """
 
-    def __init__(self, bus, model_path: str):
+    def __init__(self, bus, model_path: str, control_step_seconds: float):
         if not bus.calibration:
             raise RuntimeError("Bus has no calibration registered. Cannot convert units.")
 
         self.bus = bus
+        self.control_step_seconds = control_step_seconds
+        self.last_control_step_end = time.perf_counter()
+        self.control_step_overruns = 0
         self.max_res = 4096  # STS3215 specific (12-bit encoder)
         self.deg_to_rad = math.pi / 180.0
         self.velocity_scale = 2.0 * math.pi / 4096.0  # units are ticks/sec, so 1 tick/sec is (2*pi/4096) rad/s
@@ -44,6 +50,10 @@ class RealArm(Arm):
         # Validate IDs
         if -1 in (self.fixed_id, self.moving_id, self.gripper_frame_id):
             raise RuntimeError("One or more MuJoCo site IDs could not be found in the XML.")
+
+        # Read once: these decide what a commanded position delta actually does, and lerobot rewrites
+        # several of them on every connect, so a run is not interpretable without them.
+        self.configuration = read_configuration(self.bus)
 
     def _tick_to_rad(self, name: str, tick: int) -> float:
         """
@@ -72,7 +82,7 @@ class RealArm(Arm):
             else:
                 raw_state["Present_Position"][name] = calibrated_value * self.deg_to_rad
 
-        # Convert load from raw ticks (-1000 to 1000) to normalized float (-1.0 to 1.0)
+        # Convert duty from raw units (-1000 to 1000) to normalized float (-1.0 to 1.0)
         for name, load_tick in raw_state["Present_Load"].items():
             raw_state["Present_Load"][name] = load_tick / 1000.0
 
@@ -129,6 +139,13 @@ class RealArm(Arm):
         print("\033[93mWARNING: READ_CAMERA NOT IMPLEMENTED FOR REAL ARM YET! RETURN DUMMY IMAGE\033[0m")
         return np.zeros((480, 640, 3), dtype=np.uint8)
 
+    def write_duty(self, duties: Dict[str, float]) -> None:
+        """
+        Commanding duty needs the servo switched out of position mode into its open loop PWM mode,
+        which is a register write we have not confirmed against the STS3215 table yet.
+        """
+        raise NotImplementedError("Real arm duty control needs the servo's PWM mode; see write_goal below.")
+
     def write_goal(self, positions: Dict[str, float]) -> None:
         calibrated_positions = {}
         for name, rad in positions.items():
@@ -139,6 +156,23 @@ class RealArm(Arm):
                 calibrated_positions[name] = rad / self.deg_to_rad
 
         self.bus.sync_write("Goal_Position", calibrated_positions, normalize=True)
+
+    def advance_control_step(self) -> None:
+        # The servos run their own loop, so a control period is wall-clock time rather than steps.
+        # Paced from the end of the previous period so the caller's own work counts against the
+        # budget instead of being added on top of it.
+        remaining = (self.last_control_step_end + self.control_step_seconds) - time.perf_counter()
+        if remaining > 0:
+            time.sleep(remaining)
+        else:
+            self.control_step_overruns += 1
+            if self.control_step_overruns % 100 + 1 == 1:
+                log.warning(
+                    "Control step overran its %.1f ms budget by %.1f ms. The loop is running slower " "than the configured rate; further overruns are counted, not logged.",
+                    self.control_step_seconds * 1e3,
+                    -remaining * 1e3,
+                )
+        self.last_control_step_end = time.perf_counter()
 
     def disconnect(self):
         # Immediate hardware emergency stop broadcast packet for Feetech servos

@@ -13,14 +13,14 @@ def make_policy():
     cfg = OmegaConf.create(
         {
             "waypoint": {
-                "trajectory_length": 1,
+                "duty_completion_tolerance": 0.1,
                 "position_speed_meters_per_second": 1.0,
                 "rotation_speed_radians_per_second": 1.0,
                 "gripper_speed_radians_per_second": 1.0,
             },
             "control": {
                 "frequencies": {
-                    "low_level": 1,
+                    "cartesian": 1,
                 }
             },
         }
@@ -28,13 +28,24 @@ def make_policy():
     return ScriptedCartesianPolicy(cfg)
 
 
+def make_primitive(start_pose: Pose, target_pose: Pose, prompt: str = "follow waypoint", has_explicit_goal: bool = True) -> ActionPrimitive:
+    return ActionPrimitive(
+        start_pose=start_pose,
+        target_pose=target_pose,
+        prompt=prompt,
+        has_explicit_goal=has_explicit_goal,
+        desired_gripper_duty=0.0,
+        desired_gripper_duty_active=False,
+    )
+
+
 def get_scripted_action(policy, current_pose: Pose, target_pose: Pose):
     return policy.get_action(
         current_pose=current_pose,
         image=np.zeros((1, 1, 3), dtype=np.uint8),
-        vla_input_state=np.zeros(15, dtype=np.float32),
-        primitive_prompt="follow waypoint",
-        privileged_target_pose=target_pose,
+        vla_input_state=np.zeros(16, dtype=np.float32),
+        gripper_duty=0.0,
+        primitive=make_primitive(current_pose, target_pose),
     )
 
 
@@ -45,7 +56,7 @@ def test_waypoint_translation_is_limited_by_vector_length():
 
     output = get_scripted_action(policy, current_pose, target_pose)
 
-    np.testing.assert_allclose(np.linalg.norm(output.cartesian_action_path[0, :3]), 1.0)
+    np.testing.assert_allclose(np.linalg.norm(output.cartesian_action[:3]), 1.0)
 
 
 def test_waypoint_translation_preserves_direction():
@@ -55,7 +66,7 @@ def test_waypoint_translation_preserves_direction():
 
     output = get_scripted_action(policy, current_pose, target_pose)
 
-    np.testing.assert_allclose(output.cartesian_action_path[0, :3], np.array([2.0, 1.0, 0.0]) / np.sqrt(5.0))
+    np.testing.assert_allclose(output.cartesian_action[:3], np.array([2.0, 1.0, 0.0]) / np.sqrt(5.0))
 
 
 def test_waypoint_rotation_is_limited_by_vector_length():
@@ -70,7 +81,7 @@ def test_waypoint_rotation_is_limited_by_vector_length():
     output = get_scripted_action(policy, current_pose, target_pose)
 
     np.testing.assert_allclose(
-        np.linalg.norm(output.cartesian_action_path[0, 3:6]),
+        np.linalg.norm(output.cartesian_action[3:6]),
         policy.max_rotation_delta,
         rtol=1e-6,
     )
@@ -82,33 +93,24 @@ def test_scripted_primitive_policy_builds_current_vla_context_and_advances_immed
     target_pose = Pose.from_euler([0.1, 0.0, 0.0], [0.0, 0.0, 0.0], 0.2, "XYZ", False)
     next_target_pose = Pose.from_euler([0.2, 0.0, 0.0], [0.0, 0.0, 0.0], 0.2, "XYZ", False)
     primitive_policy.primitives = [
-        ActionPrimitive(
-            start_pose=start_pose,
-            target_pose=target_pose,
-            prompt="move right",
-            has_explicit_goal=True,
-        ),
-        ActionPrimitive(
-            start_pose=target_pose,
-            target_pose=next_target_pose,
-            prompt="move right again",
-            has_explicit_goal=True,
-        ),
+        make_primitive(start_pose, target_pose, "move right"),
+        make_primitive(target_pose, next_target_pose, "move right again"),
     ]
 
     primitive_index, primitive = primitive_policy.get_next_primitive(start_pose)
-    vla_input_state = primitive_policy.build_vla_input_state(primitive, start_pose)
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, start_pose, 0.25)
 
     np.testing.assert_allclose(vla_input_state[:7], start_pose.as_7d())
     np.testing.assert_allclose(vla_input_state[7:10], [0.1, 0.0, 0.0])
-    assert vla_input_state[-1] == 1.0
+    assert vla_input_state[14] == 1.0
+    assert vla_input_state[15] == 0.25
     assert primitive.prompt == "move right"
     assert primitive_index == 0
     assert primitive_policy.next_primitive_index == 1
 
     actual_next_start_pose = Pose.from_euler([0.09, 0.0, 0.0], [0.0, 0.0, 0.0], 0.19, "XYZ", False)
     _, next_primitive = primitive_policy.get_next_primitive(actual_next_start_pose)
-    next_vla_input_state = primitive_policy.build_vla_input_state(next_primitive, actual_next_start_pose)
+    next_vla_input_state = primitive_policy.build_vla_input_state(next_primitive, actual_next_start_pose, 0.0)
     np.testing.assert_allclose(next_vla_input_state[:7], actual_next_start_pose.as_7d())
 
 
@@ -117,14 +119,9 @@ def test_scripted_primitive_policy_updates_remaining_target_offset():
     start_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
     current_pose = Pose.from_euler([0.04, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
     target_pose = Pose.from_euler([0.1, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
-    primitive = ActionPrimitive(
-        start_pose=start_pose,
-        target_pose=target_pose,
-        prompt="move right",
-        has_explicit_goal=True,
-    )
+    primitive = make_primitive(start_pose, target_pose, "move right")
 
-    vla_input_state = primitive_policy.build_vla_input_state(primitive, current_pose)
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, current_pose, 0.0)
 
     np.testing.assert_allclose(vla_input_state[:7], current_pose.as_7d())
     np.testing.assert_allclose(vla_input_state[7:10], [0.06, 0.0, 0.0])

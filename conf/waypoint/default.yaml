@@ -1,16 +1,13 @@
-# 40 is the intended multi-step design, not a working default: RobotEnv._compute_desired_pose
-# still asserts a single-row Cartesian path, so only trajectory_length: 1 runs today
-# (conf/experiment/debug.yaml and debug_nonterminal_chunks.yaml both override it).
-trajectory_length: 40
-trajectory_dim: 7
+cartesian_action_dim: 7
 num_waypoints: 3
+duty_completion_tolerance: 0.1
 position_speed_meters_per_second: 0.30
 rotation_speed_radians_per_second: 0.5
 gripper_speed_radians_per_second: 0.5
 primitive_probabilities:
-  pick_and_place: 0.4
-  relative_move: 0.3
-  random_waypoint: 0.3
+  pick_and_place: 0.25
+  relative_move: 0.25
+  random_waypoint: 0.5
 random_pose:
   gripper_radians: [0.0, 1.7453292]
   shoulder_distance_meters: [0.30, 0.45]
@@ -24,6 +21,7 @@ pick_and_place:
   lift_z_offset_meters: 0.08
   gripper_open_radians: 0.8
   gripper_closed_radians: 0.0
+  desired_gripper_duty: 0.35
 
 relative_move:
   dx_range_meters: [-0.08, 0.08]

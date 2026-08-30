@@ -4,7 +4,9 @@ import mujoco
 import numpy as np
 from omegaconf import DictConfig
 
+from robot_arm.backends.sim_arm import object_color
 from robot_arm.pose import Pose
+from robot_arm.robot_schema import BOX_BODY_NAMES, TILE_BODY_NAME
 from robot_arm.experimental_waypoints import (
     generate_oriented_waypoint,
     position_from_base_rotation,
@@ -18,11 +20,13 @@ class ActionPrimitive:
     target_pose: Pose
     prompt: str
     has_explicit_goal: bool
+    desired_gripper_duty: float
+    desired_gripper_duty_active: bool
 
 
-def _find_target_box_position(model, data) -> np.ndarray:
-    body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
-    assert body_id != -1, "Target box body 'target_box' not found in MuJoCo model."
+def _find_body_position(model, data, body_name: str) -> np.ndarray:
+    body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    assert body_id != -1, f"Body {body_name!r} not found in MuJoCo model."
     return data.xpos[body_id].copy()
 
 
@@ -50,7 +54,11 @@ def generate_pick_and_place(
     cfg: DictConfig,
     start_pose: Pose,
 ) -> List[ActionPrimitive]:
-    box_pos = _find_target_box_position(model, data)
+    box_body_name = str(np.random.choice(BOX_BODY_NAMES))
+    box_color = object_color(model, box_body_name)
+    tile_color = object_color(model, TILE_BODY_NAME)
+    box_pos = _find_body_position(model, data, box_body_name)
+    tile_pos = _find_body_position(model, data, TILE_BODY_NAME)
     pnp_cfg = cfg.waypoint.pick_and_place
 
     grasp_height = float(box_pos[2] + pnp_cfg.grasp_z_offset_meters)
@@ -61,15 +69,17 @@ def generate_pick_and_place(
         model=model,
         data=data,
         position=np.array([box_pos[0], box_pos[1], grasp_height], dtype=np.float32),
-        pointing_axis_tilt_degrees=0.0,
-        pointing_axis_rotation_degrees=0.0,
+        pointing_axis_tilt_degrees=45.0,
+        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_open_radians),
     )
     p1 = ActionPrimitive(
         start_pose=start_pose,
         target_pose=approach_pose,
-        prompt="move to red box and open gripper",
+        prompt=f"move to {box_color} box and open gripper",
         has_explicit_goal=False,
+        desired_gripper_duty=0.0,
+        desired_gripper_duty_active=False,
     )
 
     # 2. Close gripper and lift box
@@ -78,52 +88,53 @@ def generate_pick_and_place(
         model=model,
         data=data,
         position=np.array([box_pos[0], box_pos[1], lift_height], dtype=np.float32),
-        pointing_axis_tilt_degrees=0.0,
-        pointing_axis_rotation_degrees=0.0,
+        pointing_axis_tilt_degrees=45.0,
+        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
     p2 = ActionPrimitive(
         start_pose=approach_pose,
         target_pose=lift_pose,
-        prompt="close gripper and lift red box",
+        prompt=f"close gripper and lift {box_color} box",
         has_explicit_goal=True,
+        desired_gripper_duty=float(pnp_cfg.desired_gripper_duty),
+        desired_gripper_duty_active=True,
     )
 
-    # 3. Transport to target location
-    random_pose_cfg = cfg.waypoint.random_pose
-    target_tilt = float(np.random.uniform(*random_pose_cfg.pointing_axis_tilt_degrees))
-    target_rotation = float(np.random.uniform(*random_pose_cfg.pointing_axis_rotation_degrees))
-    target_place_pos = _generate_random_position(model, data, random_pose_cfg)
+    # 3. Carry the box across at lift height, so it descends onto the tile rather than into it
     transport_pose = generate_oriented_waypoint(
         model=model,
         data=data,
-        position=target_place_pos,
-        pointing_axis_tilt_degrees=target_tilt,
-        pointing_axis_rotation_degrees=target_rotation,
+        position=np.array([tile_pos[0], tile_pos[1], lift_height], dtype=np.float32),
+        pointing_axis_tilt_degrees=45.0,
+        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
     p3 = ActionPrimitive(
         start_pose=lift_pose,
         target_pose=transport_pose,
-        prompt="move red box to target location",
+        prompt=f"move {box_color} box above the {tile_color} tile",
         has_explicit_goal=True,
+        desired_gripper_duty=float(pnp_cfg.desired_gripper_duty),
+        desired_gripper_duty_active=True,
     )
 
     # 4. Lower and release
-    place_down_pos = np.array([target_place_pos[0], target_place_pos[1], grasp_height], dtype=np.float32)
     place_pose = generate_oriented_waypoint(
         model=model,
         data=data,
-        position=place_down_pos,
-        pointing_axis_tilt_degrees=0.0,
-        pointing_axis_rotation_degrees=0.0,
+        position=np.array([tile_pos[0], tile_pos[1], grasp_height], dtype=np.float32),
+        pointing_axis_tilt_degrees=45.0,
+        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_open_radians),
     )
     p4 = ActionPrimitive(
         start_pose=transport_pose,
         target_pose=place_pose,
-        prompt="place red box on target",
+        prompt=f"place {box_color} box on the {tile_color} tile",
         has_explicit_goal=False,
+        desired_gripper_duty=0.0,
+        desired_gripper_duty_active=False,
     )
 
     return [p1, p2, p3, p4]
@@ -180,6 +191,8 @@ def generate_relative_moves(
         target_pose=target_pose,
         prompt=_relative_move_prompt(x_cm, y_cm, z_cm),
         has_explicit_goal=True,
+        desired_gripper_duty=0.0,
+        desired_gripper_duty_active=False,
     )
 
     return [primitive]
@@ -207,6 +220,8 @@ def generate_random_waypoint(
             target_pose=target_pose,
             prompt="move according to the provided target delta",
             has_explicit_goal=True,
+            desired_gripper_duty=0.0,
+            desired_gripper_duty_active=False,
         )
     ]
 

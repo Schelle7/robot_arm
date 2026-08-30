@@ -3,7 +3,18 @@ import mujoco
 import numpy as np
 
 from robot_arm.backends.arm import Arm
+from robot_arm.experimental_waypoints import shoulder_pan_position
 from robot_arm.pose import Pose
+from robot_arm.backends.servo import duty_from_action, duty_to_torque, torque_to_duty
+from robot_arm.robot_schema import BOX_BODY_NAMES, OBJECT_COLORS, TILE_BODY_NAME
+
+
+def object_color(model, body_name: str) -> str:
+    """Reads back the colour assigned at reset, so the model stays the only record of the scene."""
+    body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    assert body_id != -1, f"Body {body_name!r} not found in MuJoCo model."
+    material_id = model.geom_matid[model.body_geomadr[body_id]]
+    return mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_MATERIAL, material_id).removeprefix("matte_")
 
 
 def get_tcp_geometry(model, data):
@@ -113,9 +124,9 @@ def update_waypoint_debug_user_scene(scene, waypoints, active_waypoint_index):
 
 def build_desired_poses(
     start_pose: Pose,
-    cartesian_action_path: np.ndarray,
+    cartesian_action: np.ndarray,
 ):
-    return [start_pose.apply_delta(delta) for delta in cartesian_action_path]
+    return [start_pose.apply_delta(cartesian_action)]
 
 
 def update_desired_pose_debug_user_scene(scene, desired_poses):
@@ -162,17 +173,24 @@ class SimBackend(Arm):
         width: int,
         initial_joint_range_percent: tuple[float, float],
         disable_box_collisions: bool,
+        object_placement,
+        mujoco_steps_per_control_step: int,
+        servo,
     ):
         self.model = mujoco.MjModel.from_xml_path(model_path)
         if disable_box_collisions:
-            target_box_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
-            assert target_box_body_id != -1
-            target_box_geom_start = self.model.body_geomadr[target_box_body_id]
-            target_box_geom_count = self.model.body_geomnum[target_box_body_id]
-            self.model.geom_contype[target_box_geom_start : target_box_geom_start + target_box_geom_count] = 0
-            self.model.geom_conaffinity[target_box_geom_start : target_box_geom_start + target_box_geom_count] = 0
+            for body_name in BOX_BODY_NAMES:
+                body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+                assert body_id != -1, f"Body {body_name!r} not found in MuJoCo model."
+                geom_start = self.model.body_geomadr[body_id]
+                geom_count = self.model.body_geomnum[body_id]
+                self.model.geom_contype[geom_start : geom_start + geom_count] = 0
+                self.model.geom_conaffinity[geom_start : geom_start + geom_count] = 0
         self.data = mujoco.MjData(self.model)
         self.initial_joint_range_percent = initial_joint_range_percent
+        self.object_placement = object_placement
+        self.mujoco_steps_per_control_step = mujoco_steps_per_control_step
+        self.servo = servo
 
         self.renderer = mujoco.Renderer(self.model, height=height, width=width)
         self.waypoints = []
@@ -185,6 +203,12 @@ class SimBackend(Arm):
         self.actuator_indices = {mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i): i for i in range(self.model.nu)}
 
         self.joint_indices = {name: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in self.actuator_indices}
+
+        # Indexed in actuator order so the servo law runs on all six joints as one vector operation.
+        actuator_order = sorted(self.actuator_indices, key=self.actuator_indices.get)
+        self.actuator_dof_indices = np.array([self.model.jnt_dofadr[self.joint_indices[name]] for name in actuator_order])
+        self.max_duty = np.array([float(servo.max_duty[name]) for name in actuator_order])
+        self.commanded_duty = np.zeros(self.model.nu)
 
     @property
     def fixed_finger_tip(self) -> np.ndarray:
@@ -212,11 +236,10 @@ class SimBackend(Arm):
         pose, _, _ = get_tcp_geometry(self.model, self.data)
         return pose
 
-    def get_privileged_box_pose(self) -> Pose:
-        # The box is defined as a body named "target_box" in scene.xml
-        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
+    def get_privileged_box_pose(self, body_name: str = BOX_BODY_NAMES[0]) -> Pose:
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
         if body_id == -1:
-            raise KeyError("Body 'target_box' not found in MuJoCo model.")
+            raise KeyError(f"Body {body_name!r} not found in MuJoCo model.")
 
         pos = self.data.xpos[body_id].copy()
         rot_mat = self.data.xmat[body_id].reshape(3, 3)
@@ -224,7 +247,7 @@ class SimBackend(Arm):
         return Pose.from_matrix(pos, rot_mat, 1.0)  # pose with gripper info is a bit weird but ok for now
 
     def read_state(self) -> Dict[str, Dict[str, float]]:
-        # Map MuJoCo qpos, qvel, ctrl (as a proxy for load) to our expected dictionary format
+        # Map MuJoCo qpos, qvel and the commanded duty to our expected dictionary format
         state = {
             "Present_Position": {},
             "Present_Velocity": {},
@@ -239,55 +262,118 @@ class SimBackend(Arm):
 
             state["Present_Position"][name] = float(self.data.qpos[qpos_idx])
             state["Present_Velocity"][name] = float(self.data.qvel[qvel_idx])
-            # Simulated load normalization: MuJoCo forces are in N or N-m.
-            # We divide by a nominal stall torque (e.g., 2.0 N-m for STS3215) to get a pseudo-percentage.
-            # Clip between -1.0 and 1.0 to match hardware behavior.
-
-            # todo use
-            # raw_force = float(self.data.actuator_force[actuator_idx])
-            state["Present_Load"][name] = 0  # max(-1.0, min(1.0, raw_force / 2.0))
-            # todo decide some sensible strategy how to do this in simulation
-            # read a bit about it.
+            # The duty the servo law commanded, which is what Present_Load reports on the real arm:
+            # a fraction of full output, not a torque.
+            state["Present_Load"][name] = float(self.commanded_duty[actuator_idx] / self.servo.full_scale_duty)
 
             state["Present_Voltage"][name] = 12.0
             state["Present_Temperature"][name] = 40.0
 
-        state["sim_state"] = {
+        return state
+
+    def gravity_compensation_duty(self) -> np.ndarray:
+        """
+        The duty each joint needs to stand still where it is. qfrc_bias is the torque that cancels
+        gravity and the velocity dependent terms, which mj_step has already computed for the state
+        the last read reported.
+        """
+        return torque_to_duty(
+            self.data.qfrc_bias[self.actuator_dof_indices],
+            self.servo.stall_torque_newton_meters,
+        ).astype(np.float32)
+
+    def sim_state(self) -> Dict[str, np.ndarray]:
+        """The simulator's own state, which no sensor on the real arm can report."""
+        return {
             "qpos": self.data.qpos.copy(),
             "qvel": self.data.qvel.copy(),
         }
 
-        return state
+    def restore_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> None:
+        mujoco.mj_resetData(self.model, self.data)
+        self.data.qpos[:] = qpos
+        self.data.qvel[:] = qvel
+        self.commanded_duty[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
 
-    def write_goal(self, positions: Dict[str, float]) -> None:
-        for name, target_pos in positions.items():
-            self.data.ctrl[self.actuator_indices[name]] = target_pos
+    def write_duty(self, duties: Dict[str, float]) -> None:
+        requested = np.zeros(self.model.nu)
+        for name, duty_fraction in duties.items():
+            requested[self.actuator_indices[name]] = duty_fraction
+        self.commanded_duty = duty_from_action(
+            requested,
+            self.servo.full_scale_duty,
+            self.servo.min_startup_duty,
+            self.max_duty,
+        )
 
-        # Advance simulation one step
-        mujoco.mj_step(self.model, self.data)
+    def _apply_servo_torques(self) -> None:
+        """
+        The duty is held for the whole control period the way the servo's open loop PWM mode holds
+        it, so only the back-EMF term varies as the joint picks up speed.
+        """
+        self.data.ctrl[:] = duty_to_torque(
+            self.commanded_duty,
+            self.data.qvel[self.actuator_dof_indices],
+            self.servo.stall_torque_newton_meters,
+            self.servo.no_load_speed_radians_per_second,
+        )
+
+    def advance_control_step(self) -> None:
+        for _ in range(self.mujoco_steps_per_control_step):
+            self._apply_servo_torques()
+            mujoco.mj_step(self.model, self.data)
 
     def disconnect(self):
         """Simulation doesn't need to physically disconnect power."""
         pass
 
-    def randomize_box(self):
-        # Randomize box placement
-        # Keep the target around x=0.4 m and centered across y with 3 cm and 5 cm variation.
-        box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_box")
-        if box_id == -1:
-            raise Exception("Box is missing")
+    def _sample_object_angles(self, count: int) -> np.ndarray:
+        """
+        Draws azimuths that are already far enough apart to satisfy the separation, so placement
+        never needs rejection sampling. Two objects at the inner radius need the widest angle for a
+        given separation, so sizing the gap there covers every radius.
+        """
+        min_distance = min(self.object_placement.shoulder_distance_meters)
+        min_gap = 2.0 * np.arcsin(self.object_placement.min_separation_meters / (2.0 * min_distance))
+        low, high = np.deg2rad(self.object_placement.base_rotation_degrees)
+        span = high - low - (count - 1) * min_gap
+        assert span >= 0.0, f"base_rotation_degrees is too narrow to separate {count} objects by min_separation_meters."
 
-        dist = np.random.uniform(0.37, 0.43)
-        y_shift = np.random.uniform(-0.05, 0.05)
+        angles = np.sort(np.random.uniform(low, low + span, size=count)) + np.arange(count) * min_gap
+        np.random.shuffle(angles)
+        return angles
 
-        # Directly updating the freejoint associated with the box
-        jnt_idx = self.model.body_jntadr[box_id]
-        if jnt_idx != -1 and self.model.jnt_type[jnt_idx] == mujoco.mjtJoint.mjJNT_FREE:
-            qpos_adr = self.model.jnt_qposadr[jnt_idx]
+    def _sample_object_positions(self, count: int) -> np.ndarray:
+        pivot = shoulder_pan_position(self.model, self.data)
+        angles = self._sample_object_angles(count)
+        radii = np.random.uniform(*self.object_placement.shoulder_distance_meters, size=count)
+        return pivot[:2] + radii[:, None] * np.stack([np.cos(angles), np.sin(angles)], axis=1)
 
-            self.data.qpos[qpos_adr] = dist
-            self.data.qpos[qpos_adr + 1] = y_shift
-            # Z explicitly left alone
+    def _resting_height(self, body_id: int) -> float:
+        """Half the geom's vertical extent, so the object sits on the floor rather than in it."""
+        return float(self.model.geom_size[self.model.body_geomadr[body_id]][2])
+
+    def _paint(self, body_id: int, color: str) -> None:
+        material_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_MATERIAL, f"matte_{color}")
+        assert material_id != -1, f"Material 'matte_{color}' not found in MuJoCo model."
+        self.model.geom_matid[self.model.body_geomadr[body_id]] = material_id
+
+    def randomize_objects(self):
+        body_names = (*BOX_BODY_NAMES, TILE_BODY_NAME)
+        positions = self._sample_object_positions(len(body_names))
+        colors = np.random.choice(OBJECT_COLORS, size=len(body_names), replace=False)
+
+        for body_name, position, color in zip(BOX_BODY_NAMES, positions, colors):
+            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            qpos_adr = self.model.jnt_qposadr[self.model.body_jntadr[body_id]]
+            self.data.qpos[qpos_adr : qpos_adr + 3] = (*position, self._resting_height(body_id))
+            self.data.qpos[qpos_adr + 3 : qpos_adr + 7] = (1.0, 0.0, 0.0, 0.0)
+            self._paint(body_id, color)
+
+        tile_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, TILE_BODY_NAME)
+        self.model.body_pos[tile_id] = (*positions[-1], self._resting_height(tile_id))
+        self._paint(tile_id, colors[-1])
 
     def randomize_arm_pos(self):
         for name, joint_id in self.joint_indices.items():
@@ -299,17 +385,15 @@ class SimBackend(Arm):
             min_percent, max_percent = self.initial_joint_range_percent
             safe_min = jmin + (min_percent / 100.0) * span
             safe_max = jmin + (max_percent / 100.0) * span
-            new_pos = np.random.uniform(safe_min, safe_max)
-            self.data.qpos[qpos_idx] = new_pos
-
-            # Sync control target so the arm doesn't instantly snap back
-            actuator_id = self.actuator_indices[name]
-            self.data.ctrl[actuator_id] = new_pos
+            self.data.qpos[qpos_idx] = np.random.uniform(safe_min, safe_max)
 
     def reset_sim(self):
         mujoco.mj_resetData(self.model, self.data)
+        self.commanded_duty[:] = 0.0
+        # Placement is measured from the shoulder anchor, which is only valid once kinematics have run.
+        mujoco.mj_forward(self.model, self.data)
 
-        self.randomize_box()
+        self.randomize_objects()
         self.randomize_arm_pos()
 
         mujoco.mj_forward(self.model, self.data)
@@ -337,11 +421,11 @@ class SimBackend(Arm):
     def draw_desired_path(
         self,
         start_pose: Pose,
-        cartesian_action_path: np.ndarray,
+        cartesian_action: np.ndarray,
     ):
         self.desired_poses = build_desired_poses(
             start_pose,
-            cartesian_action_path,
+            cartesian_action,
         )
 
     def _draw_waypoint_arrows(self):

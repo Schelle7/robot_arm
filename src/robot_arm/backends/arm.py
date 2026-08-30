@@ -33,6 +33,14 @@ class Arm(abc.ABC):
         """
         raise NotImplementedError("Arm backend does not expose a TCP pose.")
 
+    def gravity_compensation_duty(self) -> np.ndarray:
+        """
+        Returns the duty each joint needs to hold its current configuration, one signed fraction of
+        full output per motor. It is a model prediction rather than a reading, so it knows nothing
+        about a payload the gripper is carrying.
+        """
+        raise NotImplementedError("Arm backend does not model gravity compensation.")
+
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError("Arm backend does not expose TCP axes.")
 
@@ -44,9 +52,17 @@ class Arm(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def write_goal(self, positions: Dict[str, float]) -> None:
+    def write_duty(self, duties: Dict[str, float]) -> None:
         """
-        Send goal positions to the arm.
-        `positions` maps motor name to target position.
+        Send open loop PWM duties to the arm without letting any time pass.
+        `duties` maps motor name to a signed fraction of full output, -1.0 to 1.0.
+        """
+        pass
+
+    @abc.abstractmethod
+    def advance_control_step(self) -> None:
+        """
+        Lets exactly one low-level control period elapse against the duty last written. Simulation
+        advances physics, hardware waits, so callers do not need to know which backend they hold.
         """
         pass

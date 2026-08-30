@@ -7,7 +7,7 @@ from robot_arm.pose import Pose
 
 def test_build_desired_poses_applies_gripper_delta():
     start_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.2, "XYZ", False)
-    delta = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4]], dtype=np.float32)
+    delta = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4], dtype=np.float32)
 
     desired_pose = build_desired_poses(start_pose, delta)[0]
 

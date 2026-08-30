@@ -3,9 +3,15 @@ pose_weights:
   rotation_primary: 1.0
   rotation_secondary: 0.5
   gripper: 1.0
+  gripper_duty: 1.0
 tracking:
-  deviation: true
   progress: true
-safety_penalty: true
+joint_limit_penalty: true
 termination_penalty: true
-violation_penalty_factor: 10.0
+sustained_duty_penalty: true
+joint_limit_penalty_factor: 1.0
+
+# Thermal cost of holding duty. Anything up to the allowance is free, since the arm cannot hold
+# itself up on nothing, and only the excess is charged, per joint.
+sustained_duty_allowance: 1.0  # not active currently
+sustained_duty_penalty_factor: 1.0

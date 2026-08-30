@@ -23,7 +23,7 @@ class EpisodeRecorder:
         self.episode_dir = os.path.join(output_dir, episode_name)
         self.images_dir = os.path.join(self.episode_dir, "images")
         self.jpeg_quality = cfg.camera.jpeg_quality
-        self.chunk_size = cfg.control.frequencies.low_level // cfg.control.frequencies.mid_level
+        self.joint_steps_per_cartesian_action = cfg.control.frequencies.joint // cfg.control.frequencies.cartesian
         self.record_sim_state = cfg.runtime.record_sim_state
         self.record_policy_debug = cfg.runtime.record_policy_debug
         self.motor_order = MOTOR_ORDER
@@ -46,7 +46,7 @@ class EpisodeRecorder:
         obs: Dict[str, np.ndarray],
         sensor_state: Dict[str, Any],
         reward: float,
-        cartesian_action_path: np.ndarray,
+        cartesian_action: np.ndarray,
         pose,
         sim_state: Dict[str, np.ndarray] | None,
         image: np.ndarray,
@@ -73,7 +73,7 @@ class EpisodeRecorder:
                 "primitive_prompt": primitive_prompt,
                 "vla_input_state": vla_input_state.copy(),
                 "reward": float(reward),
-                "cartesian_action_path": cartesian_action_path.copy(),
+                "cartesian_action": cartesian_action.copy(),
                 "diagnostics": diagnostics.copy(),
                 "completes_active_primitive": bool(completes_active_primitive),
                 "dense_trajectory": self.dense_trajectory_buffer.copy(),
@@ -111,7 +111,7 @@ class EpisodeRecorder:
             "joint_positions": obs["joint_positions"].copy(),
             "joint_velocities": obs["joint_velocities"].copy(),
             "sensor_state": sensor_state,
-            "privileged_end_effector_pose": pose.as_10d(),
+            "end_effector_pose": pose.as_10d(),
             "sim_state": sim_state,
         }
 
@@ -131,8 +131,8 @@ class EpisodeRecorder:
         Currently, this method just caches dense steps on the most recently added frame
         so that when we save, we can view the whole micro-trajectory that occurred during the high-level step.
         """
-        if len(self.dense_trajectory_buffer) >= self.chunk_size:
-            raise RuntimeError(f"Dense trajectory buffer overflow! Max chunk size is {self.chunk_size}.")
+        if len(self.dense_trajectory_buffer) >= self.joint_steps_per_cartesian_action:
+            raise RuntimeError(f"Dense trajectory buffer overflow! Max is {self.joint_steps_per_cartesian_action} joint steps per cartesian action.")
 
         self.dense_trajectory_buffer.append(
             {
@@ -142,8 +142,8 @@ class EpisodeRecorder:
                 "reward": float(reward),
                 "reward_breakdown": {key: float(value) for key, value in reward_breakdown.items()},
                 "terminated": terminated,
-                "privileged_state": copy.deepcopy(state.privileged_state),
-                "next_privileged_state": copy.deepcopy(next_state.privileged_state),
+                "end_effector_pose": state.end_effector_pose.as_10d(),
+                "next_end_effector_pose": next_state.end_effector_pose.as_10d(),
             }
         )
 
@@ -175,8 +175,8 @@ class EpisodeRecorder:
                 [t["vla_input_state"] for t in self.transitions],
                 dtype=np.float32,
             ),
-            "privileged_end_effector_pose": np.array(
-                [s["privileged_end_effector_pose"] for s in self.states],
+            "end_effector_pose": np.array(
+                [s["end_effector_pose"] for s in self.states],
                 dtype=np.float32,
             ),
             "joint_positions": np.array(
@@ -187,7 +187,7 @@ class EpisodeRecorder:
                 [s["joint_velocities"] for s in self.states],
                 dtype=np.float32,
             ),
-            "cartesian_action_path": np.array([t["cartesian_action_path"] for t in self.transitions], dtype=object),
+            "cartesian_action": np.array([t["cartesian_action"] for t in self.transitions], dtype=object),
             "cartesian_action_diagnostics": np.array([t["diagnostics"] for t in self.transitions], dtype=object),
             "completes_active_primitive": np.array([t["completes_active_primitive"] for t in self.transitions], dtype=bool),
             "reward": np.array([t["reward"] for t in self.transitions], dtype=np.float32),

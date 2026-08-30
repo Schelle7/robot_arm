@@ -7,6 +7,13 @@ MOTOR_ORDER = (
     "gripper",
 )
 
+BOX_BODY_NAMES = ("box_0", "box_1")
+
+TILE_BODY_NAME = "tile"
+
+# Drawn without replacement across the boxes and the tile, so every object in a scene reads differently.
+OBJECT_COLORS = ("red", "green", "blue", "yellow", "purple")
+
 CARTESIAN_ACTION_NAMES = (
     "x",
     "y",
@@ -39,3 +46,5 @@ TARGET_OFFSET_NAMES = (
     "target_offset_gripper",
     "has_explicit_goal",
 )
+
+DUTY_NAMES = ("gripper_duty",)

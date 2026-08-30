@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
+from robot_arm.git_snapshot import snapshot_git_state
 from robot_arm.model_snapshot import snapshot_model_files
 from robot_arm.policies import ScriptedCartesianPolicy
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
@@ -42,14 +43,20 @@ class DummySpaceEnv(gymnasium.Env):
             {
                 "joint_positions": gymnasium.spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
                 "joint_velocities": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
-                "start_joint_positions": gymnasium.spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
-                "cartesian_action_path": gymnasium.spaces.Box(
+                "remaining_delta": gymnasium.spaces.Box(
                     low=-1.0,
                     high=1.0,
-                    shape=(cfg.waypoint.trajectory_length, cfg.waypoint.trajectory_dim),
+                    shape=(cfg.waypoint.cartesian_action_dim,),
                     dtype=np.float32,
                 ),
                 "time_left": gymnasium.spaces.Box(low=0.0, high=np.inf, shape=(1,), dtype=np.float32),
+                "tcp_velocity": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
+                "duty_history": gymnasium.spaces.Box(low=0.0, high=1.0, shape=(6,), dtype=np.float32),
+                "gravity_compensation_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32),
+                "gripper_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
+                "desired_gripper_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
+                "desired_gripper_duty_active": gymnasium.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+                "gripper_duty_difference": gymnasium.spaces.Box(low=-2.0, high=2.0, shape=(1,), dtype=np.float32),
             }
         )
         self.action_space = gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
@@ -135,6 +142,7 @@ def setup_run_outputs(cfg, model):
     logger = configure(output_dir, ["csv"])
     model.set_logger(logger)
     snapshot_model_files(cfg.model_path, output_dir)
+    snapshot_git_state(output_dir)
     writer = SummaryWriter(log_dir=output_dir)
     return output_dir, writer
 
@@ -155,13 +163,13 @@ def broadcast_initial_weights(model, device, worker_queues):
 def print_training_info(cfg, device):
     num_workers = cfg.training.num_workers
     target_total_steps = cfg.training.total_training_steps
-    low_level_hz = cfg.control.frequencies.low_level
-    training_seconds = target_total_steps / low_level_hz
+    joint_hz = cfg.control.frequencies.joint
+    training_seconds = target_total_steps / joint_hz
     training_hours, remaining_seconds = divmod(training_seconds, 3600)
     training_minutes, training_seconds = divmod(remaining_seconds, 60)
 
     log.info(f"Initializing central learner with {num_workers} parallel workers on {device}...")
-    print(f"Training for {target_total_steps} steps at {low_level_hz} Hz " f"equates to {int(training_hours)}h {int(training_minutes):02d}m {training_seconds:05.2f}s.")
+    print(f"Training for {target_total_steps} steps at {joint_hz} Hz " f"equates to {int(training_hours)}h {int(training_minutes):02d}m {training_seconds:05.2f}s.")
 
 
 def start_workers(
@@ -262,17 +270,12 @@ def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
         for metrics_dict in chunk_metrics:
             for key, val in metrics_dict.items():
                 if isinstance(val, list):
-                    # Write the mean if it's a detailed array, to avoid tensorboard clutter
+                    # add_scalars would write each series into its own run subdirectory, so the
+                    # three are logged separately and left for tensorboard to group by tag.
                     if len(val) > 0:
-                        writer.add_scalars(
-                            f"rollout_detailed/{key}",
-                            {
-                                "mean": sum(val) / len(val),
-                                "max": max(val),
-                                "min": min(val),
-                            },
-                            sac_training_step,
-                        )
+                        writer.add_scalar(f"rollout_detailed/{key}/mean", sum(val) / len(val), sac_training_step)
+                        writer.add_scalar(f"rollout_detailed/{key}/max", max(val), sac_training_step)
+                        writer.add_scalar(f"rollout_detailed/{key}/min", min(val), sac_training_step)
                 else:
                     if key == "total_reward":
                         recent_rewards.append(float(val))
@@ -280,7 +283,7 @@ def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
     writer.flush()
 
 
-def _add_transition_and_train(chunk, model, sac_training_step, worker_queues, save_checkpoint):
+def _add_transition_and_train(chunk, model, sac_training_step, worker_queues):
     for t_obs, t_next_obs, t_action, t_reward, t_done in chunk:
         # empty dict is info field. done is passed as string to represent terminated
         model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done, [{}])
@@ -303,11 +306,23 @@ def _add_transition_and_train(chunk, model, sac_training_step, worker_queues, sa
                         pass
                     wq.put(cpu_state_dict)
 
-    # Intermediate saving logic equivalent
-    if sac_training_step % 10000 == 0:
-        save_checkpoint(f"step_{sac_training_step}")
-
     return sac_training_step
+
+
+def _next_chunk(transition_queue, workers, worker_check_seconds):
+    """
+    A worker only dies in simulation because of a bug, and the survivors hide it: they keep the
+    queue full and the step counter climbing while the data rate silently drops. So the check runs
+    every iteration rather than only when the queue runs dry, and the timeout exists to give it a
+    turn rather than to detect anything.
+    """
+    while True:
+        if not all(worker.is_alive() for worker in workers):
+            raise RuntimeError("A collection worker exited; its traceback is above.")
+        try:
+            return transition_queue.get(timeout=worker_check_seconds)
+        except queue.Empty:
+            continue
 
 
 def _training_loop(
@@ -316,11 +331,14 @@ def _training_loop(
     transition_queue,
     model,
     worker_queues,
+    workers,
     save_checkpoint,
     writer,
 ):
     target_total_steps = cfg.training.total_training_steps
+    checkpoint_every_n_steps = cfg.training.checkpoint_every_n_steps
     sac_training_step = 0
+    last_checkpoint_step = 0
     recent_rewards = deque(maxlen=100)
     progress = tqdm(
         total=target_total_steps,
@@ -333,9 +351,15 @@ def _training_loop(
             _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards)
 
             # 1. Blocks until worker chunks arrive
-            chunk = transition_queue.get()
+            chunk = _next_chunk(transition_queue, workers, cfg.training.worker_check_seconds)
 
-            sac_training_step = _add_transition_and_train(chunk, model, sac_training_step, worker_queues, save_checkpoint)
+            sac_training_step = _add_transition_and_train(chunk, model, sac_training_step, worker_queues)
+            # A chunk is a whole episode, so the step count steps over interval boundaries instead of
+            # landing on them. Testing the distance since the last save is what makes this fire.
+            if sac_training_step - last_checkpoint_step >= checkpoint_every_n_steps:
+                save_checkpoint(f"step_{sac_training_step}")
+                last_checkpoint_step = sac_training_step
+
             progress.update(sac_training_step - progress.n)
             if recent_rewards:
                 progress.set_postfix(avg_reward=f"{sum(recent_rewards) / len(recent_rewards):.4f}")
@@ -379,6 +403,7 @@ def run_distributed_training(cfg: DictConfig, device: torch.device):
         transition_queue,
         model,
         worker_queues,
+        workers,
         lambda step_name: save_checkpoint(model, output_dir, step_name),
         writer,
     )

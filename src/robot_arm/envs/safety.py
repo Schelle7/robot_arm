@@ -1,5 +1,5 @@
+import math
 import numpy as np
-import time
 import csv
 from pathlib import Path
 from typing import Dict
@@ -7,8 +7,7 @@ from robot_arm.backends.arm import Arm
 
 
 class SafetyException(Exception):
-    """Raised when a dynamic hardware constraint (e.g., load, temp) is violated."""
-
+    """Raised when a dynamic hardware constraint (e.g., duty, temp) is violated."""
     pass
 
 
@@ -23,25 +22,28 @@ class SafeArmWrapper(Arm):
     def __init__(
         self,
         backend_arm: Arm,
-        min_pos: float,
-        max_pos: float,
         max_temperature: float,
-        load_ema_alpha: float,
-        max_smoothed_load: float,
+        duty_ema_seconds: float,
+        max_smoothed_duty: float,
+        read_hz: float,
     ):
         self.backend_arm = backend_arm
-        self.min_pos = min_pos
-        self.max_pos = max_pos
+        self.joint_limits: Dict[str, tuple[float, float]] = {
+            name: (float(backend_arm.model.jnt_range[joint_id][0]), float(backend_arm.model.jnt_range[joint_id][1])) for name, joint_id in backend_arm.joint_indices.items()
+        }
 
         self.max_temperature = max_temperature
-        self.load_ema_alpha = load_ema_alpha
-        self.max_smoothed_load = max_smoothed_load
+        self.max_smoothed_duty = max_smoothed_duty
+        self.control_step_seconds = 1.0 / read_hz
+        # Derived from the read rate so the averaging window stays a fixed duration. A bare alpha
+        # would mean 2 s at 5 Hz and 0.1 s at 100 Hz, while what overheats a servo is seconds of duty.
+        self.duty_ema_alpha = 1.0 - math.exp(-1.0 / (read_hz * duty_ema_seconds))
 
-        # Exponential Moving Average for load tracking
+        # Exponential Moving Average for duty tracking
         # Pre-initialize based on the backend's standard motor list
-        self.smoothed_loads: Dict[str, float] = {}
+        self.smoothed_duties: Dict[str, float] = {}
         for motor in self.backend_arm.read_state()["Present_Load"]:
-            self.smoothed_loads[motor] = 0.0
+            self.smoothed_duties[motor] = 0.0
 
     def get_tcp(self) -> np.ndarray:
         return self.backend_arm.get_tcp()
@@ -52,39 +54,56 @@ class SafeArmWrapper(Arm):
     def get_tcp_axes(self):
         return self.backend_arm.get_tcp_axes()
 
+    def gravity_compensation_duty(self):
+        return self.backend_arm.gravity_compensation_duty()
+
     def read_state(self) -> Dict[str, Dict[str, float]]:
         state = self.backend_arm.read_state()
 
         for motor in state["Present_Load"]:
             self._check_temperature(motor, state)
-            self._update_and_check_load_ema(motor, state)
+            self._update_and_check_duty_ema(motor, state)
 
         return state
 
     def disconnect(self):
         self.backend_arm.disconnect()
 
-    def write_goal(self, positions: Dict[str, float]) -> Dict[str, float]:
-        safe_positions = {}
-        for motor, pos in positions.items():
-            # Clip position to absolute safety bounds
-            safe_pos = max(self.min_pos, min(self.max_pos, float(pos)))
-            safe_positions[motor] = safe_pos
+    def advance_control_step(self) -> None:
+        self.backend_arm.advance_control_step()
 
-        # Forward safely clamped commands down the chain
-        self.backend_arm.write_goal(safe_positions)
+    def restore_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> None:
+        self.smoothed_duties = {motor: 0.0 for motor in self.smoothed_duties}
+        self.backend_arm.restore_sim_state(qpos, qvel)
 
-        return safe_positions
+    def write_duty(self, duties: Dict[str, float], positions: Dict[str, float]) -> Dict[str, float]:
+        """
+        A duty specifies force, not a place to stop, so the joint limits can only be enforced by
+        refusing the duties that drive further past one.
+        """
+        safe_duties = {}
+        for motor, duty in duties.items():
+            lower, upper = self.joint_limits[motor]
+            position = positions[motor]
+            duty = float(duty)
+            if (position <= lower and duty < 0.0) or (position >= upper and duty > 0.0):
+                duty = 0.0
+            safe_duties[motor] = duty
+
+        self.backend_arm.write_duty(safe_duties)
+
+        return safe_duties
 
     def move_to_staging_pose(
         self,
         initial_joint_range_percent: tuple[float, float],
         speed_radians_per_second: float,
         tolerance_radians: float,
-        max_steps: int,
-        pause_seconds: float,
+        max_seconds: float,
         output_dir: str,
     ) -> None:
+        raise NotImplementedError("Staging still drives position targets and has not been adapted to duty control.")
+
         min_percent, max_percent = initial_joint_range_percent
         staging_positions = {
             name: float(
@@ -114,7 +133,7 @@ class SafeArmWrapper(Arm):
             writer = csv.DictWriter(log_file, fieldnames=fieldnames)
             writer.writeheader()
 
-            for step in range(max_steps):
+            for step in range(round(max_seconds / self.control_step_seconds)):
                 state = self.read_state()
                 current_state = state["Present_Position"]
                 errors = {name: staging_positions[name] - current_state[name] for name in staging_positions}
@@ -139,21 +158,14 @@ class SafeArmWrapper(Arm):
                     print(f"Staging log written to: {staging_log_path}")
                     return
 
-                next_positions = {
-                    name: current_state[name]
-                    + np.clip(
-                        error,
-                        -speed_radians_per_second * pause_seconds,
-                        speed_radians_per_second * pause_seconds,
-                    )
-                    for name, error in errors.items()
-                }
+                travel_per_step = speed_radians_per_second * self.control_step_seconds
+                next_positions = {name: current_state[name] + np.clip(error, -travel_per_step, travel_per_step) for name, error in errors.items()}
                 safe_positions = self.write_goal(next_positions)
                 for name in staging_positions:
                     row[f"{name}_commanded_position"] = safe_positions[name]
                 writer.writerow(row)
                 log_file.flush()
-                time.sleep(pause_seconds)
+                self.advance_control_step()
 
         raise RuntimeError("Real arm did not reach the staging pose.")
 
@@ -162,16 +174,16 @@ class SafeArmWrapper(Arm):
         if temp > self.max_temperature:
             self._trigger_emergency_stop(f"Motor {motor} temperature {temp}C exceeds limit {self.max_temperature}C")
 
-    def _update_and_check_load_ema(self, motor: str, state: Dict[str, Dict[str, float]]):
-        # Assumes loads are normalized floats (-1.0 to 1.0). If they are raw ticks, they need to be pre-scaled.
-        current_load = abs(state["Present_Load"][motor])
+    def _update_and_check_duty_ema(self, motor: str, state: Dict[str, Dict[str, float]]):
+        # Assumes duties are normalized floats (-1.0 to 1.0). If they are raw ticks, they need to be pre-scaled.
+        current_duty = abs(state["Present_Load"][motor])
 
-        prev = self.smoothed_loads[motor]
-        new_smoothed = self.load_ema_alpha * current_load + (1 - self.load_ema_alpha) * prev
-        self.smoothed_loads[motor] = new_smoothed
+        prev = self.smoothed_duties[motor]
+        new_smoothed = self.duty_ema_alpha * current_duty + (1 - self.duty_ema_alpha) * prev
+        self.smoothed_duties[motor] = new_smoothed
 
-        if new_smoothed > self.max_smoothed_load:
-            self._trigger_emergency_stop(f"Motor {motor} sustained load {new_smoothed:.2f} exceeds limit {self.max_smoothed_load:.2f}")
+        if new_smoothed > self.max_smoothed_duty:
+            self._trigger_emergency_stop(f"Motor {motor} sustained duty {new_smoothed:.2f} exceeds limit {self.max_smoothed_duty:.2f}")
 
     def _trigger_emergency_stop(self, reason: str):
         """

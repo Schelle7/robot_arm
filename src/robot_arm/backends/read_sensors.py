@@ -7,6 +7,22 @@ FEEDBACK_REGISTERS = (
     "Present_Current",
 )
 
+# Firmware settings that shape how a commanded position becomes motion, as (address, byte width).
+# LeRobot writes several of these on every connect and nothing has ever recorded what they were.
+CONFIGURATION_REGISTERS = {
+    "Max_Torque_Limit": (16, 2),
+    "P_Coefficient": (21, 1),
+    "D_Coefficient": (22, 1),
+    "I_Coefficient": (23, 1),
+    "Min_Startup_Force": (24, 2),
+    "CW_Dead_Zone": (26, 1),
+    "CCW_Dead_Zone": (27, 1),
+    "Protection_Current": (28, 2),
+    "Protection_Torque": (34, 1),
+    "Protection_Time": (35, 1),
+    "Overload_Torque": (36, 1),
+}
+
 
 def read_registers_naive(bus):
     """The naive way: 5 separate round-trips over the serial bus."""
@@ -16,6 +32,32 @@ def read_registers_naive(bus):
 def read_temperature(bus):
     """Unit test: 1 single round trip."""
     return bus.sync_read("Present_Temperature", normalize=False)
+
+
+def read_configuration(bus):
+    """
+    One block read of addresses 16 to 36, covering the servo's control gains and its protection
+    limits. These never change while running, so this is meant to be called once and logged: the
+    numbers decide what a commanded position delta actually does, and are otherwise invisible.
+    """
+    motor_ids = [m.id for m in bus.motors.values()]
+    start_address = min(address for address, _ in CONFIGURATION_REGISTERS.values())
+    end_address = max(address + width for address, width in CONFIGURATION_REGISTERS.values())
+    length = end_address - start_address
+
+    bus._setup_sync_reader(motor_ids, start_address, length)
+    comm = bus.sync_reader.txRxPacket()
+    if not bus._is_comm_success(comm):
+        raise ConnectionError(f"Configuration read failed: {bus.packet_handler.getTxRxResult(comm)}")
+
+    results = {register: {} for register in CONFIGURATION_REGISTERS}
+    for name, motor in bus.motors.items():
+        if not bus.sync_reader.isAvailable(motor.id, start_address, length):
+            continue
+        for register, (address, width) in CONFIGURATION_REGISTERS.items():
+            results[register][name] = bus.sync_reader.getData(motor.id, address, width)
+
+    return results
 
 
 def read_block(bus):

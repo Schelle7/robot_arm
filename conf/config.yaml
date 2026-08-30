@@ -6,6 +6,8 @@ defaults:
   - reward: default
   - runtime: default
   - safety: default
+  - servo: default
+  - scene: default
   - training: default
   - waypoint: default
   - experiment: debug
