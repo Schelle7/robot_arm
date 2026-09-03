@@ -1,6 +1,5 @@
 import hydra
 from omegaconf import DictConfig, OmegaConf
-import torch
 import logging
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
@@ -42,13 +41,12 @@ def save_run_config(cfg: DictConfig):
 def train_low_level(cfg: DictConfig):
     cfg = load_continuation_config(cfg)
     save_run_config(cfg)
-    device = torch.device(cfg.device)
     output_dir = HydraConfig.get().runtime.output_dir
 
     print(f"Hydra run directory: {output_dir}", flush=True)
     print(f"tensorboard --logdir={output_dir}", flush=True)
 
-    run_distributed_training(cfg, device)
+    run_distributed_training(cfg)
 
 
 if __name__ == "__main__":

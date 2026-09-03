@@ -1,6 +1,6 @@
 cartesian_action_dim: 7
 duty_completion_tolerance: 0.1
-position_speed_meters_per_second: 0.30
+position_speed_meters_per_second: 0.05
 rotation_speed_radians_per_second: 0.5
 gripper_speed_radians_per_second: 0.5
 primitive_probabilities:

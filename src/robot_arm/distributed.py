@@ -1,89 +1,37 @@
-import math
 import queue
-import numpy as np
 import os
-import torch
 import multiprocessing as mp
 import logging
-import gymnasium
 from collections import deque
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
-from hydra.utils import get_class
-from stable_baselines3 import SAC
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.git_snapshot import snapshot_git_state
 from robot_arm.model_snapshot import snapshot_model_files
+from robot_arm.numpy_policy import NumpySACPolicy
 from robot_arm.policies import ScriptedCartesianPolicy
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
+from robot_arm.scalar_writer import ScalarWriter
 
 log = logging.getLogger(__name__)
 
 
-def build_sac_policy_kwargs(cfg: DictConfig) -> dict:
-    features_extractor_cfg = cfg.policy.features_extractor
-    return {
-        "features_extractor_class": get_class(features_extractor_cfg.class_path),
-        "features_extractor_kwargs": {
-            "hidden_dims": list(features_extractor_cfg.hidden_dims),
-        },
-        "net_arch": list(cfg.policy.net_arch),
-    }
-
-
-# We need a dummy wrapper for SAC to parse the space logic implicitly
-# since we dropped gym, we define simple spaces here to build the actor layout.
-class DummySpaceEnv(gymnasium.Env):
-    def __init__(self, cfg):
-        self.observation_space = gymnasium.spaces.Dict(
-            {
-                "joint_positions": gymnasium.spaces.Box(low=-math.pi, high=math.pi, shape=(6,), dtype=np.float32),
-                "joint_velocities": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
-                "remaining_delta": gymnasium.spaces.Box(
-                    low=-1.0,
-                    high=1.0,
-                    shape=(cfg.waypoint.cartesian_action_dim,),
-                    dtype=np.float32,
-                ),
-                "time_left": gymnasium.spaces.Box(low=0.0, high=np.inf, shape=(1,), dtype=np.float32),
-                "tcp_velocity": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
-                "duty_history": gymnasium.spaces.Box(low=0.0, high=1.0, shape=(6,), dtype=np.float32),
-                "gripper_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
-                "desired_gripper_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
-                "desired_gripper_duty_active": gymnasium.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-                "gripper_duty_difference": gymnasium.spaces.Box(low=-2.0, high=2.0, shape=(1,), dtype=np.float32),
-            }
-        )
-        self.action_space = gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
-
-    # Standard gymnasium API requirements for base wrappers to avoid patching crashes
-    def step(self, action):
-        pass
-
-    def reset(self, *, seed=None, options=None):
-        pass
-
-    def render(self):
-        pass
-
-
-# We use a custom local Replay queue to ship bulk chunks, replacing the local SB3 replay buffer
-class TransitionQueueBuffer:
+# We use a custom local Replay queue to ship whole episodes, replacing the local SB3 replay buffer
+class EpisodeQueueBuffer:
     def __init__(self, q):
         self.q = q
-        self.chunk = []
+        self.episode = []
 
     def add(self, obs, next_obs, action, reward, done):
-        self.chunk.append((obs, next_obs, action, reward, done))
+        self.episode.append((obs, next_obs, action, reward, done))
 
     def flush(self):
-        if len(self.chunk) > 0:
-            self.q.put(self.chunk)
-            self.chunk = []
+        if len(self.episode) > 0:
+            self.q.put(self.episode)
+            self.episode = []
 
 
 class MetricsQueueBuffer:
@@ -101,65 +49,48 @@ class MetricsQueueBuffer:
 
 
 def create_training_queues(cfg):
-    transition_queue = mp.Queue(maxsize=1000)
+    episode_queue = mp.Queue(maxsize=20)
     metrics_queue = mp.Queue(maxsize=1000)
     worker_queues = [mp.Queue(maxsize=1) for _ in range(cfg.training.num_workers)]
-    return transition_queue, metrics_queue, worker_queues
+    return episode_queue, metrics_queue, worker_queues
 
 
-def create_central_sac_model(cfg, device):
-    dummy_env_for_sac = DummySpaceEnv(cfg)
+def create_central_sac_model(cfg):
+    from robot_arm.jax_sac import JaxSAC
+
+    model = JaxSAC(cfg)
     if "continue_from" in cfg:
-        model = SAC.load(cfg.continue_from, env=dummy_env_for_sac, device=device)
-        model.learning_starts = cfg.training.learning_starts
-        return model
-
-    policy_kwargs = build_sac_policy_kwargs(cfg)
-    return SAC(
-        "MultiInputPolicy",
-        dummy_env_for_sac,
-        learning_rate=cfg.training.learning_rate,
-        buffer_size=cfg.training.buffer_size,
-        learning_starts=cfg.training.learning_starts,
-        batch_size=cfg.training.batch_size,
-        tau=cfg.training.tau,
-        train_freq=cfg.training.train_freq,
-        gradient_steps=cfg.training.gradient_steps,
-        gamma=cfg.training.gamma,
-        verbose=0,
-        device=device,
-        policy_kwargs=policy_kwargs,
-    )
+        model.load(cfg.continue_from)
+    return model
 
 
-def setup_run_outputs(cfg, model):
+def setup_run_outputs(cfg):
     hydra_cfg = HydraConfig.get()
     output_dir = hydra_cfg.runtime.output_dir
 
-    from stable_baselines3.common.logger import configure
-
-    logger = configure(output_dir, ["csv"])
-    model.set_logger(logger)
     snapshot_model_files(cfg.model_path, output_dir)
     snapshot_git_state(output_dir)
-    writer = SummaryWriter(log_dir=output_dir)
+    writer = ScalarWriter(output_dir)
     return output_dir, writer
 
 
 def save_checkpoint(model, output_dir, step_name):
     checkpoint_dir = os.path.join(output_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
-    model.save(os.path.join(checkpoint_dir, f"sac_manual_step_{step_name}"))
+    model.save(os.path.join(checkpoint_dir, f"jax_sac_{step_name}"))
 
 
-def broadcast_initial_weights(model, device, worker_queues):
-    initial_weights = model.policy.to("cpu").state_dict()
-    model.policy.to(device)
+def copy_policy_weights_to_cpu(model):
+    return model.actor_params_numpy()
+
+
+def broadcast_initial_weights(model, worker_queues):
+    initial_weights = copy_policy_weights_to_cpu(model)
     for worker_queue in worker_queues:
         worker_queue.put(initial_weights)
 
 
-def print_training_info(cfg, device):
+def print_training_info(cfg):
     num_workers = cfg.training.num_workers
     target_total_steps = cfg.training.total_training_steps
     joint_hz = cfg.control.frequencies.joint
@@ -167,14 +98,14 @@ def print_training_info(cfg, device):
     training_hours, remaining_seconds = divmod(training_seconds, 3600)
     training_minutes, training_seconds = divmod(remaining_seconds, 60)
 
-    log.info(f"Initializing central learner with {num_workers} parallel workers on {device}...")
+    log.info(f"Initializing central JAX learner with {num_workers} parallel workers...")
     print(f"Training for {target_total_steps} steps at {joint_hz} Hz " f"equates to {int(training_hours)}h {int(training_minutes):02d}m {training_seconds:05.2f}s.")
 
 
 def start_workers(
     cfg,
     output_dir,
-    transition_queue,
+    episode_queue,
     metrics_queue,
     worker_queues,
 ):
@@ -186,7 +117,7 @@ def start_workers(
                 worker_id,
                 cfg,
                 output_dir,
-                transition_queue,
+                episode_queue,
                 metrics_queue,
                 worker_queues[worker_id],
             ),
@@ -201,34 +132,23 @@ def worker_process(
     worker_id,
     cfg,
     output_dir,
-    transition_queue,
+    episode_queue,
     metrics_queue,
     weights_queue,
 ):
     """
     Subprocess isolated execution: Initializes env, runner, and an inference-only model.
-    Steps physics and places transition chunks onto the queue.
+    Steps physics and places whole episodes onto the queue.
     """
-    ## 1. ----------------------
-    torch.set_num_threads(1)
-
     log.info(f"Worker {worker_id}: Initializing Simulation...")
     env = make_env(cfg, output_dir)
-
-    dummy_env_for_sac = DummySpaceEnv(cfg)
-    policy_kwargs = build_sac_policy_kwargs(cfg)
-    low_level_policy = SAC(
-        "MultiInputPolicy",
-        dummy_env_for_sac,
-        buffer_size=1,
-        device="cpu",
-        policy_kwargs=policy_kwargs,
-    )
+    initial_actor_params = weights_queue.get()
+    low_level_policy = NumpySACPolicy(initial_actor_params, int(cfg.seed) + worker_id + 1)
 
     cartesian_policy = ScriptedCartesianPolicy(cfg)
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(cfg)
 
-    worker_transition_buffer = TransitionQueueBuffer(transition_queue)
+    worker_episode_buffer = EpisodeQueueBuffer(episode_queue)
     worker_metrics_buffer = MetricsQueueBuffer(metrics_queue)
 
     runner = EpisodeRunner(
@@ -239,7 +159,7 @@ def worker_process(
         cartesian_policy=cartesian_policy,
         training=True,
         recorder=None,
-        replay_buffer=worker_transition_buffer,
+        replay_buffer=worker_episode_buffer,
         metrics_queue=worker_metrics_buffer,
         weights_queue=weights_queue,
     )
@@ -249,13 +169,13 @@ def worker_process(
         # Sync weights before episode starts safely via the encapsulated runner policy
         runner._sync_weights()
 
-        # Runner natively collects, chunks, calls policies, and populates `worker_transition_buffer` via `.add()`
+        # Runner natively collects, calls policies, and populates `worker_episode_buffer` via `.add()`
         runner.run_episode(
             generate_primitives=True,
         )
 
         # Batch ship all collected physics steps to the central learner
-        worker_transition_buffer.flush()
+        worker_episode_buffer.flush()
         worker_metrics_buffer.flush()
 
 
@@ -282,20 +202,18 @@ def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
     writer.flush()
 
 
-def _add_transition_and_train(chunk, model, sac_training_step, worker_queues):
-    for t_obs, t_next_obs, t_action, t_reward, t_done in chunk:
-        # empty dict is info field. done is passed as string to represent terminated
-        model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done, [{}])
+def _add_transition_and_train(episode, model, sac_training_step, worker_queues, writer):
+    for t_obs, t_next_obs, t_action, t_reward, t_done in episode:
+        model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done)
         sac_training_step += 1
 
-        # 3. Perform learning identically to how SB3 behaves
-        if sac_training_step > model.learning_starts and sac_training_step % model.train_freq.frequency == 0:
-            model.train(gradient_steps=model.gradient_steps, batch_size=model.batch_size)
+        if sac_training_step > model.learning_starts and sac_training_step % model.train_frequency == 0:
+            learner_metrics = model.train(model.gradient_steps)
+            for key, value in learner_metrics.items():
+                writer.add_scalar(f"train/{key}", value, sac_training_step)
 
-            if sac_training_step % 1000 == 0:
-                model.logger.dump(step=sac_training_step)
-                # Sync weights occasionally during heavy training (safely to CPU)
-                cpu_state_dict = {k: v.cpu() for k, v in model.policy.state_dict().items()}
+            if sac_training_step % model.broadcast_weights_every_n_steps == 0:
+                cpu_state_dict = copy_policy_weights_to_cpu(model)
                 for wq in worker_queues:  # TODO this whole thing seems pretty blocking
                     try:
                         # Clear old weights if the worker hasn't read them yet
@@ -308,7 +226,7 @@ def _add_transition_and_train(chunk, model, sac_training_step, worker_queues):
     return sac_training_step
 
 
-def _next_chunk(transition_queue, workers, worker_check_seconds):
+def _next_episode(episode_queue, workers, worker_check_seconds):
     """
     A worker only dies in simulation because of a bug, and the survivors hide it: they keep the
     queue full and the step counter climbing while the data rate silently drops. So the check runs
@@ -319,7 +237,7 @@ def _next_chunk(transition_queue, workers, worker_check_seconds):
         if not all(worker.is_alive() for worker in workers):
             raise RuntimeError("A collection worker exited; its traceback is above.")
         try:
-            return transition_queue.get(timeout=worker_check_seconds)
+            return episode_queue.get(timeout=worker_check_seconds)
         except queue.Empty:
             continue
 
@@ -327,7 +245,7 @@ def _next_chunk(transition_queue, workers, worker_check_seconds):
 def _training_loop(
     cfg,
     metrics_queue,
-    transition_queue,
+    episode_queue,
     model,
     worker_queues,
     workers,
@@ -349,11 +267,11 @@ def _training_loop(
         while sac_training_step < target_total_steps:
             _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards)
 
-            # 1. Blocks until worker chunks arrive
-            chunk = _next_chunk(transition_queue, workers, cfg.training.worker_check_seconds)
+            # 1. Blocks until a worker episode arrives
+            episode = _next_episode(episode_queue, workers, cfg.training.worker_check_seconds)
 
-            sac_training_step = _add_transition_and_train(chunk, model, sac_training_step, worker_queues)
-            # A chunk is a whole episode, so the step count steps over interval boundaries instead of
+            sac_training_step = _add_transition_and_train(episode, model, sac_training_step, worker_queues, writer)
+            # An episode arrives whole, so the step count steps over interval boundaries instead of
             # landing on them. Testing the distance since the last save is what makes this fire.
             if sac_training_step - last_checkpoint_step >= checkpoint_every_n_steps:
                 save_checkpoint(f"step_{sac_training_step}")
@@ -371,44 +289,64 @@ def _training_loop(
     return sac_training_step
 
 
-def run_distributed_training(cfg: DictConfig, device: torch.device):
+def shut_down(workers, queues, writer):
+    """
+    A queue keeps both ends of its pipe open in the process that created it, so a feeder thread
+    part-way through writing a weight broadcast never sees the terminated worker close the read end.
+    It blocks forever, and interpreter exit joins it. Cancelling that join is what lets the process
+    die; closing the queue is not enough, because closing still waits for the buffer to flush.
+    """
+    for worker in workers:
+        worker.terminate()
+    for worker in workers:
+        worker.join(timeout=5)
+    for q in queues:
+        q.cancel_join_thread()
+        q.close()
+    writer.close()
+
+
+def run_distributed_training(cfg: DictConfig):
     """
     Spawns worker processes to collect data using inference, while the main process
     updates a central target model and distributes updated weights.
     """
-    print_training_info(cfg, device)
+    print_training_info(cfg)
 
-    # Set parallel method to spawn (required for torch/CUDA safety in multiprocessing)
     mp.set_start_method("spawn", force=True)
 
-    transition_queue, metrics_queue, worker_queues = create_training_queues(cfg)
-    model = create_central_sac_model(cfg, device)
+    episode_queue, metrics_queue, worker_queues = create_training_queues(cfg)
+    model = create_central_sac_model(cfg)
 
-    output_dir, writer = setup_run_outputs(cfg, model)
+    output_dir, writer = setup_run_outputs(cfg)
 
-    broadcast_initial_weights(model, device, worker_queues)
+    broadcast_initial_weights(model, worker_queues)
+
+    # os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    # os.environ["OMP_NUM_THREADS"] = "1"
+    # os.environ["MKL_NUM_THREADS"] = "1"
 
     workers = start_workers(
         cfg,
         output_dir,
-        transition_queue,
+        episode_queue,
         metrics_queue,
         worker_queues,
     )
 
-    sac_training_step = _training_loop(
-        cfg,
-        metrics_queue,
-        transition_queue,
-        model,
-        worker_queues,
-        workers,
-        lambda step_name: save_checkpoint(model, output_dir, step_name),
-        writer,
-    )
+    try:
+        sac_training_step = _training_loop(
+            cfg,
+            metrics_queue,
+            episode_queue,
+            model,
+            worker_queues,
+            workers,
+            lambda step_name: save_checkpoint(model, output_dir, step_name),
+            writer,
+        )
 
-    save_checkpoint(model, output_dir, f"final_{sac_training_step}")
-
-    writer.close()
-    for w in workers:
-        w.terminate()
+        save_checkpoint(model, output_dir, f"final_{sac_training_step}")
+        print("Saved policy", flush=True)
+    finally:
+        shut_down(workers, (episode_queue, metrics_queue, *worker_queues), writer)

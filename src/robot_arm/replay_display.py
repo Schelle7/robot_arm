@@ -21,6 +21,20 @@ def section(title, columns, rows):
     return {"title": title, "columns": columns, "rows": rows}
 
 
+def primitive_diagnostic_rows(action_diagnostics):
+    diagnostic_pairs = (
+        ("Position", "position_distance", "position_threshold"),
+        ("Primary orientation", "primary_orientation_distance", "orientation_threshold"),
+        ("Secondary orientation", "secondary_orientation_distance", "orientation_threshold"),
+        ("Gripper position", "gripper_distance", "gripper_threshold"),
+        ("Gripper duty", "gripper_duty_distance", "duty_threshold"),
+    )
+    return [
+        [label, format_value(action_diagnostics[difference_key]), format_value(action_diagnostics[threshold_key])]
+        for label, difference_key, threshold_key in diagnostic_pairs
+    ]
+
+
 def build_replay_display(
     model,
     mdata,
@@ -33,20 +47,21 @@ def build_replay_display(
     action_diagnostics,
     completes_active_primitive,
     frame_index,
+    low_level_step,
     recorded_cfg,
 ):
     live_pose, _, _ = get_tcp_geometry(model, mdata)
-    dense_sample = dense_trajectory[-1] if len(dense_trajectory) else {}
+    dense_sample = dense_trajectory[low_level_step] if len(dense_trajectory) else {}
     low_level_action = dense_sample["action"] if dense_sample else None
     duty_compensation = dense_sample["duty_compensation"] if dense_sample else None
     compensated_duty_action = dense_sample["compensated_duty"] if dense_sample else None
     low_level_observation = dense_sample["obs"] if dense_sample else {}
     episode_time = frame_index / recorded_cfg.control.frequencies.cartesian
-    primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive))]]
     if action_diagnostics:
-        primitive_rows.extend([key.replace("_", " ").title(), format_value(value)] for key, value in action_diagnostics.items())
+        primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
+        primitive_rows.extend(primitive_diagnostic_rows(action_diagnostics))
     else:
-        primitive_rows.append(["Status", "No outgoing transition"])
+        primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
 
     observation_rows = [[key, "  ".join(format_vector(value))] for key, value in low_level_observation.items()]
     if not observation_rows:
@@ -69,16 +84,13 @@ def build_replay_display(
                 ["Policy", str(recorded_cfg.policy_name)],
                 ["Episode time", f"{episode_time:.2f} s"],
                 ["Frame", str(frame_index)],
-                ["TCP gripper", format_value(live_pose.gripper)],
+                ["Low-level step", f"{low_level_step + 1} / {len(dense_trajectory)}" if len(dense_trajectory) else "N/A"],
             ],
         ),
         section(
             "TCP pose",
-            ["Signal", "X", "Y", "Z"],
-            [
-                vector_row("Position", live_pose.position, 3),
-                vector_row("Orientation XYZ", live_pose.as_euler("XYZ", False), 3),
-            ],
+            ["Signal", *CARTESIAN_ACTION_NAMES],
+            [["Pose", *format_vector(live_pose.as_7d())]],
         ),
         section(
             "Joint state",
@@ -94,7 +106,7 @@ def build_replay_display(
         section(
             "Cartesian action",
             ["Signal", *CARTESIAN_ACTION_NAMES],
-            [vector_row("Desired pose", cartesian_action, len(CARTESIAN_ACTION_NAMES))],
+            [vector_row("Commanded pose delta", cartesian_action, len(CARTESIAN_ACTION_NAMES))],
         ),
         section(
             "Transition",
@@ -104,7 +116,11 @@ def build_replay_display(
                 vector_row("Tracking error", pose_tracking_error, 6),
             ],
         ),
-        section("Primitive", ["Metric", "Value"], primitive_rows),
+        section(
+            "Primitive",
+            ["Metric", "Difference", "Threshold"],
+            primitive_rows,
+        ),
         section("Low-level observation", ["Input", "Values"], observation_rows),
         section("Last low-level reward", ["Component", "Value"], reward_rows),
     ]

@@ -20,9 +20,10 @@ PAGE = """<!doctype html>
     #status { color: #b9c8c2; font-size: 13px; }
     main { width: min(1180px, 100%); margin: 0 auto; padding: 20px clamp(12px, 3vw, 32px) 48px; }
     .controls { display: grid; grid-template-columns: auto minmax(180px, 1fr) 84px auto; align-items: center; gap: 10px; padding: 14px 0 20px; border-bottom: 2px solid var(--ink); }
+    .low-level-controls { grid-template-columns: auto minmax(180px, 1fr) 84px; }
     .controls label { font-weight: 600; }
-    .branch-controls { padding: 20px 0; border-bottom: 2px solid var(--ink); }
-    .duty-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 12px; }
+    .branch-controls { padding: 20px 0; border-bottom: 2px solid var(--ink); overflow-x: auto; }
+    .duty-grid { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)); gap: 12px; min-width: 720px; }
     .duty-grid label, .generation-row label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
     .duty-grid input, .generation-row input { width: 100%; padding: 7px 8px; border: 1px solid #899791; background: var(--panel); font: inherit; }
     .generation-row { display: grid; grid-template-columns: minmax(150px, 240px) auto 1fr; align-items: end; gap: 12px; margin-top: 14px; }
@@ -41,29 +42,45 @@ PAGE = """<!doctype html>
     th { color: var(--muted); background: #e8eeea; font-size: 12px; font-weight: 600; }
     th:first-child, td:first-child { font-weight: 600; }
     td { font-family: "DejaVu Sans Mono", monospace; font-variant-numeric: tabular-nums; }
+    td.pass { color: #087f5b; font-weight: 700; }
+    td.fail { color: var(--warn); font-weight: 700; }
+    .action-plots { border-top: 2px solid var(--ink); }
+    .action-plot { padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .action-plot h3 { margin: 0 0 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
+    .action-plot canvas { display: block; width: 100%; height: 150px; background: rgba(255, 255, 255, 0.72); }
     #warnings { margin: 18px 0 0; color: var(--warn); white-space: pre-wrap; }
     [hidden] { display: none; }
-    @media (max-width: 620px) { .controls { grid-template-columns: 1fr 84px; } .controls label { grid-column: 1 / -1; } .controls button { grid-column: 1 / -1; } .duty-grid { grid-template-columns: 1fr 1fr; } .generation-row { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } }
+    @media (max-width: 620px) { .controls { grid-template-columns: 1fr 84px; } .controls label { grid-column: 1 / -1; } .controls button { grid-column: 1 / -1; } .generation-row { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } }
 </style>
 <header><h1>Robot replay</h1><span id="status">Waiting for viewer</span></header>
 <main>
+<div id="overviewTable"></div>
 <div class="controls">
     <label for="frameRange">Frame <span id="frameLabel">0 / 0</span></label>
     <input id="frameRange" type="range" min="0" max="0" value="0">
     <input id="frameNumber" type="number" min="0" max="0" value="0" aria-label="Frame number">
     <button id="playButton" type="button">Play</button>
 </div>
+<div class="controls low-level-controls">
+    <label for="lowLevelRange">Low-level step <span id="lowLevelLabel">N/A</span></label>
+    <input id="lowLevelRange" type="range" min="0" max="0" value="0" disabled>
+    <input id="lowLevelNumber" type="number" min="0" max="0" value="0" aria-label="Low-level step number" disabled>
+</div>
+<div id="tables"></div>
 <div class="branch-controls">
     <h2>Fixed policy-action branch</h2>
     <div id="dutyGrid" class="duty-grid"></div>
     <div class="generation-row">
-        <label for="durationSeconds">Duration (seconds)<input id="durationSeconds" type="number" min="0.2" step="0.2" value="1.0"></label>
+        <label for="durationSeconds">Seconds<input id="durationSeconds" type="number" min="0.2" step="0.2" value="1.0"></label>
         <button id="generateButton" type="button">Export branch request</button>
         <span id="generationStatus"></span>
     </div>
     <p id="dutyWarning" hidden></p>
 </div>
-<div id="tables"></div>
+<section>
+    <h2>Policy actions</h2>
+    <div id="actionPlots" class="action-plots"></div>
+</section>
 <pre id="warnings"></pre>
 </main>
 <script>
@@ -71,13 +88,19 @@ PAGE = """<!doctype html>
     const frameNumber = document.getElementById("frameNumber");
     const frameLabel = document.getElementById("frameLabel");
     const playButton = document.getElementById("playButton");
+    const lowLevelRange = document.getElementById("lowLevelRange");
+    const lowLevelNumber = document.getElementById("lowLevelNumber");
+    const lowLevelLabel = document.getElementById("lowLevelLabel");
     const dutyGrid = document.getElementById("dutyGrid");
     const durationSeconds = document.getElementById("durationSeconds");
     const generateButton = document.getElementById("generateButton");
     const generationStatus = document.getElementById("generationStatus");
     const dutyWarning = document.getElementById("dutyWarning");
+    const overviewTable = document.getElementById("overviewTable");
     const tables = document.getElementById("tables");
+    const actionPlots = document.getElementById("actionPlots");
     const status = document.getElementById("status");
+    let overviewStructure = "";
     let tableStructure = "";
     let dutyInputsCreated = false;
 
@@ -89,6 +112,12 @@ PAGE = """<!doctype html>
 
     function togglePlay() {
         fetch("/play", {method: "POST"});
+    }
+
+    function requestLowLevelStep(value) {
+        lowLevelRange.value = value;
+        lowLevelNumber.value = value;
+        fetch("/low-level-step", {method: "POST", body: value});
     }
 
     function updateDutyWarning() {
@@ -140,10 +169,10 @@ PAGE = """<!doctype html>
         generationStatus.textContent = "Saved. Close replay, then run: python scripts/rollout_fixed_duty.py";
     }
 
-    function renderTables(sections) {
+    function renderTableContainer(container, sections, currentStructure) {
         const nextStructure = JSON.stringify(sections.map(sectionData => [sectionData.title, sectionData.columns, sectionData.rows.map(row => row[0])]));
-        if (nextStructure !== tableStructure) {
-            tables.replaceChildren();
+        if (nextStructure !== currentStructure) {
+            container.replaceChildren();
             for (const sectionData of sections) {
                 const section = document.createElement("section");
                 const heading = document.createElement("h2");
@@ -170,25 +199,105 @@ PAGE = """<!doctype html>
                 table.append(head, body);
                 wrapper.appendChild(table);
                 section.append(heading, wrapper);
-                tables.appendChild(section);
+                container.appendChild(section);
             }
-            tableStructure = nextStructure;
         }
 
-        const cells = tables.querySelectorAll("tbody td");
-        let cellIndex = 0;
-        for (const sectionData of sections) {
-            for (const row of sectionData.rows) {
-                for (const value of row) {
-                    cells[cellIndex].textContent = value;
-                    cellIndex += 1;
+        const sectionElements = container.querySelectorAll(":scope > section");
+        for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+            const sectionData = sections[sectionIndex];
+            const tableRows = sectionElements[sectionIndex].querySelectorAll("tbody tr");
+            for (let rowIndex = 0; rowIndex < sectionData.rows.length; rowIndex += 1) {
+                const row = sectionData.rows[rowIndex];
+                const cells = tableRows[rowIndex].querySelectorAll("td");
+                for (let cellIndex = 0; cellIndex < row.length; cellIndex += 1) {
+                    cells[cellIndex].textContent = row[cellIndex];
+                    cells[cellIndex].className = "";
+                }
+                if (sectionData.title === "Primitive") {
+                    if (row[0] === "Completes active primitive") {
+                        cells[1].className = row[1] === "True" ? "pass" : "fail";
+                    } else {
+                        cells[1].className = Number(row[1]) <= Number(row[2]) ? "pass" : "fail";
+                    }
                 }
             }
+        }
+        return nextStructure;
+    }
+
+    function renderTables(sections) {
+        overviewStructure = renderTableContainer(overviewTable, sections.slice(0, 1), overviewStructure);
+        tableStructure = renderTableContainer(tables, sections.slice(1), tableStructure);
+    }
+
+    function drawActionPlot(canvas, values, jointHz) {
+        const pixelRatio = window.devicePixelRatio || 1;
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        const context = canvas.getContext("2d");
+        context.scale(pixelRatio, pixelRatio);
+
+        const left = 38;
+        const right = 12;
+        const top = 10;
+        const bottom = 24;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const x = index => left + (values.length === 1 ? 0 : index * plotWidth / (values.length - 1));
+        const y = value => top + (1 - value) * plotHeight / 2;
+
+        context.strokeStyle = "#ccd5d1";
+        context.lineWidth = 1;
+        for (const value of [-1, 0, 1]) {
+            context.beginPath();
+            context.moveTo(left, y(value));
+            context.lineTo(width - right, y(value));
+            context.stroke();
+            context.fillStyle = "#61706a";
+            context.font = '11px "DejaVu Sans Mono", monospace';
+            context.textAlign = "right";
+            context.textBaseline = "middle";
+            context.fillText(String(value), left - 6, y(value));
+        }
+
+        const durationSeconds = values.length / jointHz;
+        context.fillStyle = "#61706a";
+        context.textBaseline = "bottom";
+        context.textAlign = "left";
+        context.fillText("0 s", left, height);
+        context.textAlign = "right";
+        context.fillText(`${durationSeconds.toFixed(2)} s`, width - right, height);
+
+        context.fillStyle = "#087f5b";
+        for (let index = 0; index < values.length; index += 1) {
+            context.beginPath();
+            context.arc(x(index), y(values[index]), 1.75, 0, 2 * Math.PI);
+            context.fill();
+        }
+    }
+
+    async function createActionPlots() {
+        const actionData = await (await fetch("/actions")).json();
+        for (let motorIndex = 0; motorIndex < actionData.motor_names.length; motorIndex += 1) {
+            const plot = document.createElement("div");
+            const heading = document.createElement("h3");
+            const canvas = document.createElement("canvas");
+            const values = actionData.actions.map(action => action[motorIndex]);
+            plot.className = "action-plot";
+            heading.textContent = actionData.motor_names[motorIndex].replaceAll("_", " ");
+            plot.append(heading, canvas);
+            actionPlots.appendChild(plot);
+            drawActionPlot(canvas, values, actionData.joint_hz);
         }
     }
 
     frameRange.addEventListener("input", () => requestFrame(frameRange.value));
     frameNumber.addEventListener("change", () => requestFrame(frameNumber.value));
+    lowLevelRange.addEventListener("input", () => requestLowLevelStep(lowLevelRange.value));
+    lowLevelNumber.addEventListener("change", () => requestLowLevelStep(lowLevelNumber.value));
     playButton.addEventListener("click", togglePlay);
     generateButton.addEventListener("click", exportBranchRequest);
     document.addEventListener("keydown", event => {
@@ -197,6 +306,7 @@ PAGE = """<!doctype html>
             togglePlay();
         }
     });
+    createActionPlots();
 
   setInterval(async () => {
         const state = await (await fetch("/state")).json();
@@ -208,6 +318,16 @@ PAGE = """<!doctype html>
             frameNumber.value = state.current_frame;
         }
         frameLabel.textContent = `${state.current_frame} / ${maxFrame}`;
+        const maxLowLevelStep = Math.max(state.low_level_step_count - 1, 0);
+        lowLevelRange.max = maxLowLevelStep;
+        lowLevelNumber.max = maxLowLevelStep;
+        lowLevelRange.disabled = state.low_level_step_count === 0;
+        lowLevelNumber.disabled = state.low_level_step_count === 0;
+        if (document.activeElement !== lowLevelRange && document.activeElement !== lowLevelNumber) {
+            lowLevelRange.value = state.current_low_level_step;
+            lowLevelNumber.value = state.current_low_level_step;
+        }
+        lowLevelLabel.textContent = state.low_level_step_count === 0 ? "N/A" : `${state.current_low_level_step + 1} / ${state.low_level_step_count}`;
         playButton.textContent = state.auto_play ? "Pause" : "Play";
         status.textContent = state.auto_play ? "Playing" : "Paused";
         durationSeconds.min = state.frame_period;
@@ -229,11 +349,13 @@ class ReplayServer:
     viewer loop never waits on the browser and the MuJoCo window keeps responding on its own.
     """
 
-    def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits):
+    def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits, joint_hz, actions):
         self.state = {
             "sections": [],
             "warnings": [],
             "current_frame": 0,
+            "current_low_level_step": 0,
+            "low_level_step_count": 0,
             "frame_count": frame_count,
             "frame_period": 1.0 / cartesian_hz,
             "motor_names": MOTOR_ORDER,
@@ -243,13 +365,20 @@ class ReplayServer:
         self.port = port
         self.episode_path = str(Path(episode_path).resolve())
         self.branch_request_path = Path(branch_request_path).resolve()
+        self.action_data = {
+            "motor_names": MOTOR_ORDER,
+            "joint_hz": joint_hz,
+            "actions": actions,
+        }
         self.command_queue = queue.SimpleQueue()
 
-    def display(self, sections, warnings, current_frame, auto_play) -> None:
+    def display(self, sections, warnings, current_frame, current_low_level_step, low_level_step_count, auto_play) -> None:
         self.state = {
             "sections": sections,
             "warnings": list(warnings),
             "current_frame": current_frame,
+            "current_low_level_step": current_low_level_step,
+            "low_level_step_count": low_level_step_count,
             "frame_count": self.state["frame_count"],
             "frame_period": self.state["frame_period"],
             "motor_names": self.state["motor_names"],
@@ -271,6 +400,9 @@ class ReplayServer:
                 if self.path == "/state":
                     body = json.dumps(state_of.state).encode()
                     content_type = "application/json"
+                elif self.path == "/actions":
+                    body = json.dumps(state_of.action_data).encode()
+                    content_type = "application/json"
                 else:
                     body = PAGE.encode()
                     content_type = "text/html"
@@ -289,6 +421,13 @@ class ReplayServer:
                         self.send_error(400, "Frame index out of range")
                         return
                     state_of.command_queue.put(("frame", frame_index))
+                elif self.path == "/low-level-step":
+                    content_length = int(self.headers["Content-Length"])
+                    low_level_step = int(self.rfile.read(content_length))
+                    if low_level_step < 0 or low_level_step >= state_of.state["low_level_step_count"]:
+                        self.send_error(400, "Low-level step out of range")
+                        return
+                    state_of.command_queue.put(("low_level_step", low_level_step))
                 elif self.path == "/play":
                     state_of.command_queue.put(("toggle_play", None))
                 elif self.path == "/generate":

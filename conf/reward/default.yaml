@@ -9,9 +9,14 @@ tracking:
 joint_limit_penalty: true
 termination_penalty: true
 sustained_duty_penalty: true
+idle_action_penalty: true
 joint_limit_penalty_factor: 1.0
+
+idle_action_threshold: 0.2
+idle_action_penalty_factor: 5
 
 # Thermal cost of holding duty. Anything up to the allowance is free, since the arm cannot hold
 # itself up on nothing, and only the excess is charged, per joint.
+# TODO verfiy I really want this. It seems kinda dumb.
 sustained_duty_allowance: 1.0  # not active currently
 sustained_duty_penalty_factor: 1.0

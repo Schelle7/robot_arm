@@ -41,6 +41,8 @@ def main(cfg: DictConfig):
         episode_path,
         cfg.branch_request_path,
         duty_limits,
+        recorded_joint_hz,
+        viewer.action_history,
     )
     server.start()
     viewer.run(server.display, server.take_commands)

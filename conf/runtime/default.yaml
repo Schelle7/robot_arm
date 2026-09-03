@@ -3,3 +3,4 @@ draw_tcp: true
 disable_box_collisions: false
 record_sim_state: true
 record_policy_debug: true
+capture_camera: true

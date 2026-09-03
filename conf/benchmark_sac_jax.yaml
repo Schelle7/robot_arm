@@ -1,0 +1,8 @@
+defaults:
+  - config
+  - _self_
+
+benchmark:
+  warmup_iterations: 50
+  measured_iterations: 500
+  updates_per_compiled_block: 10

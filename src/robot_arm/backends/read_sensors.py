@@ -1,3 +1,6 @@
+import time
+
+
 FEEDBACK_REGISTERS = (
     "Present_Position",
     "Present_Velocity",
@@ -70,11 +73,16 @@ def read_block(bus):
     # Address 56 is Present_Position. 15 bytes gets us through Present_Current.
     bus._setup_sync_reader(motor_ids, 56, 15)
 
+    read_started_ns = time.perf_counter_ns()
     comm = bus.sync_reader.txRxPacket()
+    read_completed_ns = time.perf_counter_ns()
     if not bus._is_comm_success(comm):
         raise ConnectionError(f"Block read failed: {bus.packet_handler.getTxRxResult(comm)}")
 
     results = {reg: {} for reg in FEEDBACK_REGISTERS}
+    results["read_started_ns"] = read_started_ns
+    results["read_completed_ns"] = read_completed_ns
+    results["sample_time_ns"] = (read_started_ns + read_completed_ns) // 2
     for name, motor in bus.motors.items():
         i = motor.id
         if not bus.sync_reader.isAvailable(i, 56, 15):

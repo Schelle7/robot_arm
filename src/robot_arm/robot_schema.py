@@ -7,6 +7,40 @@ MOTOR_ORDER = (
     "gripper",
 )
 
+POLICY_OBSERVATION_NAMES = (
+    "joint_positions",
+    "joint_velocities",
+    "remaining_delta",
+    "time_left",
+    "tcp_velocity",
+    "duty_history",
+    "gripper_duty",
+    "desired_gripper_duty",
+    "desired_gripper_duty_active",
+    "gripper_duty_difference",
+)
+
+
+def policy_observation_sizes(cartesian_action_dim: int) -> dict[str, int]:
+    return {
+        "joint_positions": 6,
+        "joint_velocities": 6,
+        "remaining_delta": cartesian_action_dim,
+        "time_left": 1,
+        "tcp_velocity": 6,
+        "duty_history": 6,
+        "gripper_duty": 1,
+        "desired_gripper_duty": 1,
+        "desired_gripper_duty_active": 1,
+        "gripper_duty_difference": 1,
+    }
+
+
+def policy_observation_dim(cartesian_action_dim: int) -> int:
+    sizes = policy_observation_sizes(cartesian_action_dim)
+    assert tuple(sizes) == POLICY_OBSERVATION_NAMES
+    return sum(sizes.values())
+
 BOX_BODY_NAMES = ("box_0", "box_1")
 
 TILE_BODY_NAME = "tile"

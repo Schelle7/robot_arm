@@ -11,7 +11,7 @@ control:
   max_seconds: 45
   frequencies:
     cartesian: 5
-    joint: 5
+    joint: 20
     mujoco: 200
 
 safety:
@@ -22,3 +22,4 @@ safety:
 runtime:
   disable_box_collisions: false
   record_policy_debug: true
+  capture_camera: true

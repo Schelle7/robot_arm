@@ -11,14 +11,14 @@ dependencies = [
     "lerobot[feetech, smolvla]==0.5.1",
     "pytest",
     "mujoco",
-    "gymnasium",
     "numpy",
-    "stable-baselines3",
     "hydra-core",
     "torch",
     "tensorboard",
     "tqdm",
     "scipy",
+    "jax[cuda12]",
+    "optax",
     "black",
     "ruff"
 ]

@@ -1,10 +1,9 @@
 # @package _global_
-# Four low-level control steps per high-level action, so the low level has room to choose how it
-# reaches the one goal the mid level hands it.
 device: "cuda"
 
 runtime:
   record_policy_debug: false
+  capture_camera: false
 
 reward:
   tracking:
@@ -13,7 +12,7 @@ reward:
 control:
   frequencies:
     cartesian: 5
-    joint: 5
+    joint: 20
   staging:
     enabled: false
 
@@ -21,6 +20,10 @@ waypoint:
   position_speed_meters_per_second: 0.05
   rotation_speed_radians_per_second: 0.2
   gripper_speed_radians_per_second: 0.5
+  primitive_probabilities:
+    pick_and_place: 0.0
+    relative_move: 0.0
+    random_waypoint: 1.0
 
 training:
   total_training_steps: 240000

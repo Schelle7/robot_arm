@@ -30,6 +30,8 @@ def test_block_read_matches_naive(bus):
     naive = read_registers_naive(bus)
     block = read_block(bus)
 
+    assert block["read_started_ns"] <= block["sample_time_ns"] <= block["read_completed_ns"]
+
     errors = []
     for reg in naive:
         tol = TOLERANCES.get(reg, 0)

@@ -3,7 +3,6 @@ import glob
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from stable_baselines3 import SAC
 from typing import Dict, Any
 import numpy as np
 from omegaconf import DictConfig
@@ -11,6 +10,7 @@ from omegaconf import DictConfig
 from robot_arm.pose import Pose, axis_angular_distance
 from robot_arm.primitives import ActionPrimitive
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES
+from robot_arm.numpy_policy import load_numpy_policy
 
 
 def latest_vla_checkpoint_path() -> str:
@@ -274,14 +274,13 @@ def find_latest_low_level_checkpoint() -> str:
     if not os.path.exists(outputs_dir):
         raise FileNotFoundError(f"Outputs directory not found at {outputs_dir}.")
 
-    # Search for all "sac_manual_step_final_*.zip" checkpoints inside checkpoints directories
     search_pattern = os.path.join(
         outputs_dir,
         "train_low_level",
         "*",
         "*",
         "checkpoints",
-        "sac_manual_step_final_*.zip",
+        "jax_sac_final_*.pkl",
     )
     checkpoints = glob.glob(search_pattern)
 
@@ -289,7 +288,7 @@ def find_latest_low_level_checkpoint() -> str:
         raise FileNotFoundError("No final low-level policy checkpoints found in any outputs directory.")
 
     # Sort by the YYYY-MM-DD and HH-MM-SS folder names implicitly found in the path
-    # Path structure: .../outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/sac...zip
+    # Path structure: .../outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/jax_sac...pkl
     def extract_datetime_key(filepath):
         parts = filepath.split(os.sep)
         return (parts[-4], parts[-3])
@@ -311,7 +310,7 @@ def resolve_low_level_checkpoint(policy_name: str) -> str:
 
 def load_low_level_policy(checkpoint_path: str):
     print(f"Loading low level policy from: {checkpoint_path}")
-    return SAC.load(checkpoint_path)
+    return load_numpy_policy(checkpoint_path)
 
 
 def load_latest_low_level_policy():

@@ -1,4 +1,5 @@
 import numpy as np
+from collections import deque
 
 from robot_arm.envs.env import RobotEnv
 from robot_arm.pose import Pose
@@ -29,6 +30,74 @@ def make_env() -> RobotEnv:
 
 def make_pose(position, angles, gripper=0.0) -> Pose:
     return Pose.from_euler(position, angles, gripper, "XYZ", False)
+
+
+def test_real_state_history_velocity_uses_sample_timestamps():
+    env = make_env()
+    env.backend = "real"
+    env.state_history_seconds = 0.1
+    env.state_history_intervals = 2
+    env.sample_time_history_ns = deque([900_000_000, 950_000_000], maxlen=3)
+    env.joint_position_history = deque(
+        [np.zeros(6, dtype=np.float32), np.full(6, 0.05, dtype=np.float32)],
+        maxlen=3,
+    )
+    env.tcp_pose_history = deque(
+        [make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]), make_pose([0.005, 0.0, 0.0], [0.0, 0.0, 0.0])],
+        maxlen=3,
+    )
+
+    joint_velocity, tcp_velocity = env._state_history_velocities(
+        np.full(6, 0.1, dtype=np.float32),
+        make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.02]),
+        1_000_000_000,
+    )
+
+    np.testing.assert_allclose(joint_velocity, np.ones(6))
+    np.testing.assert_allclose(tcp_velocity, [0.1, 0.0, 0.0, 0.0, 0.0, 0.2], atol=1e-6)
+
+
+def test_sim_state_history_velocity_uses_configured_seconds():
+    env = make_env()
+    env.backend = "sim"
+    env.state_history_seconds = 0.1
+    env.sample_time_history_ns = deque([800_000_000, 900_000_000], maxlen=3)
+    env.joint_position_history = deque(
+        [np.zeros(6, dtype=np.float32), np.full(6, 0.05, dtype=np.float32)],
+        maxlen=3,
+    )
+    env.tcp_pose_history = deque(
+        [make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]), make_pose([0.005, 0.0, 0.0], [0.0, 0.0, 0.0])],
+        maxlen=3,
+    )
+
+    joint_velocity, tcp_velocity = env._state_history_velocities(
+        np.full(6, 0.1, dtype=np.float32),
+        make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.02]),
+        1_000_000_000,
+    )
+
+    np.testing.assert_allclose(joint_velocity, np.ones(6))
+    np.testing.assert_allclose(tcp_velocity, [0.1, 0.0, 0.0, 0.0, 0.0, 0.2], atol=1e-6)
+
+
+def test_reset_state_history_fills_one_window_without_crossing_episodes():
+    env = make_env()
+    env.joint_hz = 20
+    env.state_history_intervals = 2
+    env.joint_position_history = deque([np.ones(6)], maxlen=3)
+    env.tcp_pose_history = deque([make_pose([1.0, 0.0, 0.0], [0.0, 0.0, 0.0])], maxlen=3)
+    env.sample_time_history_ns = deque([1], maxlen=3)
+    joint_positions = np.full(6, 0.25, dtype=np.float32)
+    tcp_pose = make_pose([0.2, 0.0, 0.3], [0.0, 0.0, 0.0])
+
+    env._reset_state_history(joint_positions, tcp_pose, 1_000_000_000)
+
+    assert len(env.joint_position_history) == 2
+    assert len(env.tcp_pose_history) == 2
+    assert list(env.sample_time_history_ns) == [900_000_000, 950_000_000]
+    np.testing.assert_array_equal(env.joint_position_history[0], joint_positions)
+    assert env.tcp_pose_history[0] is tcp_pose
 
 
 def test_desired_pose_is_constructed_from_one_delta():

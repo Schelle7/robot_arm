@@ -248,12 +248,16 @@ class SimBackend(Arm):
 
     def read_state(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel and the commanded duty to our expected dictionary format
+        sample_time_ns = round(self.data.time * 1_000_000_000)
         state = {
             "Present_Position": {},
             "Present_Velocity": {},
             "Present_Load": {},  # Returning actuator control effort as load
             "Present_Voltage": {},  # Dummy data
             "Present_Temperature": {},  # Dummy data
+            "read_started_ns": sample_time_ns,
+            "read_completed_ns": sample_time_ns,
+            "sample_time_ns": sample_time_ns,
         }
 
         for name, actuator_idx in self.actuator_indices.items():

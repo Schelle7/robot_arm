@@ -38,6 +38,9 @@ class EpisodeRunner:
         if joint_hz % cartesian_hz != 0:
             raise ValueError(f"joint_hz ({joint_hz}) must be divisible by cartesian_hz ({cartesian_hz})")
 
+        if recorder and not cfg.runtime.capture_camera:
+            raise ValueError("Recording an episode requires runtime.capture_camera, the recorder saves a frame per state.")
+
         self.env = env
         self.joint_steps_per_cartesian_action = joint_hz // cartesian_hz
         self.low_level_policy = low_level_policy
@@ -217,7 +220,7 @@ class EpisodeRunner:
         policy_observation: Dict[str, np.ndarray],
         cartesian_action: np.ndarray,
         cartesian_action_start_pose: object,
-        cartesian_action_terminated: bool,
+        cartesian_action_ends: bool,
         desired_gripper_duty: float,
         desired_gripper_duty_active: bool,
     ):
@@ -230,9 +233,11 @@ class EpisodeRunner:
         next_state, reward, reward_breakdown = self.env.step(
             compensated_duty_action,
             policy_observation["joint_positions"],
+            low_level_action,
+            float(policy_observation["time_left"][0]),
             cartesian_action,
             cartesian_action_start_pose,
-            cartesian_action_terminated,
+            cartesian_action_ends,
             desired_gripper_duty,
             desired_gripper_duty_active,
         )
@@ -302,7 +307,7 @@ class EpisodeRunner:
             current_pose = state.end_effector_pose
             gripper_duty = float(state.observation["gripper_duty"][0])
             vla_input_state = self.primitive_policy.build_vla_input_state(primitive, current_pose, gripper_duty)
-            image = self.env.read_camera()
+            image = self.env.read_camera() if self.cfg.runtime.capture_camera else None
             cartesian_action = self.cartesian_policy.get_action(
                 current_pose=current_pose,
                 image=image,
@@ -357,7 +362,7 @@ class EpisodeRunner:
             pass
 
         if policy_weights is not None:
-            self.low_level_policy.policy.load_state_dict(policy_weights)
+            self.low_level_policy.set_actor_params(policy_weights)
 
     def execute_cartesian_action(
         self,
@@ -385,12 +390,13 @@ class EpisodeRunner:
         cartesian_action_reward_metrics = {}
 
         for joint_step in range(1, self.joint_steps_per_cartesian_action + 1):
-            cartesian_action_terminated = self.cfg.training.terminate_at_cartesian_action_end and joint_step == self.joint_steps_per_cartesian_action
+            cartesian_action_ends = joint_step == self.joint_steps_per_cartesian_action
+            cartesian_action_terminated = self.cfg.training.terminate_at_cartesian_action_end and cartesian_action_ends
             low_level_action, duty_compensation, compensated_duty_action, next_state, reward, reward_breakdown = self._step_low_level(
                 policy_observation,
                 cartesian_action,
                 cartesian_action_start_pose_obj,
-                cartesian_action_terminated,
+                cartesian_action_ends,
                 desired_gripper_duty,
                 desired_gripper_duty_active,
             )

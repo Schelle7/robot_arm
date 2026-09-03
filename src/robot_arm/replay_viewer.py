@@ -24,6 +24,11 @@ class ReplayViewer:
         self.joint_positions = data["joint_positions"]
         self.joint_velocities = data["joint_velocities"]
         self.dense_trajectory = data["dense_trajectory"]
+        self.action_history = [
+            [float(value) for value in sample["action"]]
+            for trajectory in self.dense_trajectory
+            for sample in trajectory
+        ]
         self.action_diagnostics = data["cartesian_action_diagnostics"]
         self.completes_active_primitives = data["completes_active_primitive"]
         self.primitive_indices = data["primitive_index"]
@@ -34,13 +39,20 @@ class ReplayViewer:
         if self.num_actions == 0:
             raise ValueError("Replay recording must contain at least one Cartesian action path.")
         self.current_frame = 0
+        self.current_low_level_step = 0
         self.auto_play = False
+
+    def _clamp_low_level_step(self):
+        dense_step_count = len(self.dense_trajectory[self.current_frame]) if self.current_frame < self.num_actions else 0
+        self.current_low_level_step = min(self.current_low_level_step, max(dense_step_count - 1, 0))
 
     def handle_key(self, keycode):
         if keycode == 262:
             self.current_frame = (self.current_frame + 1) % self.num_states
+            self._clamp_low_level_step()
         elif keycode == 263:
             self.current_frame = (self.current_frame - 1) % self.num_states
+            self._clamp_low_level_step()
         elif keycode == 32:
             self.auto_play = not self.auto_play
 
@@ -49,7 +61,10 @@ class ReplayViewer:
         for command, value in take_commands():
             if command == "frame":
                 self.current_frame = value
+                self._clamp_low_level_step()
                 frame_requested = True
+            elif command == "low_level_step":
+                self.current_low_level_step = value
             elif command == "toggle_play":
                 self.auto_play = not self.auto_play
         return frame_requested
@@ -57,6 +72,7 @@ class ReplayViewer:
     def update_frame(self, advance):
         if advance:
             self.current_frame = (self.current_frame + 1) % self.num_states
+            self._clamp_low_level_step()
 
         self.mdata.qpos[:] = self.qpos_recording[self.current_frame]
         self.mdata.qvel[:] = self.qvel_recording[self.current_frame]
@@ -107,9 +123,11 @@ class ReplayViewer:
             action_diagnostics,
             self.completes_active_primitives[self.current_frame] if self.current_frame < self.num_actions else False,
             self.current_frame,
+            self.current_low_level_step,
             self.recorded_cfg,
         )
-        display(display_lines, warnings, self.current_frame, self.auto_play)
+        dense_step_count = len(self.dense_trajectory[self.current_frame]) if self.current_frame < self.num_actions else 0
+        display(display_lines, warnings, self.current_frame, self.current_low_level_step, dense_step_count, self.auto_play)
 
     def run(self, display, take_commands):
         cartesian_hz = self.recorded_cfg.control.frequencies.cartesian

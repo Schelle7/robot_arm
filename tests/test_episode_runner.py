@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from robot_arm.distributed import DummySpaceEnv
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.env import EnvironmentState
 from robot_arm.pose import Pose
+from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES
 
 
 class LowLevelPolicyStub:
@@ -133,8 +133,6 @@ def test_cartesian_action_measures_every_policy_observation_against_one_desired_
 
 
 def test_policy_observation_keys_match_declared_observation_space():
-    cfg = SimpleNamespace(waypoint=SimpleNamespace(cartesian_action_dim=7))
-    observation_space = DummySpaceEnv(cfg).observation_space
     cartesian_action = np.zeros(7, dtype=np.float32)
     environment = EnvironmentStub({"joint_limit_penalty": -1.0})
     low_level_policy = LowLevelPolicyStub()
@@ -159,7 +157,7 @@ def test_policy_observation_keys_match_declared_observation_space():
         False,
     )
 
-    assert set(low_level_policy.observations[0]) == set(observation_space)
+    assert set(low_level_policy.observations[0]) == set(POLICY_OBSERVATION_NAMES)
 
 
 def test_duty_compensation_excludes_gripper():

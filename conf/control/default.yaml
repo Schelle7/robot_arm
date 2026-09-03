@@ -1,9 +1,10 @@
 frequencies:
   cartesian: 5
-  joint: 200
+  joint: 20
   mujoco: 200
 max_seconds: 15
 joint_velocity_scale_radians_per_second: 1.5708  # = pi/2 somewhat random
+state_history_seconds: 0.1
 
 # How far back the duty the policy observes reaches. Short on purpose: it is a stand-in for state,
 # not a safety signal. How to give the policy proper state and let it act against the control delay
