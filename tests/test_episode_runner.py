@@ -26,6 +26,7 @@ class EnvironmentStub:
             "delta_error_norm": 0.3,
         }
         self.received_paths = []
+        self.received_actions = []
         self.pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
 
     def get_end_effector_pose(self):
@@ -35,6 +36,7 @@ class EnvironmentStub:
         pass
 
     def step(self, action, joint_positions, cartesian_action, cartesian_action_start_pose, cartesian_action_terminated, desired_gripper_duty, desired_gripper_duty_active):
+        self.received_actions.append(action)
         self.received_paths.append(cartesian_action)
         return (
             EnvironmentState(
@@ -92,6 +94,8 @@ def make_runner(environment, low_level_policy, metrics_queue, detailed_metrics=T
     runner.joint_velocity_scale = 1.0
     runner.tcp_velocity_scale = 1.0
     runner.cartesian_action_scale = 1.0
+    runner.duty_limits = np.ones(6, dtype=np.float32)
+    runner.duty_compensator = SimpleNamespace(calculate=lambda positions, velocities: np.zeros(6, dtype=np.float32))
     return runner
 
 
@@ -141,7 +145,6 @@ def test_policy_observation_keys_match_declared_observation_space():
         "joint_velocities": np.zeros(6, dtype=np.float32),
         "gripper_duty": np.zeros(1, dtype=np.float32),
         "duty_history": np.zeros(6, dtype=np.float32),
-        "gravity_compensation_duty": np.zeros(6, dtype=np.float32),
         "tcp_velocity": np.zeros(6, dtype=np.float32),
     }
     runner.execute_cartesian_action(
@@ -159,6 +162,29 @@ def test_policy_observation_keys_match_declared_observation_space():
     assert set(low_level_policy.observations[0]) == set(observation_space)
 
 
+def test_duty_compensation_excludes_gripper():
+    environment = EnvironmentStub({"joint_limit_penalty": 0.0})
+    runner = make_runner(environment, LowLevelPolicyStub(), MetricsQueueStub())
+    runner.duty_compensator.calculate = lambda positions, velocities: np.array([0.25, 0.25, 0.25, 0.25, 0.25, 0.0], dtype=np.float32)
+    raw_obs = {
+        "joint_positions": np.zeros(6, dtype=np.float32),
+        "joint_velocities": np.zeros(6, dtype=np.float32),
+        "gripper_duty": np.zeros(1, dtype=np.float32),
+        "duty_history": np.zeros(6, dtype=np.float32),
+        "tcp_velocity": np.zeros(6, dtype=np.float32),
+    }
+
+    runner.execute_cartesian_action(
+        EnvironmentState(raw_obs, {}, environment.pose, None),
+        np.zeros(7, dtype=np.float32),
+        0.0,
+        False,
+    )
+
+    for action in environment.received_actions:
+        np.testing.assert_allclose(action, [0.25, 0.25, 0.25, 0.25, 0.25, 0.0])
+
+
 def test_detailed_metrics_only_include_returned_reward_components():
     reward_breakdown = {"joint_limit_penalty": -2.0}
     environment = EnvironmentStub(reward_breakdown)
@@ -171,7 +197,6 @@ def test_detailed_metrics_only_include_returned_reward_components():
         "joint_velocities": np.zeros(6, dtype=np.float32),
         "gripper_duty": np.zeros(1, dtype=np.float32),
         "duty_history": np.zeros(6, dtype=np.float32),
-        "gravity_compensation_duty": np.zeros(6, dtype=np.float32),
         "tcp_velocity": np.zeros(6, dtype=np.float32),
     }
     runner.execute_cartesian_action(

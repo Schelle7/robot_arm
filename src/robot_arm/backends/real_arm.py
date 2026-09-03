@@ -7,6 +7,7 @@ import mujoco
 
 from robot_arm.backends.arm import Arm
 from robot_arm.backends.read_sensors import read_block, read_configuration
+from robot_arm.backends.sim_arm import get_tcp_geometry
 from robot_arm.pose import Pose
 from robot_arm.robot_schema import MOTOR_ORDER
 
@@ -41,15 +42,7 @@ class RealArm(Arm):
             name: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
             for name in MOTOR_ORDER
         }
-
-        # Cache MuJoCo IDs during initialization
-        self.fixed_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip")
-        self.moving_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "moving_finger_tip")
-        self.gripper_frame_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe")
-
-        # Validate IDs
-        if -1 in (self.fixed_id, self.moving_id, self.gripper_frame_id):
-            raise RuntimeError("One or more MuJoCo site IDs could not be found in the XML.")
+        self.qpos_indices = self.model.jnt_qposadr[np.array([self.joint_indices[name] for name in MOTOR_ORDER])]
 
         # Read once: these decide what a commanded position delta actually does, and lerobot rewrites
         # several of them on every connect, so a run is not interpretable without them.
@@ -92,38 +85,10 @@ class RealArm(Arm):
         return raw_state
 
     def _forward_kinematics_pose(self, present_positions: dict) -> Pose:
-        # Bind raw Joint radians back into MuJoCo FK structural limits
-        for name, rad in present_positions.items():
-            if name in self.joint_indices:
-                qpos_idx = self.model.jnt_qposadr[self.joint_indices[name]]
-                self.data.qpos[qpos_idx] = rad
-
-        # Simulate geometric kinematics
+        self.data.qpos[self.qpos_indices] = np.array([present_positions[name] for name in MOTOR_ORDER])
         mujoco.mj_kinematics(self.model, self.data)
-
-        # Re-derive exact geometric variables
-        fixed_pos = self.data.site_xpos[self.fixed_id]
-        moving_pos = self.data.site_xpos[self.moving_id]
-
-        # Pseudo TCP (middle point)
-        tcp_pos = (fixed_pos + moving_pos) / 2.0
-
-        closing_axis = fixed_pos - moving_pos
-        closing_axis = closing_axis / np.linalg.norm(closing_axis)
-
-        hand_matrix = self.data.site_xmat[self.gripper_frame_id].reshape(3, 3)
-        secondary_axis = hand_matrix[:, 1]
-        secondary_axis = secondary_axis - np.dot(closing_axis, secondary_axis) * closing_axis
-        secondary_axis = secondary_axis / np.linalg.norm(secondary_axis)
-
-        gripper_radians = present_positions["gripper"]
-
-        return Pose.from_tcp_axes(
-            tcp_pos,
-            closing_axis,
-            secondary_axis,
-            gripper_radians,
-        )
+        pose, _, _ = get_tcp_geometry(self.model, self.data)
+        return pose
 
     def get_end_effector_pose_7d_forward_kinematics(self, present_positions: dict) -> np.ndarray:
         pose = self._forward_kinematics_pose(present_positions)

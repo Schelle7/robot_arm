@@ -73,7 +73,7 @@ Continue training from the configured SAC checkpoint with a fresh replay buffer:
 python scripts/train_low_level.py experiment=continue_training
 ```
 
-Replay the latest simulation recording, seek to a frame, and export a fixed-duty branch request:
+Replay the latest simulation recording, seek to a frame, and export a fixed policy-action branch request:
 
 ```bash
 python scripts/replay_sim.py

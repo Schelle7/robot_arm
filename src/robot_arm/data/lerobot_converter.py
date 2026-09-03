@@ -92,15 +92,15 @@ def _build_dataset_features(ref_cfg):
 def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
     current_pose = Pose.from_10d(data["end_effector_pose"][frame_idx])
     recorded_state = data["vla_input_state"][frame_idx]
-    goal_flag = float(recorded_state[len(CURRENT_POSE_NAMES) + len(TARGET_OFFSET_NAMES) - 1])
+    target_offset_flag = float(recorded_state[len(CURRENT_POSE_NAMES) + len(TARGET_OFFSET_NAMES) - 1])
     gripper_duty = float(recorded_state[-1])
-    if goal_flag == 1.0:
+    if target_offset_flag == 1.0:
         primitive_index = int(data["primitive_index"][frame_idx])
         target_pose = Pose.from_10d(data["waypoints"][primitive_index])
         target_offset = current_pose.delta_to(target_pose)
     else:
         target_offset = np.zeros(7, dtype=np.float32)
-    state = np.concatenate([current_pose.as_7d(), target_offset, [goal_flag], [gripper_duty]]).astype(np.float32)
+    state = np.concatenate([current_pose.as_7d(), target_offset, [target_offset_flag], [gripper_duty]]).astype(np.float32)
     return torch.from_numpy(state)
 
 

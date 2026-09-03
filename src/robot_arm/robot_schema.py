@@ -44,7 +44,7 @@ TARGET_OFFSET_NAMES = (
     "target_offset_pitch",
     "target_offset_yaw",
     "target_offset_gripper",
-    "has_explicit_goal",
+    "includes_target_offset",
 )
 
 DUTY_NAMES = ("gripper_duty",)

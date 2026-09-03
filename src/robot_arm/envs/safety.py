@@ -54,9 +54,6 @@ class SafeArmWrapper(Arm):
     def get_tcp_axes(self):
         return self.backend_arm.get_tcp_axes()
 
-    def gravity_compensation_duty(self):
-        return self.backend_arm.gravity_compensation_duty()
-
     def read_state(self) -> Dict[str, Dict[str, float]]:
         state = self.backend_arm.read_state()
 

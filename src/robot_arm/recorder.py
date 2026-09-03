@@ -123,6 +123,8 @@ class EpisodeRecorder:
         reward: float,
         reward_breakdown: Dict[str, float],
         terminated: bool,
+        duty_compensation: np.ndarray,
+        compensated_duty: np.ndarray,
         state,
         next_state,
     ):
@@ -139,6 +141,8 @@ class EpisodeRecorder:
                 "obs": {k: v.copy() for k, v in obs.items() if isinstance(v, np.ndarray)},
                 "next_obs": {k: v.copy() for k, v in next_obs.items() if isinstance(v, np.ndarray)},
                 "action": action.copy(),
+                "duty_compensation": duty_compensation.copy(),
+                "compensated_duty": compensated_duty.copy(),
                 "reward": float(reward),
                 "reward_breakdown": {key: float(value) for key, value in reward_breakdown.items()},
                 "terminated": terminated,

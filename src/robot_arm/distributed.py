@@ -52,7 +52,6 @@ class DummySpaceEnv(gymnasium.Env):
                 "time_left": gymnasium.spaces.Box(low=0.0, high=np.inf, shape=(1,), dtype=np.float32),
                 "tcp_velocity": gymnasium.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32),
                 "duty_history": gymnasium.spaces.Box(low=0.0, high=1.0, shape=(6,), dtype=np.float32),
-                "gravity_compensation_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32),
                 "gripper_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
                 "desired_gripper_duty": gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
                 "desired_gripper_duty_active": gymnasium.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),

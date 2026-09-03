@@ -102,6 +102,8 @@ class GripperSweep:
             0.0,
             {"duty_fraction": next_state["Present_Load"]["gripper"]},
             False,
+            np.zeros(len(MOTOR_ORDER), dtype=np.float32),
+            action,
             SimpleNamespace(end_effector_pose=self.arm.get_tcp_pose(state)),
             SimpleNamespace(end_effector_pose=self.arm.get_tcp_pose(next_state)),
         )

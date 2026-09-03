@@ -3,6 +3,8 @@ import queue
 from omegaconf import DictConfig
 from typing import Dict
 
+from robot_arm.backends.servo import compensated_duty
+from robot_arm.duty_compensation import DutyCompensator
 from robot_arm.policies import CartesianAction, CartesianPolicy, waypoint_action_scale
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.primitives import ActionPrimitive
@@ -48,6 +50,11 @@ class EpisodeRunner:
         self.cfg = cfg
         self.weights_queue = weights_queue
         self.joint_velocity_scale = cfg.control.joint_velocity_scale_radians_per_second
+        self.duty_limits = np.array(
+            [float(cfg.servo.max_duty[motor] / cfg.servo.full_scale_duty) for motor in self.env.motor_order],
+            dtype=np.float32,
+        )
+        self.duty_compensator = DutyCompensator(self.env.arm.model, cfg.servo.stall_torque_newton_meters)
 
         self.cartesian_action_scale = waypoint_action_scale(
             cartesian_hz,
@@ -169,6 +176,8 @@ class EpisodeRunner:
         reward: float,
         reward_breakdown: Dict[str, float],
         cartesian_action_terminated: bool,
+        duty_compensation: np.ndarray,
+        compensated_duty_action: np.ndarray,
         state: EnvironmentState,
         next_state: EnvironmentState,
     ):
@@ -180,6 +189,8 @@ class EpisodeRunner:
                 reward,
                 reward_breakdown,
                 cartesian_action_terminated,
+                duty_compensation,
+                compensated_duty_action,
                 state,
                 next_state,
             )
@@ -211,8 +222,13 @@ class EpisodeRunner:
         desired_gripper_duty_active: bool,
     ):
         low_level_action, _ = self.low_level_policy.predict(policy_observation, deterministic=not self.training)
+        duty_compensation = self.duty_compensator.calculate(
+            policy_observation["joint_positions"],
+            policy_observation["joint_velocities"] * self.joint_velocity_scale,
+        )
+        compensated_duty_action = compensated_duty(low_level_action, duty_compensation, self.duty_limits)
         next_state, reward, reward_breakdown = self.env.step(
-            low_level_action,
+            compensated_duty_action,
             policy_observation["joint_positions"],
             cartesian_action,
             cartesian_action_start_pose,
@@ -224,7 +240,7 @@ class EpisodeRunner:
         if self.cfg.runtime.draw_tcp:
             self.env.arm.draw_tcp()
 
-        return low_level_action, next_state, reward, reward_breakdown
+        return low_level_action, duty_compensation, compensated_duty_action, next_state, reward, reward_breakdown
 
     def _update_cartesian_action_reward_metrics(self, cartesian_action_reward_metrics, reward_breakdown):
         if self.cfg.training.detailed_metrics:
@@ -370,7 +386,7 @@ class EpisodeRunner:
 
         for joint_step in range(1, self.joint_steps_per_cartesian_action + 1):
             cartesian_action_terminated = self.cfg.training.terminate_at_cartesian_action_end and joint_step == self.joint_steps_per_cartesian_action
-            low_level_action, next_state, reward, reward_breakdown = self._step_low_level(
+            low_level_action, duty_compensation, compensated_duty_action, next_state, reward, reward_breakdown = self._step_low_level(
                 policy_observation,
                 cartesian_action,
                 cartesian_action_start_pose_obj,
@@ -397,6 +413,8 @@ class EpisodeRunner:
                 reward,
                 reward_breakdown,
                 cartesian_action_terminated,
+                duty_compensation,
+                compensated_duty_action,
                 state,
                 next_state,
             )

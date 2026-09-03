@@ -38,6 +38,8 @@ def build_replay_display(
     live_pose, _, _ = get_tcp_geometry(model, mdata)
     dense_sample = dense_trajectory[-1] if len(dense_trajectory) else {}
     low_level_action = dense_sample["action"] if dense_sample else None
+    duty_compensation = dense_sample["duty_compensation"] if dense_sample else None
+    compensated_duty_action = dense_sample["compensated_duty"] if dense_sample else None
     low_level_observation = dense_sample["obs"] if dense_sample else {}
     episode_time = frame_index / recorded_cfg.control.frequencies.cartesian
     primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive))]]
@@ -84,7 +86,9 @@ def build_replay_display(
             [
                 vector_row("Position", joint_positions, len(MOTOR_ORDER)),
                 vector_row("Velocity", joint_velocities, len(MOTOR_ORDER)),
-                vector_row("Low-level action", low_level_action, len(MOTOR_ORDER)),
+                vector_row("Policy action", low_level_action, len(MOTOR_ORDER)),
+                vector_row("Duty compensation", duty_compensation, len(MOTOR_ORDER)),
+                vector_row("Compensated duty", compensated_duty_action, len(MOTOR_ORDER)),
             ],
         ),
         section(

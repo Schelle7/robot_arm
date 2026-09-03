@@ -1,5 +1,4 @@
 cartesian_action_dim: 7
-num_waypoints: 3
 duty_completion_tolerance: 0.1
 position_speed_meters_per_second: 0.30
 rotation_speed_radians_per_second: 0.5

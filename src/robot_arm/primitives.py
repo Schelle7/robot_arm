@@ -19,7 +19,7 @@ class ActionPrimitive:
     start_pose: Pose
     target_pose: Pose
     prompt: str
-    has_explicit_goal: bool
+    include_target_offset: bool
     desired_gripper_duty: float
     desired_gripper_duty_active: bool
 
@@ -64,7 +64,21 @@ def generate_pick_and_place(
     grasp_height = float(box_pos[2] + pnp_cfg.grasp_z_offset_meters)
     lift_height = float(box_pos[2] + pnp_cfg.lift_z_offset_meters)
 
-    # 1. Move to box with open gripper
+    open_pose = Pose.from_tcp_axes(
+        position=start_pose.position,
+        closing_axis=start_pose.closing_axis,
+        secondary_axis=start_pose.secondary_axis,
+        gripper=float(pnp_cfg.gripper_open_radians),
+    )
+    open_gripper = ActionPrimitive(
+        start_pose=start_pose,
+        target_pose=open_pose,
+        prompt="open gripper",
+        include_target_offset=False,
+        desired_gripper_duty=0.0,
+        desired_gripper_duty_active=False,
+    )
+
     approach_pose = generate_oriented_waypoint(
         model=model,
         data=data,
@@ -73,17 +87,30 @@ def generate_pick_and_place(
         pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_open_radians),
     )
-    p1 = ActionPrimitive(
-        start_pose=start_pose,
+    move_to_box = ActionPrimitive(
+        start_pose=open_pose,
         target_pose=approach_pose,
-        prompt=f"move to {box_color} box and open gripper",
-        has_explicit_goal=False,
+        prompt=f"move to {box_color} box",
+        include_target_offset=False,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
     )
 
-    # 2. Close gripper and lift box
-    # TODO: Potentially also sample a feasible lift orientation while keeping the gripper closed.
+    closed_approach_pose = Pose.from_tcp_axes(
+        position=approach_pose.position,
+        closing_axis=approach_pose.closing_axis,
+        secondary_axis=approach_pose.secondary_axis,
+        gripper=float(pnp_cfg.gripper_closed_radians),
+    )
+    close_gripper = ActionPrimitive(
+        start_pose=approach_pose,
+        target_pose=closed_approach_pose,
+        prompt="close gripper",
+        include_target_offset=False,
+        desired_gripper_duty=float(pnp_cfg.desired_gripper_duty),
+        desired_gripper_duty_active=True,
+    )
+
     lift_pose = generate_oriented_waypoint(
         model=model,
         data=data,
@@ -92,16 +119,15 @@ def generate_pick_and_place(
         pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
-    p2 = ActionPrimitive(
-        start_pose=approach_pose,
+    lift_object = ActionPrimitive(
+        start_pose=closed_approach_pose,
         target_pose=lift_pose,
-        prompt=f"close gripper and lift {box_color} box",
-        has_explicit_goal=True,
+        prompt="lift object",
+        include_target_offset=False,
         desired_gripper_duty=float(pnp_cfg.desired_gripper_duty),
         desired_gripper_duty_active=True,
     )
 
-    # 3. Carry the box across at lift height, so it descends onto the tile rather than into it
     transport_pose = generate_oriented_waypoint(
         model=model,
         data=data,
@@ -110,34 +136,56 @@ def generate_pick_and_place(
         pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
-    p3 = ActionPrimitive(
+    move_above_tile = ActionPrimitive(
         start_pose=lift_pose,
         target_pose=transport_pose,
         prompt=f"move {box_color} box above the {tile_color} tile",
-        has_explicit_goal=True,
+        include_target_offset=False,
         desired_gripper_duty=float(pnp_cfg.desired_gripper_duty),
         desired_gripper_duty_active=True,
     )
 
-    # 4. Lower and release
     place_pose = generate_oriented_waypoint(
         model=model,
         data=data,
         position=np.array([tile_pos[0], tile_pos[1], grasp_height], dtype=np.float32),
         pointing_axis_tilt_degrees=45.0,
         pointing_axis_rotation_degrees=90.0,
-        gripper=float(pnp_cfg.gripper_open_radians),
+        gripper=float(pnp_cfg.gripper_closed_radians),
     )
-    p4 = ActionPrimitive(
+    lower_object = ActionPrimitive(
         start_pose=transport_pose,
         target_pose=place_pose,
-        prompt=f"place {box_color} box on the {tile_color} tile",
-        has_explicit_goal=False,
+        prompt=f"lower {box_color} box onto the {tile_color} tile",
+        include_target_offset=False,
+        desired_gripper_duty=float(pnp_cfg.desired_gripper_duty),
+        desired_gripper_duty_active=True,
+    )
+
+    release_pose = Pose.from_tcp_axes(
+        position=place_pose.position,
+        closing_axis=place_pose.closing_axis,
+        secondary_axis=place_pose.secondary_axis,
+        gripper=float(pnp_cfg.gripper_open_radians),
+    )
+    release_object = ActionPrimitive(
+        start_pose=place_pose,
+        target_pose=release_pose,
+        prompt="open gripper",
+        include_target_offset=False,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
     )
 
-    return [p1, p2, p3, p4]
+    return [
+        open_gripper,
+        move_to_box,
+        close_gripper,
+        lift_object,
+        move_above_tile,
+        lower_object,
+        release_object,
+    ]
 
 
 def _sample_displacement_centimeters(value_range) -> int:
@@ -190,7 +238,7 @@ def generate_relative_moves(
         start_pose=start_pose,
         target_pose=target_pose,
         prompt=_relative_move_prompt(x_cm, y_cm, z_cm),
-        has_explicit_goal=True,
+        include_target_offset=True,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
     )
@@ -219,7 +267,7 @@ def generate_random_waypoint(
             start_pose=start_pose,
             target_pose=target_pose,
             prompt="move according to the provided target delta",
-            has_explicit_goal=True,
+            include_target_offset=True,
             desired_gripper_duty=0.0,
             desired_gripper_duty_active=False,
         )

@@ -45,6 +45,16 @@ def duty_from_action(
     return np.where(np.abs(duty) < min_startup_duty, 0.0, duty)
 
 
+def compensated_duty(
+    policy_action: np.ndarray,
+    duty_compensation: np.ndarray,
+    duty_limits: np.ndarray,
+) -> np.ndarray:
+    positive_headroom = duty_limits - duty_compensation
+    negative_headroom = duty_limits + duty_compensation
+    return duty_compensation + np.where(policy_action >= 0.0, policy_action * positive_headroom, policy_action * negative_headroom)
+
+
 def torque_to_duty(
     torque_newton_meters: np.ndarray,
     stall_torque_newton_meters: float,

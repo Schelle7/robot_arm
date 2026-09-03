@@ -113,7 +113,6 @@ class RobotEnv:
             "gripper_duty": np.array([state_dict["Present_Load"]["gripper"]], dtype=np.float32),
             "duty_history": self.duty_history.copy(),
             "tcp_velocity": tcp_velocity,
-            "gravity_compensation_duty": self.arm.gravity_compensation_duty(),
         }
 
         return EnvironmentState(

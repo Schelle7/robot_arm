@@ -5,7 +5,7 @@ import numpy as np
 from robot_arm.backends.arm import Arm
 from robot_arm.experimental_waypoints import shoulder_pan_position
 from robot_arm.pose import Pose
-from robot_arm.backends.servo import duty_from_action, duty_to_torque, torque_to_duty
+from robot_arm.backends.servo import duty_from_action, duty_to_torque
 from robot_arm.robot_schema import BOX_BODY_NAMES, OBJECT_COLORS, TILE_BODY_NAME
 
 
@@ -270,17 +270,6 @@ class SimBackend(Arm):
             state["Present_Temperature"][name] = 40.0
 
         return state
-
-    def gravity_compensation_duty(self) -> np.ndarray:
-        """
-        The duty each joint needs to stand still where it is. qfrc_bias is the torque that cancels
-        gravity and the velocity dependent terms, which mj_step has already computed for the state
-        the last read reported.
-        """
-        return torque_to_duty(
-            self.data.qfrc_bias[self.actuator_dof_indices],
-            self.servo.stall_torque_newton_meters,
-        ).astype(np.float32)
 
     def sim_state(self) -> Dict[str, np.ndarray]:
         """The simulator's own state, which no sensor on the real arm can report."""

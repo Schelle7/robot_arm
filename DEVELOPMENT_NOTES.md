@@ -1,112 +1,30 @@
-# SO-101 follower arm
+# Development notes
 
-Personal control code and experiments for an SO-101 **follower** arm using
-[LeRobot](https://huggingface.co/docs/lerobot).
+## Control stack
 
-## Environment
+1. SmolVLA maps camera images, prompts, and proprioception to Cartesian pose deltas and primitive completion.
+2. SAC maps Cartesian tracking state to joint-duty actions centered on model-derived compensation.
+3. The backend applies duties in MuJoCo or communicates with the physical SO-101.
 
-A conda env named `lerobot` (Python 3.12, with `ffmpeg`) has already been created.
-Activate it before doing anything:
+Pick-and-place uses separate open, approach, close, lift, transport, lower, and release primitives. Visual primitives retain privileged targets for supervision but do not expose target offsets to SmolVLA.
 
-```bash
-conda activate lerobot
-```
+## Backend status
 
-## Install
+- Simulation supports duty-driven motor dynamics and state replay.
+- Hardware position, velocity, load, temperature, voltage, and current reads are available.
+- Real-arm direct PWM duty output is not implemented.
 
-Installs this project plus `lerobot[feetech]` (Feetech STS3215 motor support) into
-the active `lerobot` env:
+## Local cameras
 
-```bash
-make install
-```
+| Device | Source | Usable mode |
+| --- | --- | --- |
+| `/dev/video0` | ACER laptop camera | 640x480 at 30 Hz |
+| `/dev/video2` | Pixel Android webcam | 640x480 at 30 Hz |
 
-## Hardware checklist (before plugging in)
+The corresponding metadata nodes, `/dev/video1` and `/dev/video3`, are not video sources.
 
-- USB-C cable: computer -> controller board (logic/serial).
-- DC power supply -> controller board (**required** to power the servos).
-- On power-up the servos come up with torque **disabled**: the arm is limp and
-  will not move on its own. It only moves when a command is sent.
-
-## Remaining steps
-
-Order matters. Run each with the `lerobot` env active.
-
-### 1. Find the USB port
+## MuJoCo viewer
 
 ```bash
-make find-port          # wraps: lerobot-find-port
-```
-
-Note the reported device, e.g. `/dev/ttyACM0`.
-
-#### Serial port permissions (Linux)
-
-On Linux your user needs permission to open the serial device, otherwise every
-connection fails with `PermissionError: [Errno 13] Permission denied` (which can
-masquerade as a "cannot connect / wrong port" error).
-
-Temporary (resets when the device is replugged or on reboot):
-
-```bash
-sudo chmod 666 /dev/ttyACM0
-```
-
-Permanent (recommended) — add your user to the `dialout` group once, then log
-out and back in for it to take effect:
-
-```bash
-sudo usermod -aG dialout $USER
-```
-
-### 2. Set motor IDs and baudrate (once per set of motors)
-
-Only needed if the motors were **not** pre-configured with IDs 1-6.
-Requires connecting **one motor at a time** to the controller board, so you must
-unplug the 3-pin daisy-chain cables between joints and step through them
-(gripper -> wrist_roll -> wrist_flex -> elbow_flex -> shoulder_lift -> shoulder_pan),
-then re-chain them afterwards. No disassembly of the arm is required.
-
-```bash
-lerobot-setup-motors --robot.type=so101_follower --robot.port=/dev/ttyACM0
-```
-
-Skip this step if the arm already talks to all 6 motors (see step 4).
-
-### 3. Calibrate
-
-```bash
-lerobot-calibrate --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=my_follower
-```
-
-### 4. Sanity check
-
-Reads motor positions from the follower to confirm the bus is working:
-
-```bash
-make test PORT=/dev/ttyACM0
-```
-
-## Layout
-
-```
-robot_arm/
-├── pyproject.toml      # this project; depends on lerobot[feetech]
-├── Makefile            # install / find-port / test helpers
-└── src/robot_arm/
-    ├── __init__.py
-    └── check_arm.py    # connects to the follower and prints motor positions
-```
-
-
-
-Node\tDevice\tUsable
-video0\tACER HD User Facing (built-in laptop webcam)\tyes, 640x480@30
-video1\tACER (metadata node)\tno
-video2\tPixel 10 Pro: Android Webcam\tyes, 640x480@30
-video3\tPixel (metadata node)\tno
-
-
-
-visualize the arm:
 python -m mujoco.viewer --mjcf models/so101/scene.xml
+```

@@ -6,7 +6,7 @@ from robot_arm.experimental_waypoints import base_rotation_for_position, generat
 from robot_arm.policies import ScriptedCartesianPolicy
 from robot_arm.pose import Pose
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.primitives import ActionPrimitive, generate_relative_moves
+from robot_arm.primitives import ActionPrimitive, generate_pick_and_place, generate_relative_moves
 
 
 def make_policy():
@@ -28,12 +28,12 @@ def make_policy():
     return ScriptedCartesianPolicy(cfg)
 
 
-def make_primitive(start_pose: Pose, target_pose: Pose, prompt: str = "follow waypoint", has_explicit_goal: bool = True) -> ActionPrimitive:
+def make_primitive(start_pose: Pose, target_pose: Pose, prompt: str = "follow waypoint", include_target_offset: bool = True) -> ActionPrimitive:
     return ActionPrimitive(
         start_pose=start_pose,
         target_pose=target_pose,
         prompt=prompt,
-        has_explicit_goal=has_explicit_goal,
+        include_target_offset=include_target_offset,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
     )
@@ -125,6 +125,62 @@ def test_scripted_primitive_policy_updates_remaining_target_offset():
 
     np.testing.assert_allclose(vla_input_state[:7], current_pose.as_7d())
     np.testing.assert_allclose(vla_input_state[7:10], [0.06, 0.0, 0.0])
+
+
+def test_scripted_primitive_policy_hides_privileged_target_offset():
+    primitive_policy = ScriptedPrimitiveGeneratorPolicy(OmegaConf.create({}))
+    current_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    target_pose = Pose.from_euler([0.1, 0.2, 0.3], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    primitive = make_primitive(current_pose, target_pose, "move above the red tile", include_target_offset=False)
+
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, current_pose, 0.25)
+
+    np.testing.assert_array_equal(vla_input_state[7:14], np.zeros(7, dtype=np.float32))
+    assert vla_input_state[14] == 0.0
+    assert primitive.target_pose is target_pose
+
+
+def test_pick_and_place_uses_single_purpose_primitives():
+    model = mujoco.MjModel.from_xml_path("models/so101/scene.xml")
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    cfg = OmegaConf.create(
+        {
+            "waypoint": {
+                "pick_and_place": {
+                    "grasp_z_offset_meters": 0.01,
+                    "lift_z_offset_meters": 0.08,
+                    "gripper_open_radians": 0.8,
+                    "gripper_closed_radians": 0.0,
+                    "desired_gripper_duty": 0.35,
+                }
+            }
+        }
+    )
+    start_pose = Pose.from_euler([0.35, 0.0, 0.25], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+
+    primitives = generate_pick_and_place(model, data, cfg, start_pose)
+
+    assert len(primitives) == 7
+    assert primitives[0].prompt == "open gripper"
+    assert primitives[1].prompt.startswith("move to ")
+    assert primitives[2].prompt == "close gripper"
+    assert primitives[3].prompt == "lift object"
+    assert " above the " in primitives[4].prompt
+    assert primitives[5].prompt.startswith("lower ")
+    assert primitives[6].prompt == "open gripper"
+    assert not any(primitive.include_target_offset for primitive in primitives)
+    assert [primitive.desired_gripper_duty_active for primitive in primitives] == [
+        False,
+        False,
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
+    for current, following in zip(primitives, primitives[1:]):
+        np.testing.assert_allclose(current.target_pose.as_10d(), following.start_pose.as_10d())
 
 
 def test_relative_move_prompt_states_the_commanded_offset_exactly():

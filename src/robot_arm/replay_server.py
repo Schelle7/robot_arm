@@ -54,7 +54,7 @@ PAGE = """<!doctype html>
     <button id="playButton" type="button">Play</button>
 </div>
 <div class="branch-controls">
-    <h2>Fixed-duty branch</h2>
+    <h2>Fixed policy-action branch</h2>
     <div id="dutyGrid" class="duty-grid"></div>
     <div class="generation-row">
         <label for="durationSeconds">Duration (seconds)<input id="durationSeconds" type="number" min="0.2" step="0.2" value="1.0"></label>
