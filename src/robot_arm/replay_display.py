@@ -24,8 +24,8 @@ def section(title, columns, rows):
 def primitive_diagnostic_rows(action_diagnostics):
     diagnostic_pairs = (
         ("Position", "position_distance", "position_threshold"),
-        ("Primary orientation", "primary_orientation_distance", "orientation_threshold"),
-        ("Secondary orientation", "secondary_orientation_distance", "orientation_threshold"),
+        ("Primary orientation", "primary_orientation_distance", "primary_orientation_threshold"),
+        ("Secondary orientation", "secondary_orientation_distance", "secondary_orientation_threshold"),
         ("Gripper position", "gripper_distance", "gripper_threshold"),
         ("Gripper duty", "gripper_duty_distance", "duty_threshold"),
     )
@@ -81,6 +81,7 @@ def build_replay_display(
             "Overview",
             ["Metric", "Value"],
             [
+                ["Replay type", str(recorded_cfg.backend)],
                 ["Policy", str(recorded_cfg.policy_name)],
                 ["Episode time", f"{episode_time:.2f} s"],
                 ["Frame", str(frame_index)],

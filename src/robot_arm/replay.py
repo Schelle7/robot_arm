@@ -62,8 +62,6 @@ def recorded_model_path(episode_path: str, recorded_cfg: DictConfig) -> str:
 
 def load_recorded_timing(episode_path: str):
     recorded_cfg = load_recorded_config(episode_path)
-    if recorded_cfg.backend != "sim":
-        raise ValueError(f"replay_sim.py requires a simulation recording, got {recorded_cfg.backend!r}.")
     return recorded_cfg
 
 
@@ -76,10 +74,19 @@ def load_replay_recording(cfg: DictConfig):
 
     recorded_cfg = load_recorded_timing(episode_path)
     data = np.load(episode_path, allow_pickle=True)
-    num_states = len(data["qpos"])
     num_actions = len(data["cartesian_action"])
-    if num_states != num_actions + 1:
-        raise ValueError("Replay recording must contain one more state than Cartesian action paths.")
+    if recorded_cfg.backend == "sim":
+        state_key = "qpos"
+        num_states = len(data[state_key])
+        if num_states != num_actions + 1:
+            raise ValueError(f"Invalid sim replay: {num_states} states for {num_actions} Cartesian actions.")
+    elif recorded_cfg.backend == "real":
+        state_key = "joint_positions"
+        num_states = len(data[state_key])
+        if num_states not in (num_actions, num_actions + 1):
+            raise ValueError(f"Invalid real replay: {num_states} states for {num_actions} Cartesian actions.")
+    else:
+        raise ValueError(f"Unsupported replay backend: {recorded_cfg.backend!r}.")
     return episode_path, recorded_cfg, data
 
 

@@ -171,7 +171,9 @@ class SimBackend(Arm):
         model_path: str,
         height: int,
         width: int,
+        initial_joint_mode: str,
         initial_joint_range_percent: tuple[float, float],
+        initial_joint_positions,
         disable_box_collisions: bool,
         object_placement,
         mujoco_steps_per_control_step: int,
@@ -187,7 +189,9 @@ class SimBackend(Arm):
                 self.model.geom_contype[geom_start : geom_start + geom_count] = 0
                 self.model.geom_conaffinity[geom_start : geom_start + geom_count] = 0
         self.data = mujoco.MjData(self.model)
+        self.initial_joint_mode = initial_joint_mode
         self.initial_joint_range_percent = initial_joint_range_percent
+        self.initial_joint_positions = initial_joint_positions
         self.object_placement = object_placement
         self.mujoco_steps_per_control_step = mujoco_steps_per_control_step
         self.servo = servo
@@ -368,17 +372,24 @@ class SimBackend(Arm):
         self.model.body_pos[tile_id] = (*positions[-1], self._resting_height(tile_id))
         self._paint(tile_id, colors[-1])
 
-    def randomize_arm_pos(self):
-        for name, joint_id in self.joint_indices.items():
-            jnt_range = self.model.jnt_range[joint_id]
-            qpos_idx = self.model.jnt_qposadr[joint_id]
+    def initialize_arm_pos(self):
+        if self.initial_joint_mode == "random_range":
+            for name, joint_id in self.joint_indices.items():
+                jnt_range = self.model.jnt_range[joint_id]
+                qpos_idx = self.model.jnt_qposadr[joint_id]
 
-            jmin, jmax = jnt_range[0], jnt_range[1]
-            span = jmax - jmin
-            min_percent, max_percent = self.initial_joint_range_percent
-            safe_min = jmin + (min_percent / 100.0) * span
-            safe_max = jmin + (max_percent / 100.0) * span
-            self.data.qpos[qpos_idx] = np.random.uniform(safe_min, safe_max)
+                jmin, jmax = jnt_range[0], jnt_range[1]
+                span = jmax - jmin
+                min_percent, max_percent = self.initial_joint_range_percent
+                safe_min = jmin + (min_percent / 100.0) * span
+                safe_max = jmin + (max_percent / 100.0) * span
+                self.data.qpos[qpos_idx] = np.random.uniform(safe_min, safe_max)
+        elif self.initial_joint_mode == "fixed":
+            for name, joint_id in self.joint_indices.items():
+                qpos_idx = self.model.jnt_qposadr[joint_id]
+                self.data.qpos[qpos_idx] = self.initial_joint_positions[name]
+        else:
+            raise ValueError(f"Unknown initial joint mode: {self.initial_joint_mode!r}")
 
     def reset_sim(self):
         mujoco.mj_resetData(self.model, self.data)
@@ -387,7 +398,7 @@ class SimBackend(Arm):
         mujoco.mj_forward(self.model, self.data)
 
         self.randomize_objects()
-        self.randomize_arm_pos()
+        self.initialize_arm_pos()
 
         mujoco.mj_forward(self.model, self.data)
 

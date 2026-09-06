@@ -10,6 +10,7 @@ MOTOR_ORDER = (
 POLICY_OBSERVATION_NAMES = (
     "joint_positions",
     "joint_velocities",
+    "previous_action",
     "remaining_delta",
     "time_left",
     "tcp_velocity",
@@ -25,6 +26,7 @@ def policy_observation_sizes(cartesian_action_dim: int) -> dict[str, int]:
     return {
         "joint_positions": 6,
         "joint_velocities": 6,
+        "previous_action": 6,
         "remaining_delta": cartesian_action_dim,
         "time_left": 1,
         "tcp_velocity": 6,

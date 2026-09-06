@@ -7,12 +7,18 @@ primitive_probabilities:
   pick_and_place: 0.25
   relative_move: 0.25
   random_waypoint: 0.5
+completion_tolerance:
+  position_meters: 0.01
+  primary_rotation_radians: 0.08
+  secondary_rotation_radians: 0.12
+  gripper_radians: 0.1
+
 random_pose:
   gripper_radians: [0.0, 1.7453292]
   shoulder_distance_meters: [0.30, 0.45]
   base_rotation_degrees: [-90.0, 90.0]
   height_meters: [0.1, 0.40]
-  pointing_axis_tilt_degrees: [-45.0, 45.0]
+  pointing_axis_tilt_degrees: [-10.0, 45.0]
   pointing_axis_rotation_degrees: [-150.0, 150.0]
 
 pick_and_place:

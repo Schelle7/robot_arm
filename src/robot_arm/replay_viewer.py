@@ -2,6 +2,7 @@ import time
 
 import mujoco
 import mujoco.viewer
+import numpy as np
 
 from robot_arm.backends.sim_arm import (
     update_desired_pose_debug_user_scene,
@@ -10,6 +11,7 @@ from robot_arm.backends.sim_arm import (
 )
 from robot_arm.replay import calculate_pose_delta, get_desired_poses
 from robot_arm.replay_display import build_replay_display
+from robot_arm.robot_schema import MOTOR_ORDER
 
 
 class ReplayViewer:
@@ -17,9 +19,19 @@ class ReplayViewer:
         self.recorded_cfg = recorded_cfg
         self.window_title = window_title
         self.model = mujoco.MjModel.from_xml_path(model_path)
+        floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+        self.model.geom_rgba[floor_id, 3] = 0.25
         self.mdata = mujoco.MjData(self.model)
-        self.qpos_recording = data["qpos"]
-        self.qvel_recording = data["qvel"]
+        self.has_sim_state = recorded_cfg.backend == "sim"
+        if self.has_sim_state:
+            self.qpos_recording = data["qpos"]
+            self.qvel_recording = data["qvel"]
+        else:
+            joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in MOTOR_ORDER]
+            self.qpos_recording = np.tile(self.model.qpos0, (len(data["joint_positions"]), 1))
+            self.qvel_recording = np.zeros((len(data["joint_velocities"]), self.model.nv))
+            self.qpos_recording[:, self.model.jnt_qposadr[joint_ids]] = data["joint_positions"]
+            self.qvel_recording[:, self.model.jnt_dofadr[joint_ids]] = data["joint_velocities"]
         self.desired_actions = data["cartesian_action"]
         self.joint_positions = data["joint_positions"]
         self.joint_velocities = data["joint_velocities"]
@@ -87,6 +99,8 @@ class ReplayViewer:
             self.desired_actions,
             self.current_frame,
         )
+        if self.current_frame + 1 >= self.num_states:
+            return desired_poses, (None, None)
         observed_pose_delta = calculate_pose_delta(
             self.recorded_poses[self.current_frame],
             self.recorded_poses[self.current_frame + 1],

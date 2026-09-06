@@ -13,6 +13,16 @@ control:
     cartesian: 5
     joint: 20
     mujoco: 200
+  initial_joints:
+    mode: random_range
+    range_percent: [45.0, 55.0]
+    positions_radians:
+      shoulder_pan: 0.0
+      shoulder_lift: 0.0
+      elbow_flex: 0.0
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 0.0
 
 safety:
   max_temperature_celsius: 45.0

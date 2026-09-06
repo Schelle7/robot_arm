@@ -10,7 +10,7 @@ defaults:
   - scene: default
   - training: default
   - waypoint: default
-  - experiment: debug
+  - experiment: default
 
 hydra:
   run:

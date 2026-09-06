@@ -96,7 +96,8 @@ def read_block(bus):
         temp = bus.sync_reader.getData(i, 63, 1)
         current = bus.sync_reader.getData(i, 69, 2)
 
-        # Velocity and Load are sign-magnitude encoded, handle decoding
+        # Match bus.sync_read(normalize=False): position is signed too (bit 15).
+        pos = bus._decode_sign("Present_Position", {i: pos})[i]
         vel = bus._decode_sign("Present_Velocity", {i: vel})[i]
         load = bus._decode_sign("Present_Load", {i: load})[i]
 

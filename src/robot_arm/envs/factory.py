@@ -23,7 +23,9 @@ def make_env(cfg: DictConfig, output_dir: str):
             model_path=cfg.model_path,
             height=height,
             width=width,
+            initial_joint_mode=cfg.control.initial_joints.mode,
             initial_joint_range_percent=cfg.control.initial_joints.range_percent,
+            initial_joint_positions=cfg.control.initial_joints.positions_radians,
             disable_box_collisions=cfg.runtime.disable_box_collisions,
             object_placement=cfg.scene.object_placement,
             mujoco_steps_per_control_step=cfg.control.frequencies.mujoco // cfg.control.frequencies.joint,
@@ -43,6 +45,9 @@ def make_env(cfg: DictConfig, output_dir: str):
             model_path=cfg.model_path,
             control_step_seconds=1.0 / cfg.control.frequencies.joint,
         )
+        # After connect, because SO101Follower.configure writes Operating_Mode back to position.
+        backend.set_pwm_mode()
+
         # Prevent garbage collection of the follower object
         backend.follower_keepalive = follower
     else:

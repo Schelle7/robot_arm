@@ -10,10 +10,12 @@ joint_limit_penalty: true
 termination_penalty: true
 sustained_duty_penalty: true
 idle_action_penalty: true
+action_change_penalty: true
 joint_limit_penalty_factor: 1.0
 
 idle_action_threshold: 0.2
 idle_action_penalty_factor: 5
+action_change_penalty_factor: 0.3
 
 # Thermal cost of holding duty. Anything up to the allowance is free, since the arm cannot hold
 # itself up on nothing, and only the excess is charged, per joint.

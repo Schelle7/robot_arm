@@ -58,14 +58,10 @@ Train the low-level policy:
 python scripts/train_low_level.py
 ```
 
-The `debug` experiment first treats low-level control as one-step inverse
+The default experiment first treats low-level control as one-step inverse
 kinematics: each terminal transition maps the current joint state and one desired
 Cartesian pose delta to one joint delta. This isolates the low-level mapping
 before introducing terminal multi-step action paths.
-
-```bash
-python scripts/train_low_level.py experiment=debug
-```
 
 Continue training from the configured SAC checkpoint with a fresh replay buffer:
 
@@ -76,7 +72,7 @@ python scripts/train_low_level.py experiment=continue_training
 Replay the latest simulation recording, seek to a frame, and export a fixed policy-action branch request:
 
 ```bash
-python scripts/replay_sim.py
+python scripts/replay.py
 ```
 
 After exporting the request in the browser, close replay and generate the branch through the normal
@@ -84,7 +80,7 @@ episode hierarchy. Start replay again afterward to inspect the newly generated r
 
 ```bash
 python scripts/rollout_fixed_duty.py
-python scripts/replay_sim.py
+python scripts/replay.py
 ```
 
 Convert recorded Cartesian demonstrations to a LeRobot dataset:

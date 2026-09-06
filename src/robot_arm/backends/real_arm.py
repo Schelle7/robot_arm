@@ -4,9 +4,11 @@ import time
 import numpy as np
 from typing import Dict
 import mujoco
+from lerobot.motors.feetech import OperatingMode
 
 from robot_arm.backends.arm import Arm
 from robot_arm.backends.read_sensors import read_block, read_configuration
+from robot_arm.backends.servo import CURRENT_AMPS_PER_TICK, FULL_SCALE_DUTY
 from robot_arm.backends.sim_arm import get_tcp_geometry
 from robot_arm.pose import Pose
 from robot_arm.robot_schema import MOTOR_ORDER
@@ -32,6 +34,9 @@ class RealArm(Arm):
         self.max_res = 4096  # STS3215 specific (12-bit encoder)
         self.deg_to_rad = math.pi / 180.0
         self.velocity_scale = 2.0 * math.pi / 4096.0  # units are ticks/sec, so 1 tick/sec is (2*pi/4096) rad/s
+        # Position mode applies Homing_Offset in firmware; PWM feedback does not.
+        # Cache modes rather than adding six serial transactions to every control step.
+        self.operating_modes = {name: self.bus.read("Operating_Mode", name, normalize=False) for name in MOTOR_ORDER}
 
         # Initialize Headless MuJoCo for Forward Kinematics (FK)
         self.model = mujoco.MjModel.from_xml_path(model_path)
@@ -66,7 +71,15 @@ class RealArm(Arm):
         raw_state = read_block(self.bus)
         raw_state["python_recording_time"] = time.time()
 
-        calibrated_positions = self.bus._normalize({self.bus.motors[name].id: tick for name, tick in raw_state["Present_Position"].items()})
+        position_ticks = {}
+        for name, tick in raw_state["Present_Position"].items():
+            if self.operating_modes[name] == OperatingMode.PWM.value:
+                # Measured at the same stationary pose in both modes: PWM returns
+                # the unhomed encoder count. Restore the position-mode frame BEFORE
+                # LeRobot centers/scales it (and before it clips the gripper).
+                tick = (tick - self.bus.calibration[name].homing_offset) % self.max_res
+            position_ticks[self.bus.motors[name].id] = tick
+        calibrated_positions = self.bus._normalize(position_ticks)
         for name, tick in raw_state["Present_Position"].items():
             calibrated_value = calibrated_positions[self.bus.motors[name].id]
             if name == "gripper":
@@ -75,12 +88,18 @@ class RealArm(Arm):
             else:
                 raw_state["Present_Position"][name] = calibrated_value * self.deg_to_rad
 
-        # Convert duty from raw units (-1000 to 1000) to normalized float (-1.0 to 1.0)
+        # Feetech's PWM sign is opposite the model joint-angle direction measured on all six motors.
         for name, load_tick in raw_state["Present_Load"].items():
-            raw_state["Present_Load"][name] = load_tick / 1000.0
+            raw_state["Present_Load"][name] = -load_tick / 1000.0
 
         for name, vel_tick in raw_state["Present_Velocity"].items():
             raw_state["Present_Velocity"][name] = vel_tick * self.velocity_scale
+
+        for name, current_tick in raw_state["Present_Current"].items():
+            raw_state["Present_Current"][name] = current_tick * CURRENT_AMPS_PER_TICK
+
+        for name, voltage_tick in raw_state["Present_Voltage"].items():
+            raw_state["Present_Voltage"][name] = voltage_tick * 0.1
 
         return raw_state
 
@@ -104,12 +123,45 @@ class RealArm(Arm):
         print("\033[93mWARNING: READ_CAMERA NOT IMPLEMENTED FOR REAL ARM YET! RETURN DUMMY IMAGE\033[0m")
         return np.zeros((480, 640, 3), dtype=np.uint8)
 
+    def set_pwm_mode(self) -> None:
+        """
+        Operating_Mode sits in EEPROM, which the servo only accepts while torque is disabled, so the
+        write has to be bracketed. The read back is not paranoia: a rejected EEPROM write is silent,
+        and the servo would stay in position mode while duties are interpreted as goal positions.
+        """
+        self.bus.disable_torque()
+        for motor in MOTOR_ORDER:
+            self.bus.write("Operating_Mode", motor, OperatingMode.PWM.value)
+
+        modes = {motor: self.bus.read("Operating_Mode", motor) for motor in MOTOR_ORDER}
+        self.operating_modes = modes
+        rejected = {motor: mode for motor, mode in modes.items() if mode != OperatingMode.PWM.value}
+        if rejected:
+            raise RuntimeError(f"Servos did not accept PWM mode, Operating_Mode reads back as {rejected}.")
+
+        # Goal_Time still holds whatever position mode left there, which becomes a duty the moment
+        # torque comes back.
+        self.write_duty({motor: 0.0 for motor in MOTOR_ORDER})
+        self.bus.enable_torque()
+
     def write_duty(self, duties: Dict[str, float]) -> None:
         """
-        Commanding duty needs the servo switched out of position mode into its open loop PWM mode,
-        which is a register write we have not confirmed against the STS3215 table yet.
+        In PWM mode Goal_Time carries the duty instead of a travel time, sign-magnitude encoded with
+        bit 10, the same direction bit the servo uses for Present_Load. LeRobot's encoding table does
+        not list Goal_Time, so the bus writes the value through untouched. The hardware sign is
+        inverted here to make positive interface duty increase the model joint angle.
+
+        The interface passes a fraction of full output, which is 0 to 1000 in the servo's units.
         """
-        raise NotImplementedError("Real arm duty control needs the servo's PWM mode; see write_goal below.")
+        encoded = {}
+        for name, duty in duties.items():
+            duty = float(duty)
+            if abs(duty) > 1.0:
+                raise ValueError(f"Duty {duty} for {name} is not a fraction of full output.")
+            magnitude = round(abs(duty) * FULL_SCALE_DUTY)
+            encoded[name] = magnitude + (1 << 10) if duty > 0.0 else magnitude
+
+        self.bus.sync_write("Goal_Time", encoded, normalize=False)
 
     def write_goal(self, positions: Dict[str, float]) -> None:
         calibrated_positions = {}
@@ -146,10 +198,12 @@ class RealArm(Arm):
         # \xFE     : Broadcast ID (targets all servos simultaneously)
         # \x04     : Length of remaining bytes
         # \x03     : Instruction (WRITE Data)
-        # \x29     : Register Address 41 (Torque Enable)
+        # \x28     : Register Address 40 (Torque Enable). Address 41 is Acceleration, where 0 means
+        #            no ramp limit, so aiming one register high both leaves torque on and makes
+        #            every later move maximally abrupt.
         # \x00     : Data value 0 (Disable)
-        # \xD1     : Checksum (~(0xFE + 0x04 + 0x03 + 0x29 + 0x00) & 0xFF)
-        estop_packet = b"\xff\xff\xfe\x04\x03\x29\x00\xd1"
+        # \xD2     : Checksum (~(0xFE + 0x04 + 0x03 + 0x28 + 0x00) & 0xFF)
+        estop_packet = b"\xff\xff\xfe\x04\x03\x28\x00\xd2"
 
         try:
             # 1. Blindly spam the fast broadcast command first to instantly drop torque

@@ -252,7 +252,7 @@ def main(cfg: DictConfig):
         recorder.save()
 
     print_results(results, cfg.safety.max_smoothed_duty)
-    print(f"\nReplay with:\n  python scripts/replay_sim.py episode_path={os.path.join(run_dir, 'recordings', 'gripper_sweep', 'episode.npz')}")
+    print(f"\nReplay with:\n  python scripts/replay.py episode_path={os.path.join(run_dir, 'recordings', 'gripper_sweep', 'episode.npz')}")
 
 
 if __name__ == "__main__":

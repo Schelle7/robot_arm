@@ -55,6 +55,7 @@ class RobotEnv:
         self.sustained_duty_penalty_enabled = cfg.reward.sustained_duty_penalty
         self.termination_penalty_enabled = cfg.reward.termination_penalty
         self.idle_action_penalty_enabled = cfg.reward.idle_action_penalty
+        self.action_change_penalty_enabled = cfg.reward.action_change_penalty
         self.pose_delta_diagnostics_enabled = cfg.training.pose_delta_diagnostics_enabled
         self.initial_joint_range_percent = cfg.control.initial_joints.range_percent
         self.output_dir = output_dir
@@ -70,6 +71,7 @@ class RobotEnv:
         self.sustained_duty_penalty_factor = float(cfg.reward.sustained_duty_penalty_factor)
         self.idle_action_threshold = float(cfg.reward.idle_action_threshold)
         self.idle_action_penalty_factor = float(cfg.reward.idle_action_penalty_factor)
+        self.action_change_penalty_factor = float(cfg.reward.action_change_penalty_factor)
         command_duration_seconds = 1.0 / self.cartesian_hz
         self.position_distance_scale = cfg.waypoint.position_speed_meters_per_second * command_duration_seconds
         self.rotation_distance_scale = cfg.waypoint.rotation_speed_radians_per_second * command_duration_seconds
@@ -80,6 +82,7 @@ class RobotEnv:
 
         self.duty_history_alpha = 1.0 - math.exp(-1.0 / (joint_hz * cfg.control.duty_history_seconds))
         self.duty_history = np.zeros(len(MOTOR_ORDER), dtype=np.float32)
+        self.previous_action = np.zeros(len(MOTOR_ORDER), dtype=np.float32)
 
         self.reset_reward_tracking()
         self.pose_delta_diagnostics = {}
@@ -128,6 +131,7 @@ class RobotEnv:
         obs = {
             "joint_positions": current_pos,
             "joint_velocities": current_vel,
+            "previous_action": self.previous_action.copy(),
             "gripper_duty": np.array([state_dict["Present_Load"]["gripper"]], dtype=np.float32),
             "duty_history": self.duty_history.copy(),
             "tcp_velocity": tcp_velocity,
@@ -143,6 +147,7 @@ class RobotEnv:
     def reset(self) -> EnvironmentState:
         self.reset_reward_tracking()
         self.duty_history[:] = 0.0
+        self.previous_action[:] = 0.0
 
         if self.backend == "sim":
             self.arm.reset_sim()
@@ -159,6 +164,7 @@ class RobotEnv:
 
         self.reset_reward_tracking()
         self.duty_history[:] = 0.0
+        self.previous_action[:] = 0.0
         self.arm.restore_sim_state(qpos, qvel)
         initial_state = self.arm.read_state()
         initial_positions = np.array([initial_state["Present_Position"][motor] for motor in self.motor_order], dtype=np.float32)
@@ -377,6 +383,12 @@ class RobotEnv:
             reward_breakdown["sustained_duty_penalty"] = self._compute_sustained_duty_penalty()
         if self.idle_action_penalty_enabled:
             reward_breakdown["idle_action_penalty"] = self._compute_idle_action_penalty(policy_action, time_left)
+        if self.action_change_penalty_enabled:
+            # This fights chattering and may reduce long-term wear, but is primarily an attempted
+            # workaround for the current oscillation. It can reduce responsiveness and does not
+            # penalize changes introduced by gravity and velocity compensation.
+            action_change = policy_action - self.previous_action
+            reward_breakdown["action_change_penalty"] = -self.action_change_penalty_factor * float(np.mean(np.square(action_change)))
         if self.termination_penalty_enabled:
             reward_breakdown["termination_penalty"] = termination_penalty
 
@@ -420,5 +432,7 @@ class RobotEnv:
             desired_gripper_duty=desired_gripper_duty,
             desired_gripper_duty_active=desired_gripper_duty_active,
         )
+        self.previous_action[:] = policy_action
+        state.observation["previous_action"] = self.previous_action.copy()
 
         return state, reward, reward_breakdown

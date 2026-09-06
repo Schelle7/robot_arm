@@ -35,7 +35,18 @@ class EnvironmentStub:
     def reset_cartesian_action_reward_tracking(self, cartesian_action_start_pose, cartesian_action):
         pass
 
-    def step(self, action, joint_positions, cartesian_action, cartesian_action_start_pose, cartesian_action_terminated, desired_gripper_duty, desired_gripper_duty_active):
+    def step(
+        self,
+        action,
+        joint_positions,
+        policy_action,
+        time_left,
+        cartesian_action,
+        cartesian_action_start_pose,
+        cartesian_action_ends,
+        desired_gripper_duty,
+        desired_gripper_duty_active,
+    ):
         self.received_actions.append(action)
         self.received_paths.append(cartesian_action)
         return (
@@ -43,7 +54,9 @@ class EnvironmentStub:
                 observation={
                     "joint_positions": np.ones(6, dtype=np.float32),
                     "joint_velocities": np.zeros(6, dtype=np.float32),
+                    "previous_action": np.zeros(6, dtype=np.float32),
                     "gripper_duty": np.zeros(1, dtype=np.float32),
+                    "duty_history": np.zeros(6, dtype=np.float32),
                     "tcp_velocity": np.zeros(6, dtype=np.float32),
                 },
                 sensor_state={},
@@ -108,7 +121,9 @@ def test_cartesian_action_measures_every_policy_observation_against_one_desired_
     raw_obs = {
         "joint_positions": np.zeros(6, dtype=np.float32),
         "joint_velocities": np.zeros(6, dtype=np.float32),
+        "previous_action": np.zeros(6, dtype=np.float32),
         "gripper_duty": np.zeros(1, dtype=np.float32),
+        "duty_history": np.zeros(6, dtype=np.float32),
         "tcp_velocity": np.zeros(6, dtype=np.float32),
     }
 
@@ -141,6 +156,7 @@ def test_policy_observation_keys_match_declared_observation_space():
     raw_obs = {
         "joint_positions": np.zeros(6, dtype=np.float32),
         "joint_velocities": np.zeros(6, dtype=np.float32),
+        "previous_action": np.zeros(6, dtype=np.float32),
         "gripper_duty": np.zeros(1, dtype=np.float32),
         "duty_history": np.zeros(6, dtype=np.float32),
         "tcp_velocity": np.zeros(6, dtype=np.float32),
@@ -167,6 +183,7 @@ def test_duty_compensation_excludes_gripper():
     raw_obs = {
         "joint_positions": np.zeros(6, dtype=np.float32),
         "joint_velocities": np.zeros(6, dtype=np.float32),
+        "previous_action": np.zeros(6, dtype=np.float32),
         "gripper_duty": np.zeros(1, dtype=np.float32),
         "duty_history": np.zeros(6, dtype=np.float32),
         "tcp_velocity": np.zeros(6, dtype=np.float32),
@@ -193,6 +210,7 @@ def test_detailed_metrics_only_include_returned_reward_components():
     raw_obs = {
         "joint_positions": np.zeros(6, dtype=np.float32),
         "joint_velocities": np.zeros(6, dtype=np.float32),
+        "previous_action": np.zeros(6, dtype=np.float32),
         "gripper_duty": np.zeros(1, dtype=np.float32),
         "duty_history": np.zeros(6, dtype=np.float32),
         "tcp_velocity": np.zeros(6, dtype=np.float32),

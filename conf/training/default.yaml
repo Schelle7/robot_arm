@@ -16,3 +16,4 @@ gradient_steps: 10
 save_episodes_freq: 20
 checkpoint_every_n_steps: 10000
 worker_check_seconds: 30
+gpu_sample_seconds: 3

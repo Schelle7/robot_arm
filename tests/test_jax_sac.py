@@ -5,10 +5,11 @@ import numpy as np
 from robot_arm.jax_sac import actor_distribution as jax_actor_distribution
 from robot_arm.jax_sac import init_actor
 from robot_arm.numpy_policy import actor_distribution as numpy_actor_distribution
+from robot_arm.robot_schema import policy_observation_dim
 
 
 def test_numpy_actor_distribution_matches_jax():
-    observation_dim = 36
+    observation_dim = policy_observation_dim(7)
     action_dim = 6
     hidden_dims = (32, 16)
     actor_params = init_actor(jax.random.PRNGKey(0), observation_dim, action_dim, hidden_dims)

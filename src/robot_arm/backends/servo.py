@@ -1,6 +1,7 @@
 import numpy as np
 
 FULL_SCALE_DUTY = 1000.0
+CURRENT_AMPS_PER_TICK = 0.0065
 
 
 def encoder_tick_radians(ticks_per_revolution: int) -> float:

@@ -43,6 +43,7 @@ def main(cfg: DictConfig):
         duty_limits,
         recorded_joint_hz,
         viewer.action_history,
+        viewer.has_sim_state,
     )
     server.start()
     viewer.run(server.display, server.take_commands)

@@ -67,7 +67,7 @@ PAGE = """<!doctype html>
     <input id="lowLevelNumber" type="number" min="0" max="0" value="0" aria-label="Low-level step number" disabled>
 </div>
 <div id="tables"></div>
-<div class="branch-controls">
+<div id="branchControls" class="branch-controls">
     <h2>Fixed policy-action branch</h2>
     <div id="dutyGrid" class="duty-grid"></div>
     <div class="generation-row">
@@ -96,6 +96,7 @@ PAGE = """<!doctype html>
     const generateButton = document.getElementById("generateButton");
     const generationStatus = document.getElementById("generationStatus");
     const dutyWarning = document.getElementById("dutyWarning");
+    const branchControls = document.getElementById("branchControls");
     const overviewTable = document.getElementById("overviewTable");
     const tables = document.getElementById("tables");
     const actionPlots = document.getElementById("actionPlots");
@@ -263,7 +264,7 @@ PAGE = """<!doctype html>
             context.fillText(String(value), left - 6, y(value));
         }
 
-        const durationSeconds = values.length / jointHz;
+        const durationSeconds = Math.max(values.length - 1, 0) / jointHz;
         context.fillStyle = "#61706a";
         context.textBaseline = "bottom";
         context.textAlign = "left";
@@ -330,6 +331,7 @@ PAGE = """<!doctype html>
         lowLevelLabel.textContent = state.low_level_step_count === 0 ? "N/A" : `${state.current_low_level_step + 1} / ${state.low_level_step_count}`;
         playButton.textContent = state.auto_play ? "Pause" : "Play";
         status.textContent = state.auto_play ? "Playing" : "Paused";
+        branchControls.hidden = !state.branch_available;
         durationSeconds.min = state.frame_period;
         durationSeconds.step = state.frame_period;
         if (!dutyInputsCreated) {
@@ -349,7 +351,7 @@ class ReplayServer:
     viewer loop never waits on the browser and the MuJoCo window keeps responding on its own.
     """
 
-    def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits, joint_hz, actions):
+    def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits, joint_hz, actions, branch_available):
         self.state = {
             "sections": [],
             "warnings": [],
@@ -361,6 +363,7 @@ class ReplayServer:
             "motor_names": MOTOR_ORDER,
             "duty_limits": duty_limits,
             "auto_play": False,
+            "branch_available": branch_available,
         }
         self.port = port
         self.episode_path = str(Path(episode_path).resolve())
@@ -384,6 +387,7 @@ class ReplayServer:
             "motor_names": self.state["motor_names"],
             "duty_limits": self.state["duty_limits"],
             "auto_play": auto_play,
+            "branch_available": self.state["branch_available"],
         }
 
     def take_commands(self):
@@ -431,6 +435,9 @@ class ReplayServer:
                 elif self.path == "/play":
                     state_of.command_queue.put(("toggle_play", None))
                 elif self.path == "/generate":
+                    if not state_of.state["branch_available"]:
+                        self.send_error(409, "Branch export requires recorded simulation state")
+                        return
                     content_length = int(self.headers["Content-Length"])
                     browser_request = json.loads(self.rfile.read(content_length))
                     branch_request = {

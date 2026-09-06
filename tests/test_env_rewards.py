@@ -11,6 +11,8 @@ def make_env() -> RobotEnv:
     env.joint_limit_penalty_enabled = True
     env.termination_penalty_enabled = True
     env.sustained_duty_penalty_enabled = False
+    env.idle_action_penalty_enabled = False
+    env.action_change_penalty_enabled = False
     env.pose_delta_diagnostics_enabled = False
     env.position_distance_weight = 1.0
     env.rotation_primary_distance_weight = 1.0
@@ -21,6 +23,8 @@ def make_env() -> RobotEnv:
     env.rotation_distance_scale = 0.2
     env.gripper_distance_scale = 0.5
     env.joint_limit_penalty_factor = 10.0
+    env.action_change_penalty_factor = 1.0
+    env.previous_action = np.zeros(6, dtype=np.float32)
     env.previous_position_distance = 0.0
     env.previous_primary_orientation_distance = 0.0
     env.previous_secondary_orientation_distance = 0.0
@@ -144,12 +148,14 @@ def test_compute_reward_filters_disabled_components_and_sums_breakdown():
     safe_action = {"motor": 0.5}
 
     reward, breakdown = env.compute_reward(
-        requested_action,
-        safe_action,
-        cartesian_action,
-        cartesian_action_start_pose,
-        cartesian_action_start_pose,
-        cartesian_action_terminated=False,
+        requested_action=requested_action,
+        safe_action=safe_action,
+        policy_action=np.zeros(6, dtype=np.float32),
+        time_left=1.0,
+        cartesian_action=cartesian_action,
+        current_pose=cartesian_action_start_pose,
+        cartesian_action_start_pose=cartesian_action_start_pose,
+        cartesian_action_ends=False,
         gripper_duty=0.0,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
@@ -167,12 +173,14 @@ def test_compute_reward_updates_tracking_state_after_calculation():
     cartesian_action = np.zeros(7, dtype=np.float32)
 
     env.compute_reward(
-        {},
-        {},
-        cartesian_action,
-        current_pose,
-        cartesian_action_start_pose,
-        cartesian_action_terminated=False,
+        requested_action={},
+        safe_action={},
+        policy_action=np.zeros(6, dtype=np.float32),
+        time_left=1.0,
+        cartesian_action=cartesian_action,
+        current_pose=current_pose,
+        cartesian_action_start_pose=cartesian_action_start_pose,
+        cartesian_action_ends=False,
         gripper_duty=0.0,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
@@ -193,12 +201,14 @@ def test_first_step_progress_reward_uses_cartesian_action_start_distance():
 
     env.reset_cartesian_action_reward_tracking(cartesian_action_start_pose, cartesian_action)
     _, breakdown = env.compute_reward(
-        {},
-        {},
-        cartesian_action,
-        improved_pose,
-        cartesian_action_start_pose,
-        cartesian_action_terminated=False,
+        requested_action={},
+        safe_action={},
+        policy_action=np.zeros(6, dtype=np.float32),
+        time_left=1.0,
+        cartesian_action=cartesian_action,
+        current_pose=improved_pose,
+        cartesian_action_start_pose=cartesian_action_start_pose,
+        cartesian_action_ends=False,
         gripper_duty=0.0,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
@@ -230,12 +240,14 @@ def test_reward_is_zero_when_every_component_is_disabled():
     current_pose = make_pose([0.1, 0.0, 0.0], [0.0, 0.0, 0.0])
 
     reward, breakdown = env.compute_reward(
-        {},
-        {},
-        np.zeros(7, dtype=np.float32),
-        current_pose,
-        make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-        cartesian_action_terminated=False,
+        requested_action={},
+        safe_action={},
+        policy_action=np.zeros(6, dtype=np.float32),
+        time_left=1.0,
+        cartesian_action=np.zeros(7, dtype=np.float32),
+        current_pose=current_pose,
+        cartesian_action_start_pose=make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        cartesian_action_ends=False,
         gripper_duty=0.0,
         desired_gripper_duty=0.0,
         desired_gripper_duty_active=False,
@@ -255,6 +267,35 @@ def test_sustained_duty_penalty_charges_only_the_excess_per_joint():
     np.testing.assert_allclose(env._compute_sustained_duty_penalty(), -0.6, rtol=1e-6)
 
 
+def test_action_change_penalty_uses_actor_action_before_compensation():
+    env = make_env()
+    env.tracking_progress_enabled = False
+    env.joint_limit_penalty_enabled = False
+    env.termination_penalty_enabled = False
+    env.action_change_penalty_enabled = True
+    env.previous_action = np.array([-1.0, 0.0, 0.5, 0.0, 0.0, 0.0], dtype=np.float32)
+    policy_action = np.array([1.0, 0.0, -0.5, 0.0, 0.0, 0.0], dtype=np.float32)
+    pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+
+    reward, breakdown = env.compute_reward(
+        {},
+        {},
+        policy_action,
+        1.0,
+        np.zeros(7, dtype=np.float32),
+        pose,
+        pose,
+        False,
+        0.0,
+        0.0,
+        False,
+    )
+
+    expected = -np.mean(np.square(policy_action - env.previous_action))
+    assert breakdown == {"action_change_penalty": expected}
+    assert reward == expected
+
+
 def test_reset_clears_tracking_state():
     env = make_env()
     pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
@@ -267,6 +308,7 @@ def test_reset_clears_tracking_state():
     env.previous_secondary_orientation_distance = 4.0
     env.previous_gripper_distance = 4.0
     env.duty_history = np.ones(6, dtype=np.float32)
+    env.previous_action = np.ones(6, dtype=np.float32)
 
     env.reset()
 
@@ -274,3 +316,4 @@ def test_reset_clears_tracking_state():
     assert env.previous_primary_orientation_distance == 0.0
     assert env.previous_secondary_orientation_distance == 0.0
     assert env.previous_gripper_distance == 0.0
+    np.testing.assert_array_equal(env.previous_action, np.zeros(6, dtype=np.float32))

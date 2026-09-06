@@ -30,7 +30,9 @@
 
     <default class="sts3215">
       <geom contype="0" conaffinity="0"/>
-      <joint damping="0.60" frictionloss="0.052" armature="0.028"/>
+      <!-- <joint damping="0.0" frictionloss="0.052" armature="0.028"/> -->
+      <!-- wild guesses -->
+      <joint damping="0.05" frictionloss="0.02" armature="0.01"/>
     </default>
 
     <default class="backlash">
