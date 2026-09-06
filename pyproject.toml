@@ -19,6 +19,7 @@ dependencies = [
     "scipy",
     "jax[cuda12]",
     "optax",
+    "nvidia-ml-py",
     "black",
     "ruff"
 ]

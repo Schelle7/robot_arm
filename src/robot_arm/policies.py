@@ -178,6 +178,13 @@ class ScriptedCartesianPolicy(CartesianPolicy):
         gripper_speed_radians_per_second = cfg.waypoint.gripper_speed_radians_per_second
 
         self.duty_completion_tolerance = float(cfg.waypoint.duty_completion_tolerance)
+
+        tolerance = cfg.waypoint.completion_tolerance
+        self.position_tolerance = float(tolerance.position_meters)
+        self.primary_rotation_tolerance = float(tolerance.primary_rotation_radians)
+        self.secondary_rotation_tolerance = float(tolerance.secondary_rotation_radians)
+        self.gripper_tolerance = float(tolerance.gripper_radians)
+
         (
             self.max_position_delta,
             self.max_rotation_delta,
@@ -206,23 +213,24 @@ class ScriptedCartesianPolicy(CartesianPolicy):
         if primitive.desired_gripper_duty_active:
             gripper_channel_reached = gripper_duty_distance <= self.duty_completion_tolerance
         else:
-            gripper_channel_reached = gripper_distance <= self.max_gripper_delta
+            gripper_channel_reached = gripper_distance <= self.gripper_tolerance
 
         completes_active_primitive = (
-            position_distance <= self.max_position_delta
-            and primary_orientation_distance <= self.max_rotation_delta
-            and secondary_orientation_distance <= self.max_rotation_delta
+            position_distance <= self.position_tolerance
+            and primary_orientation_distance <= self.primary_rotation_tolerance
+            and secondary_orientation_distance <= self.secondary_rotation_tolerance
             and gripper_channel_reached
         )
 
         diagnostics = {
             "position_distance": position_distance,
-            "position_threshold": float(self.max_position_delta),
+            "position_threshold": float(self.position_tolerance),
             "primary_orientation_distance": primary_orientation_distance,
             "secondary_orientation_distance": secondary_orientation_distance,
-            "orientation_threshold": float(self.max_rotation_delta),
+            "primary_orientation_threshold": float(self.primary_rotation_tolerance),
+            "secondary_orientation_threshold": float(self.secondary_rotation_tolerance),
             "gripper_distance": gripper_distance,
-            "gripper_threshold": float(self.max_gripper_delta),
+            "gripper_threshold": float(self.gripper_tolerance),
             "gripper_duty_distance": gripper_duty_distance,
             "duty_threshold": float(self.duty_completion_tolerance),
         }
@@ -243,20 +251,20 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             primitive,
         )
 
-        # Reaching the target already fits inside one command when the primitive completes, so only
-        # the unfinished case needs shortening to what one command is allowed to travel.
-        if not completes_active_primitive:
-            position = waypoint_delta[:3]
-            position_norm = np.linalg.norm(position)
-            if position_norm > self.max_position_delta:
-                position *= self.max_position_delta / position_norm
+        # The completion tolerances are set independently of the speeds, so a completing step can
+        # still ask for more than one command may travel. Shortening is therefore unconditional.
+        # maybe therefore simplify the existing setup?
+        position = waypoint_delta[:3]
+        position_norm = np.linalg.norm(position)
+        if position_norm > self.max_position_delta:
+            position *= self.max_position_delta / position_norm
 
-            rotation = waypoint_delta[3:6]
-            rotation_norm = np.linalg.norm(rotation)
-            if rotation_norm > self.max_rotation_delta:
-                rotation *= self.max_rotation_delta / rotation_norm
+        rotation = waypoint_delta[3:6]
+        rotation_norm = np.linalg.norm(rotation)
+        if rotation_norm > self.max_rotation_delta:
+            rotation *= self.max_rotation_delta / rotation_norm
 
-            waypoint_delta[6] = np.clip(waypoint_delta[6], -self.max_gripper_delta, self.max_gripper_delta)
+        waypoint_delta[6] = np.clip(waypoint_delta[6], -self.max_gripper_delta, self.max_gripper_delta)
 
         return CartesianAction(
             cartesian_action=waypoint_delta,

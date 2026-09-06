@@ -10,6 +10,7 @@ from tqdm import tqdm
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.git_snapshot import snapshot_git_state
+from robot_arm.gpu_monitor import GpuMonitor
 from robot_arm.model_snapshot import snapshot_model_files
 from robot_arm.numpy_policy import NumpySACPolicy
 from robot_arm.policies import ScriptedCartesianPolicy
@@ -179,6 +180,11 @@ def worker_process(
         worker_metrics_buffer.flush()
 
 
+def _log_gpu(gpu_monitor, writer, sac_training_step):
+    for key, value in gpu_monitor.latest().items():
+        writer.add_scalar(f"gpu/{key}", value, sac_training_step)
+
+
 def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
     # Drain up to 10 reward batches per loop iteration to avoid starvation
     for _ in range(10):
@@ -251,6 +257,7 @@ def _training_loop(
     workers,
     save_checkpoint,
     writer,
+    gpu_monitor,
 ):
     target_total_steps = cfg.training.total_training_steps
     checkpoint_every_n_steps = cfg.training.checkpoint_every_n_steps
@@ -266,6 +273,7 @@ def _training_loop(
     try:
         while sac_training_step < target_total_steps:
             _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards)
+            _log_gpu(gpu_monitor, writer, sac_training_step)
 
             # 1. Blocks until a worker episode arrives
             episode = _next_episode(episode_queue, workers, cfg.training.worker_check_seconds)
@@ -334,6 +342,9 @@ def run_distributed_training(cfg: DictConfig):
         worker_queues,
     )
 
+    gpu_monitor = GpuMonitor(cfg.training.gpu_sample_seconds)
+    gpu_monitor.start()
+
     try:
         sac_training_step = _training_loop(
             cfg,
@@ -344,9 +355,11 @@ def run_distributed_training(cfg: DictConfig):
             workers,
             lambda step_name: save_checkpoint(model, output_dir, step_name),
             writer,
+            gpu_monitor,
         )
 
         save_checkpoint(model, output_dir, f"final_{sac_training_step}")
         print("Saved policy", flush=True)
     finally:
+        gpu_monitor.stop()
         shut_down(workers, (episode_queue, metrics_queue, *worker_queues), writer)

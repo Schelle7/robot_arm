@@ -1,12 +1,26 @@
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
+import subprocess
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
 
 from robot_arm.distributed import run_distributed_training
 
 log = logging.getLogger(__name__)
+
+
+def warn_if_not_performance_mode():
+    profile = subprocess.check_output(["powerprofilesctl", "get"], text=True).strip()
+    if profile != "performance":
+        warning = (
+            "\n========================================================================\n"
+            "WARNING: POWER PROFILE IS NOT SET TO PERFORMANCE\n"
+            f"Current profile: {profile}\n"
+            "Please enable Performance mode for low-level training.\n"
+            "========================================================================\n"
+        )
+        print(f"\033[1;31m{warning}\033[0m", flush=True)
 
 
 def load_continuation_config(cfg: DictConfig) -> DictConfig:
@@ -43,6 +57,7 @@ def train_low_level(cfg: DictConfig):
     save_run_config(cfg)
     output_dir = HydraConfig.get().runtime.output_dir
 
+    warn_if_not_performance_mode()
     print(f"Hydra run directory: {output_dir}", flush=True)
     print(f"tensorboard --logdir={output_dir}", flush=True)
 

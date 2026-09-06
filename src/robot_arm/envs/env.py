@@ -56,11 +56,7 @@ class RobotEnv:
         self.termination_penalty_enabled = cfg.reward.termination_penalty
         self.idle_action_penalty_enabled = cfg.reward.idle_action_penalty
         self.pose_delta_diagnostics_enabled = cfg.training.pose_delta_diagnostics_enabled
-        self.staging_enabled = cfg.control.staging.enabled
         self.initial_joint_range_percent = cfg.control.initial_joints.range_percent
-        self.staging_speed_radians_per_second = cfg.control.staging.speed_radians_per_second
-        self.staging_tolerance_radians = cfg.control.staging.tolerance_radians
-        self.staging_max_seconds = cfg.control.staging.max_seconds
         self.output_dir = output_dir
         if self.backend == "real":
             self._save_servo_configuration()
@@ -150,14 +146,6 @@ class RobotEnv:
 
         if self.backend == "sim":
             self.arm.reset_sim()
-        elif self.backend == "real" and self.staging_enabled:
-            self.arm.move_to_staging_pose(
-                initial_joint_range_percent=self.initial_joint_range_percent,
-                speed_radians_per_second=self.staging_speed_radians_per_second,
-                tolerance_radians=self.staging_tolerance_radians,
-                max_seconds=self.staging_max_seconds,
-                output_dir=self.output_dir,
-            )
 
         initial_state = self.arm.read_state()
         initial_positions = np.array([initial_state["Present_Position"][motor] for motor in self.motor_order], dtype=np.float32)

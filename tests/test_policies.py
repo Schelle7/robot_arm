@@ -14,6 +14,12 @@ def make_policy():
         {
             "waypoint": {
                 "duty_completion_tolerance": 0.1,
+                "completion_tolerance": {
+                    "position_meters": 1.0,
+                    "primary_rotation_radians": 1.0,
+                    "secondary_rotation_radians": 1.0,
+                    "gripper_radians": 1.0,
+                },
                 "position_speed_meters_per_second": 1.0,
                 "rotation_speed_radians_per_second": 1.0,
                 "gripper_speed_radians_per_second": 1.0,
