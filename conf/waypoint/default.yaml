@@ -26,7 +26,7 @@ pick_and_place:
   lift_z_offset_meters: 0.08
   gripper_open_radians: 0.8
   gripper_closed_radians: 0.0
-  desired_gripper_duty: 0.35
+  desired_gripper_duty: -0.35
 
 relative_move:
   dx_range_meters: [-0.08, 0.08]

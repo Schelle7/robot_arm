@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 from robot_arm.pose import Pose, axis_angular_distance
 from robot_arm.backends.arm import Arm
 from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.grasp_estimator import GraspEstimator
 
 
 @dataclass
@@ -18,6 +19,7 @@ class EnvironmentState:
     sensor_state: Dict[str, Any]
     end_effector_pose: Pose
     sim_state: Dict[str, np.ndarray] | None
+    box_gripped: bool
 
 
 class RobotEnv:
@@ -41,6 +43,7 @@ class RobotEnv:
         assert float(state_history_intervals).is_integer(), "state_history_seconds must contain an integer number of low-level control intervals"
 
         self.arm = arm
+        self.grasp_estimator = GraspEstimator(cfg.control.grasp_estimation)
         self.backend = cfg.backend
         self.joint_limit_penalty_factor = joint_limit_penalty_factor
         self.joint_hz = joint_hz
@@ -142,9 +145,16 @@ class RobotEnv:
             sensor_state=state_dict,
             end_effector_pose=end_effector_pose,
             sim_state=self.arm.sim_state() if self.backend == "sim" else None,
+            box_gripped=self.grasp_estimator.update(
+                state_dict["Present_Position"]["gripper"],
+                current_vel[self.motor_order.index("gripper")],
+                state_dict["Present_Load"]["gripper"],
+                state_dict["sample_time_ns"],
+            ),
         )
 
     def reset(self) -> EnvironmentState:
+        self.grasp_estimator.reset()
         self.reset_reward_tracking()
         self.duty_history[:] = 0.0
         self.previous_action[:] = 0.0
@@ -159,6 +169,7 @@ class RobotEnv:
         return self._get_obs()
 
     def reset_from_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> EnvironmentState:
+        self.grasp_estimator.reset()
         if self.backend != "sim":
             raise ValueError("A recorded MuJoCo state can only initialize the simulation backend.")
 
@@ -194,8 +205,8 @@ class RobotEnv:
         self.previous_secondary_orientation_distance = 0.0
         self.previous_gripper_distance = 0.0
 
-    def read_camera(self):
-        return self.arm.read_camera()
+    def read_cameras(self):
+        return self.arm.read_cameras()
 
     def _compute_desired_pose(self, cartesian_action_start_pose: Pose, cartesian_action: np.ndarray) -> Pose:
         return cartesian_action_start_pose.apply_delta(cartesian_action)

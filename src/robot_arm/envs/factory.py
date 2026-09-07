@@ -15,14 +15,10 @@ def make_env(cfg: DictConfig, output_dir: str):
     based on the loaded DictConfig. Helper to avoid duplicating this setup between
     the learner and the workers.
     """
-    height = cfg.camera.height
-    width = cfg.camera.width
-
     if cfg.backend == "sim":
         backend = SimBackend(
             model_path=cfg.model_path,
-            height=height,
-            width=width,
+            camera_configs=cfg.camera.cameras,
             initial_joint_mode=cfg.control.initial_joints.mode,
             initial_joint_range_percent=cfg.control.initial_joints.range_percent,
             initial_joint_positions=cfg.control.initial_joints.positions_radians,

@@ -43,6 +43,7 @@ class ReplayViewer:
         ]
         self.action_diagnostics = data["cartesian_action_diagnostics"]
         self.completes_active_primitives = data["completes_active_primitive"]
+        self.primitive_prompts = data["primitive_prompt"]
         self.primitive_indices = data["primitive_index"]
         self.waypoints = data["waypoints"]
         self.recorded_poses = data["end_effector_pose"]
@@ -125,6 +126,11 @@ class ReplayViewer:
 
     def render_frame(self, display, metrics, action_diagnostics):
         observed_pose_delta, pose_tracking_error = metrics
+        if self.current_frame < self.num_actions:
+            primitive_number = int(self.primitive_indices[self.current_frame]) + 1
+            active_primitive_label = f"{primitive_number}: {self.primitive_prompts[self.current_frame]}"
+        else:
+            active_primitive_label = "N/A"
         display_lines, warnings = build_replay_display(
             self.model,
             self.mdata,
@@ -141,7 +147,7 @@ class ReplayViewer:
             self.recorded_cfg,
         )
         dense_step_count = len(self.dense_trajectory[self.current_frame]) if self.current_frame < self.num_actions else 0
-        display(display_lines, warnings, self.current_frame, self.current_low_level_step, dense_step_count, self.auto_play)
+        display(display_lines, warnings, self.current_frame, self.current_low_level_step, dense_step_count, active_primitive_label, self.auto_play)
 
     def run(self, display, take_commands):
         cartesian_hz = self.recorded_cfg.control.frequencies.cartesian

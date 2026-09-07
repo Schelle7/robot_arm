@@ -6,7 +6,7 @@ from robot_arm.backends.arm import Arm
 from robot_arm.experimental_waypoints import shoulder_pan_position
 from robot_arm.pose import Pose
 from robot_arm.backends.servo import duty_from_action, duty_to_torque
-from robot_arm.robot_schema import BOX_BODY_NAMES, OBJECT_COLORS, TILE_BODY_NAME
+from robot_arm.robot_schema import BOX_BODY_NAMES, CAMERA_NAMES, OBJECT_COLORS, TILE_BODY_NAME
 
 
 def object_color(model, body_name: str) -> str:
@@ -169,8 +169,7 @@ class SimBackend(Arm):
     def __init__(
         self,
         model_path: str,
-        height: int,
-        width: int,
+        camera_configs,
         initial_joint_mode: str,
         initial_joint_range_percent: tuple[float, float],
         initial_joint_positions,
@@ -196,7 +195,12 @@ class SimBackend(Arm):
         self.mujoco_steps_per_control_step = mujoco_steps_per_control_step
         self.servo = servo
 
-        self.renderer = mujoco.Renderer(self.model, height=height, width=width)
+        self.camera_configs = camera_configs
+        assert tuple(camera_configs) == CAMERA_NAMES
+        self.renderers = {
+            camera_name: mujoco.Renderer(self.model, height=config.height, width=config.width)
+            for camera_name, config in camera_configs.items()
+        }
         self.waypoints = []
         self.active_waypoint_index = 0
         self.desired_poses = []
@@ -209,9 +213,9 @@ class SimBackend(Arm):
         self.joint_indices = {name: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in self.actuator_indices}
 
         # Indexed in actuator order so the servo law runs on all six joints as one vector operation.
-        actuator_order = sorted(self.actuator_indices, key=self.actuator_indices.get)
-        self.actuator_dof_indices = np.array([self.model.jnt_dofadr[self.joint_indices[name]] for name in actuator_order])
-        self.max_duty = np.array([float(servo.max_duty[name]) for name in actuator_order])
+        self.actuator_order = sorted(self.actuator_indices, key=self.actuator_indices.get)
+        self.actuator_dof_indices = np.array([self.model.jnt_dofadr[self.joint_indices[name]] for name in self.actuator_order])
+        self.max_duty = np.array([float(servo.max_duty[name]) for name in self.actuator_order])
         self.commanded_duty = np.zeros(self.model.nu)
 
     @property
@@ -356,6 +360,26 @@ class SimBackend(Arm):
         assert material_id != -1, f"Material 'matte_{color}' not found in MuJoCo model."
         self.model.geom_matid[self.model.body_geomadr[body_id]] = material_id
 
+    def randomize_physics(self):
+        ranges = self.servo.physics_randomization
+        count = len(self.actuator_dof_indices)
+        self.model.dof_damping[self.actuator_dof_indices] = np.random.uniform(*ranges.damping, size=count)
+        self.model.dof_frictionloss[self.actuator_dof_indices] = np.random.uniform(*ranges.frictionloss, size=count)
+        self.model.dof_armature[self.actuator_dof_indices] = np.random.uniform(*ranges.armature, size=count)
+        mujoco.mj_setConst(self.model, self.data)
+
+    def physics_metrics(self) -> Dict[str, float]:
+        randomized = {
+            "damping": self.model.dof_damping,
+            "frictionloss": self.model.dof_frictionloss,
+            "armature": self.model.dof_armature,
+        }
+        return {
+            f"physics/{parameter}/{name}": float(values[dof_index])
+            for parameter, values in randomized.items()
+            for name, dof_index in zip(self.actuator_order, self.actuator_dof_indices)
+        }
+
     def randomize_objects(self):
         body_names = (*BOX_BODY_NAMES, TILE_BODY_NAME)
         positions = self._sample_object_positions(len(body_names))
@@ -397,16 +421,22 @@ class SimBackend(Arm):
         # Placement is measured from the shoulder anchor, which is only valid once kinematics have run.
         mujoco.mj_forward(self.model, self.data)
 
+        self.randomize_physics()
         self.randomize_objects()
         self.initialize_arm_pos()
 
         mujoco.mj_forward(self.model, self.data)
 
-    def read_camera(self) -> np.ndarray:
-        self.renderer.update_scene(self.data, camera="pixel_cam", scene_option=self.camera_scene_option)
-        self._draw_waypoint_arrows()
-        self._draw_desired_pose_path()
-        return self.renderer.render()
+    def read_cameras(self) -> dict[str, np.ndarray]:
+        images = {}
+        for camera_name, renderer in self.renderers.items():
+            renderer.update_scene(
+                self.data,
+                camera=self.camera_configs[camera_name].mujoco_name,
+                scene_option=self.camera_scene_option,
+            )
+            images[camera_name] = renderer.render()
+        return images
 
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
         pose, _, _ = get_tcp_geometry(self.model, self.data)
@@ -432,7 +462,7 @@ class SimBackend(Arm):
             cartesian_action,
         )
 
-    def _draw_waypoint_arrows(self):
+    def _draw_waypoint_arrows(self, renderer):
         waypoint_arrow_length = 0.09
         inactive_alpha = 0.25
         active_alpha = 0.6
@@ -445,20 +475,21 @@ class SimBackend(Arm):
             alpha = active_alpha if index == self.active_waypoint_index else inactive_alpha
             for vector_getter, color in arrow_specs:
                 self._add_arrow(
+                    renderer,
                     pose.position,
                     vector_getter(pose) * waypoint_arrow_length,
                     (*color, alpha),
                     0.004,
                 )
 
-    def _draw_desired_pose_path(self):
-        update_desired_pose_debug_user_scene(self.renderer.scene, self.desired_poses)
+    def _draw_desired_pose_path(self, renderer):
+        update_desired_pose_debug_user_scene(renderer.scene, self.desired_poses)
 
-    def _add_arrow(self, origin, vector, color, width):
+    def _add_arrow(self, renderer, origin, vector, color, width):
         if np.linalg.norm(vector) <= 1e-5:
             return
 
-        geom = self.renderer.scene.geoms[self.renderer.scene.ngeom]
+        geom = renderer.scene.geoms[renderer.scene.ngeom]
         mujoco.mjv_initGeom(
             geom,
             mujoco.mjtGeom.mjGEOM_ARROW,
@@ -474,4 +505,4 @@ class SimBackend(Arm):
             origin,
             origin + vector,
         )
-        self.renderer.scene.ngeom += 1
+        renderer.scene.ngeom += 1

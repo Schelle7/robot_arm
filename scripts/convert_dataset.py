@@ -23,6 +23,7 @@ def main(cfg: DictConfig):
         source_dir=cfg.source_dir,
         target_dir=target_dir,
         fps=cfg.control.frequencies.cartesian,
+        min_gripped_seconds=cfg.conversion.min_gripped_seconds,
     )
 
 

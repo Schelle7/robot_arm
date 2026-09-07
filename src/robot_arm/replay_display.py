@@ -84,8 +84,6 @@ def build_replay_display(
                 ["Replay type", str(recorded_cfg.backend)],
                 ["Policy", str(recorded_cfg.policy_name)],
                 ["Episode time", f"{episode_time:.2f} s"],
-                ["Frame", str(frame_index)],
-                ["Low-level step", f"{low_level_step + 1} / {len(dense_trajectory)}" if len(dense_trajectory) else "N/A"],
             ],
         ),
         section(

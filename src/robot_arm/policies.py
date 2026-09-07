@@ -9,7 +9,7 @@ from omegaconf import DictConfig
 
 from robot_arm.pose import Pose, axis_angular_distance
 from robot_arm.primitives import ActionPrimitive
-from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES
+from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES
 from robot_arm.numpy_policy import load_numpy_policy
 
 
@@ -96,7 +96,7 @@ class CartesianPolicy(ABC):
     def get_action(
         self,
         current_pose: Pose,
-        image: np.ndarray,
+        images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         gripper_duty: float,
         primitive: ActionPrimitive,
@@ -104,17 +104,22 @@ class CartesianPolicy(ABC):
         raise NotImplementedError
 
 
-def build_vla_observation(image: np.ndarray, vla_input_state: np.ndarray, primitive_prompt: str) -> Dict[str, Any]:
+def build_vla_observation(images: dict[str, np.ndarray], vla_input_state: np.ndarray, primitive_prompt: str) -> Dict[str, Any]:
     """
     Builds the observation the rollout hands the shared LeRobot preprocessor. It has to match what
     LeRobotDataset yields for a recorded frame, or inference silently disagrees with training.
     LeRobot serves images in [0, 1] and SmolVLA normalizes VISUAL features as identity, so nothing
     downstream rescales what is passed in here.
     """
-    assert image.dtype == np.uint8, f"Camera frames must be uint8, got {image.dtype}."
+    assert tuple(images) == CAMERA_NAMES, f"Expected cameras {CAMERA_NAMES}, got {tuple(images)}."
+    external_camera_image = images["external_camera"]
+    wrist_camera_image = images["wrist_camera"]
+    assert external_camera_image.dtype == np.uint8, f"external_camera frames must be uint8, got {external_camera_image.dtype}."
+    assert wrist_camera_image.dtype == np.uint8, f"wrist_camera frames must be uint8, got {wrist_camera_image.dtype}."
     return {
         "observation.state": vla_input_state.astype(np.float32),
-        "observation.images.camera1": np.transpose(image.astype(np.float32) / 255.0, (2, 0, 1)),
+        "observation.images.external_camera": np.transpose(external_camera_image.astype(np.float32) / 255.0, (2, 0, 1)),
+        "observation.images.wrist_camera": np.transpose(wrist_camera_image.astype(np.float32) / 255.0, (2, 0, 1)),
         "task": primitive_prompt,
     }
 
@@ -144,14 +149,14 @@ class VLACartesianPolicy(CartesianPolicy):
     def get_action(
         self,
         current_pose: Pose,
-        image: np.ndarray,
+        images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         gripper_duty: float,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         import torch
 
-        raw_obs = build_vla_observation(image, vla_input_state, primitive.prompt)
+        raw_obs = build_vla_observation(images, vla_input_state, primitive.prompt)
 
         with torch.inference_mode():
             batch = {k: (torch.tensor(v).unsqueeze(0).to(self.device) if isinstance(v, np.ndarray) else [v]) for k, v in raw_obs.items()}
@@ -239,7 +244,7 @@ class ScriptedCartesianPolicy(CartesianPolicy):
     def get_action(
         self,
         current_pose: Pose,
-        image: np.ndarray,
+        images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         gripper_duty: float,
         primitive: ActionPrimitive,

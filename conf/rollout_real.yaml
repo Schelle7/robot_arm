@@ -5,6 +5,7 @@ defaults:
 backend: real
 
 runtime:
+  capture_camera: false
   draw_waypoints: false
   draw_tcp: false
   record_sim_state: false
@@ -17,7 +18,7 @@ waypoint:
     relative_move: 0.0
     random_waypoint: 1.0
   random_pose:
-    shoulder_distance_meters: [0.32, 0.32]
+    shoulder_distance_meters: [0.4, 0.4]
     base_rotation_degrees: [15.0, 15.0]
     height_meters: [0.30, 0.30]
     pointing_axis_tilt_degrees: [30.0, 30.0]

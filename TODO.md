@@ -1,11 +1,21 @@
-# randomization delay for sim is necessary eventually
+move ahead with vla and try generating gripping episodes.
+I am not sure either is going to work.
 
-# maybe add an action smoothing penalty and the last action(s)
-smoothing would fight chatter which is important only longterm against wear.
-
-It might also affect sim to real capabilities, so that would amke it imemdiately relevant
+What else?
 
 
-probably add staging back again
-And amybe really have püositional mdoe on for that and some randomization in setup / reset pose?
-and then at the end when pos is reached switch mode and start policy?
+
+# eventually better randomization for sim is necessary (delay and damping and others) (randomize the script)
+
+properly just always pass complete cfg such that anyone can access. Or are there reasons against that?
+also clean up the mess with some definitions in files and others elsewhere
+
+
+ask Astra how to improve the instructions I gave it
+
+
+
+add a reward for moving the box?
+
+Currently the arm doesnt seem to fight gravity
+maybe the box is too heavy? but the arm doesn't move at max right now.

@@ -34,14 +34,10 @@
       <camera name="pixel_cam" pos="0 0 -0.02" mode="fixed" fovy="45"/>
     </body>
 
-    <!-- Boxes to pick up. Position and colour are reassigned every reset. -->
+    <!-- Position and colour are reassigned every reset. -->
     <body name="box_0" pos="0.35 0.10 0.02">
       <freejoint/>
       <geom name="box_0_geom" type="box" size="0.02 0.02 0.02" material="matte_red" mass="0.1"/>
-    </body>
-    <body name="box_1" pos="0.35 -0.10 0.02">
-      <freejoint/>
-      <geom name="box_1_geom" type="box" size="0.02 0.02 0.02" material="matte_green" mass="0.1"/>
     </body>
 
     <!-- Placement target. Fixed to the world, moved between episodes via model.body_pos. -->

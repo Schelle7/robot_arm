@@ -1,3 +1,10 @@
-height: 480
-width: 640
 jpeg_quality: 90
+cameras:
+  external_camera:
+    mujoco_name: pixel_cam
+    height: 480
+    width: 640
+  wrist_camera:
+    mujoco_name: wrist_cam
+    height: 360
+    width: 640

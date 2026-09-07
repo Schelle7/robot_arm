@@ -1,12 +1,15 @@
 import numpy as np
 from collections import deque
+from types import SimpleNamespace
 
 from robot_arm.envs.env import RobotEnv
 from robot_arm.pose import Pose
+from robot_arm.robot_schema import MOTOR_ORDER
 
 
 def make_env() -> RobotEnv:
     env = RobotEnv.__new__(RobotEnv)
+    env.grasp_estimator = SimpleNamespace(reset=lambda: None)
     env.tracking_progress_enabled = True
     env.joint_limit_penalty_enabled = True
     env.termination_penalty_enabled = True
@@ -299,9 +302,15 @@ def test_action_change_penalty_uses_actor_action_before_compensation():
 def test_reset_clears_tracking_state():
     env = make_env()
     pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-    env.arm = type("ArmStub", (), {"read_state": lambda self: {}, "get_tcp_pose": lambda self, state: pose})()
+    initial_state = {
+        "Present_Position": {motor: 0.0 for motor in MOTOR_ORDER},
+        "sample_time_ns": 0,
+    }
+    env.arm = type("ArmStub", (), {"read_state": lambda self: initial_state, "get_tcp_pose": lambda self, state: pose})()
     env._get_obs = lambda: {}
+    env._reset_state_history = lambda joint_positions, tcp_pose, sample_time_ns: None
     env.backend = "real"
+    env.motor_order = MOTOR_ORDER
     env.staging_enabled = False
     env.previous_position_distance = 2.0
     env.previous_primary_orientation_distance = 3.0

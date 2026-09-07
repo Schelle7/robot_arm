@@ -3,7 +3,7 @@ import copy
 import numpy as np
 from typing import Dict, List, Any
 from PIL import Image
-from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.robot_schema import CAMERA_NAMES, MOTOR_ORDER
 
 
 class EpisodeRecorder:
@@ -21,18 +21,23 @@ class EpisodeRecorder:
     ):
         self.output_dir = output_dir
         self.episode_dir = os.path.join(output_dir, episode_name)
-        self.images_dir = os.path.join(self.episode_dir, "images")
+        self.external_camera_images_dir = os.path.join(self.episode_dir, "images", "external_camera")
+        self.wrist_camera_images_dir = os.path.join(self.episode_dir, "images", "wrist_camera")
         self.jpeg_quality = cfg.camera.jpeg_quality
         self.joint_steps_per_cartesian_action = cfg.control.frequencies.joint // cfg.control.frequencies.cartesian
         self.record_sim_state = cfg.runtime.record_sim_state
         self.record_policy_debug = cfg.runtime.record_policy_debug
+        self.capture_camera = cfg.runtime.capture_camera
         self.motor_order = MOTOR_ORDER
         self.states: List[Dict[str, Any]] = []
         self.transitions: List[Dict[str, Any]] = []
         self.dense_trajectory_buffer: List[Dict[str, Any]] = []
         self.waypoints = None
 
-        os.makedirs(self.images_dir, exist_ok=True)
+        os.makedirs(self.episode_dir, exist_ok=True)
+        if self.capture_camera:
+            os.makedirs(self.external_camera_images_dir, exist_ok=True)
+            os.makedirs(self.wrist_camera_images_dir, exist_ok=True)
 
     def save_waypoints(self, waypoints: list[np.ndarray]):
         """
@@ -49,12 +54,13 @@ class EpisodeRecorder:
         cartesian_action: np.ndarray,
         pose,
         sim_state: Dict[str, np.ndarray] | None,
-        image: np.ndarray,
+        images: dict[str, np.ndarray] | None,
         vla_input_state: np.ndarray,
         primitive_prompt: str,
         primitive_index: int,
         diagnostics: Dict[str, Any],
         completes_active_primitive: bool,
+        box_gripped: bool,
     ):
         self.states.append(
             self._make_state(
@@ -64,7 +70,8 @@ class EpisodeRecorder:
                 sensor_state=sensor_state,
                 pose=pose,
                 sim_state=sim_state,
-                image=image,
+                images=images,
+                box_gripped=box_gripped,
             )
         )
         self.transitions.append(
@@ -83,13 +90,14 @@ class EpisodeRecorder:
 
     def record_final_state(
         self,
+        box_gripped: bool,
         state_idx: int,
         primitive_index: int,
         obs: Dict[str, np.ndarray],
         sensor_state: Dict[str, Any],
         pose,
         sim_state: Dict[str, np.ndarray] | None,
-        image: np.ndarray,
+        images: dict[str, np.ndarray] | None,
     ):
         self.states.append(
             self._make_state(
@@ -99,15 +107,17 @@ class EpisodeRecorder:
                 sensor_state=sensor_state,
                 pose=pose,
                 sim_state=sim_state,
-                image=image,
+                images=images,
+                box_gripped=box_gripped,
             )
         )
 
-    def _make_state(self, state_idx, primitive_index, obs, sensor_state, pose, sim_state, image):
+    def _make_state(self, state_idx, primitive_index, obs, sensor_state, pose, sim_state, images, box_gripped):
         return {
+            "box_gripped": bool(box_gripped),
             "step": state_idx,
             "primitive_index": primitive_index,
-            "image_path": self._save_image(state_idx, image),
+            "image_paths": self._save_images(state_idx, images) if self.capture_camera else None,
             "joint_positions": obs["joint_positions"].copy(),
             "joint_velocities": obs["joint_velocities"].copy(),
             "sensor_state": sensor_state,
@@ -151,16 +161,24 @@ class EpisodeRecorder:
             }
         )
 
-    def _save_image(self, state_idx: int, pixels: np.ndarray) -> str:
-        """Saves the camera frame to disk and returns the relative path."""
-        image_path = f"images/frame_{state_idx:04d}.jpg"
-        abs_image_path = os.path.join(self.episode_dir, image_path)
-
-        img_array = pixels
-        img = Image.fromarray(img_array)
-        img.save(abs_image_path, format="JPEG", quality=self.jpeg_quality)
-
-        return image_path
+    def _save_images(self, state_idx: int, images: dict[str, np.ndarray]) -> dict[str, str]:
+        assert tuple(images) == CAMERA_NAMES, f"Expected cameras {CAMERA_NAMES}, got {tuple(images)}."
+        external_camera_image_path = f"images/external_camera/frame_{state_idx:04d}.jpg"
+        wrist_camera_image_path = f"images/wrist_camera/frame_{state_idx:04d}.jpg"
+        Image.fromarray(images["external_camera"]).save(
+            os.path.join(self.episode_dir, external_camera_image_path),
+            format="JPEG",
+            quality=self.jpeg_quality,
+        )
+        Image.fromarray(images["wrist_camera"]).save(
+            os.path.join(self.episode_dir, wrist_camera_image_path),
+            format="JPEG",
+            quality=self.jpeg_quality,
+        )
+        return {
+            "external_camera": external_camera_image_path,
+            "wrist_camera": wrist_camera_image_path,
+        }
 
     def save(self):
         """
@@ -171,10 +189,10 @@ class EpisodeRecorder:
         # TODO(lerobot): Review this state/transition layout against LeRobot's dataset schema.
 
         data_dict = {
+            "box_gripped": np.array([s["box_gripped"] for s in self.states], dtype=bool),
             "step": np.array([s["step"] for s in self.states], dtype=np.int32),
             "primitive_prompt": np.array([t["primitive_prompt"] for t in self.transitions], dtype=str),
             "primitive_index": np.array([s["primitive_index"] for s in self.states], dtype=np.int32),
-            "image_path": np.array([s["image_path"] for s in self.states], dtype=str),
             "vla_input_state": np.array(
                 [t["vla_input_state"] for t in self.transitions],
                 dtype=np.float32,
@@ -200,6 +218,16 @@ class EpisodeRecorder:
             "reward": np.array([t["reward"] for t in self.transitions], dtype=np.float32),
             "dense_trajectory": np.array([t["dense_trajectory"] for t in self.transitions], dtype=object),
         }
+
+        if self.capture_camera:
+            data_dict["external_camera_image_path"] = np.array(
+                [state["image_paths"]["external_camera"] for state in self.states],
+                dtype=str,
+            )
+            data_dict["wrist_camera_image_path"] = np.array(
+                [state["image_paths"]["wrist_camera"] for state in self.states],
+                dtype=str,
+            )
 
         sensor_names = ("Present_Temperature", "Present_Load", "Present_Voltage")
         for sensor_name in sensor_names:

@@ -20,6 +20,9 @@ def main(rollout_cfg: DictConfig):
     cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
 
+    if not merged_cfg.runtime.capture_camera:
+        print("WARNING: Camera capture is disabled; recording numeric episode data without images.")
+
     output_dir = os.path.join(run_dir, "waypoint_recording")
     recorder = EpisodeRecorder(
         output_dir=output_dir,

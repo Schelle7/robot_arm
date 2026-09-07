@@ -20,7 +20,6 @@ def assert_matching_policy_constraints(
             raise ValueError(f"Rollout frequency {field!r} ({current_value}) does not match " f"the policy frequency ({saved_value}).")
 
     safety_fields = (
-        "max_temperature_celsius",
         "duty_ema_seconds",
         "max_smoothed_duty",
     )

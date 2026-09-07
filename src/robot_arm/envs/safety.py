@@ -54,6 +54,12 @@ class SafeArmWrapper(Arm):
     def get_tcp_axes(self):
         return self.backend_arm.get_tcp_axes()
 
+    def physics_metrics(self) -> Dict[str, float]:
+        return self.backend_arm.physics_metrics()
+
+    def read_cameras(self) -> dict[str, np.ndarray]:
+        return self.backend_arm.read_cameras()
+
     def read_state(self) -> Dict[str, Dict[str, float]]:
         state = self.backend_arm.read_state()
 

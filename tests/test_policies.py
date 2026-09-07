@@ -48,7 +48,10 @@ def make_primitive(start_pose: Pose, target_pose: Pose, prompt: str = "follow wa
 def get_scripted_action(policy, current_pose: Pose, target_pose: Pose):
     return policy.get_action(
         current_pose=current_pose,
-        image=np.zeros((1, 1, 3), dtype=np.uint8),
+        images={
+            "external_camera": np.zeros((1, 1, 3), dtype=np.uint8),
+            "wrist_camera": np.zeros((1, 1, 3), dtype=np.uint8),
+        },
         vla_input_state=np.zeros(16, dtype=np.float32),
         gripper_duty=0.0,
         primitive=make_primitive(current_pose, target_pose),

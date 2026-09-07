@@ -28,6 +28,7 @@ class EnvironmentStub:
         self.received_paths = []
         self.received_actions = []
         self.pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+        self.arm = SimpleNamespace(physics_metrics=lambda: {})
 
     def get_end_effector_pose(self):
         return self.pose
@@ -62,6 +63,7 @@ class EnvironmentStub:
                 sensor_state={},
                 end_effector_pose=self.pose,
                 sim_state=None,
+                box_gripped=False,
             ),
             float(sum(self.reward_breakdown.values())),
             self.reward_breakdown,
@@ -133,6 +135,7 @@ def test_cartesian_action_measures_every_policy_observation_against_one_desired_
             sensor_state={},
             end_effector_pose=environment.pose,
             sim_state=None,
+            box_gripped=False,
         ),
         cartesian_action,
         0.0,
@@ -167,6 +170,7 @@ def test_policy_observation_keys_match_declared_observation_space():
             sensor_state={},
             end_effector_pose=environment.pose,
             sim_state=None,
+            box_gripped=False,
         ),
         cartesian_action,
         0.0,
@@ -190,7 +194,7 @@ def test_duty_compensation_excludes_gripper():
     }
 
     runner.execute_cartesian_action(
-        EnvironmentState(raw_obs, {}, environment.pose, None),
+        EnvironmentState(raw_obs, {}, environment.pose, None, False),
         np.zeros(7, dtype=np.float32),
         0.0,
         False,
@@ -221,6 +225,7 @@ def test_detailed_metrics_only_include_returned_reward_components():
             sensor_state={},
             end_effector_pose=environment.pose,
             sim_state=None,
+            box_gripped=False,
         ),
         np.zeros(10, dtype=np.float32),
         0.0,

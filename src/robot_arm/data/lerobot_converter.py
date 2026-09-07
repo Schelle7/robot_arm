@@ -14,7 +14,7 @@ from omegaconf import OmegaConf
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from robot_arm.pose import Pose
-from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
+from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
 
 
 @contextmanager
@@ -35,7 +35,7 @@ def _quiet_native_stderr():
             os.close(original_stderr)
 
 
-def _validate_and_load_configs(episodes: list[str]):
+def _validate_and_load_configs(episodes: list[str], fps: int):
     # The input epsiodes path looks like: outputs/collect_data/.../recordings/waypoint_dataset_01/episode.npz
     # We need to traverse up 3 levels to reach the root outputs/... directory where .hydra lives.
     run_dirs = {os.path.dirname(os.path.dirname(os.path.dirname(ep))) for ep in episodes}
@@ -48,14 +48,19 @@ def _validate_and_load_configs(episodes: list[str]):
             raise FileNotFoundError(f"Missing config.yaml at {cfg_path}")
 
         cfg = OmegaConf.load(cfg_path)
+        recorded_fps = cfg.control.frequencies.cartesian
+        if recorded_fps != fps:
+            raise ValueError(f"Recording frequency mismatch in {run_dir}: recorded {recorded_fps} FPS, conversion requested {fps} FPS.")
         if ref_cfg is None:
             ref_cfg = cfg
             ref_dir = run_dir
         else:
             # Check agreement on critical dimensions
             if (
-                cfg.camera.height != ref_cfg.camera.height
-                or cfg.camera.width != ref_cfg.camera.width
+                cfg.camera.cameras.external_camera.height != ref_cfg.camera.cameras.external_camera.height
+                or cfg.camera.cameras.external_camera.width != ref_cfg.camera.cameras.external_camera.width
+                or cfg.camera.cameras.wrist_camera.height != ref_cfg.camera.cameras.wrist_camera.height
+                or cfg.camera.cameras.wrist_camera.width != ref_cfg.camera.cameras.wrist_camera.width
                 or cfg.waypoint.cartesian_action_dim != ref_cfg.waypoint.cartesian_action_dim
             ):
                 raise ValueError(f"Configuration mismatch detected between {ref_dir} and {run_dir}. " f"Datasets must have identical dimensions.")
@@ -65,10 +70,24 @@ def _validate_and_load_configs(episodes: list[str]):
 def _build_dataset_features(ref_cfg):
     cartesian_action_dim = int(ref_cfg.waypoint.cartesian_action_dim)
     assert cartesian_action_dim == len(CARTESIAN_ACTION_NAMES)
-    return {
-        "observation.images.camera1": {
+    assert tuple(ref_cfg.camera.cameras) == CAMERA_NAMES
+    features = {
+        "observation.images.external_camera": {
             "dtype": "video",
-            "shape": (ref_cfg.camera.height, ref_cfg.camera.width, 3),
+            "shape": (
+                ref_cfg.camera.cameras.external_camera.height,
+                ref_cfg.camera.cameras.external_camera.width,
+                3,
+            ),
+            "names": ["height", "width", "channel"],
+        },
+        "observation.images.wrist_camera": {
+            "dtype": "video",
+            "shape": (
+                ref_cfg.camera.cameras.wrist_camera.height,
+                ref_cfg.camera.cameras.wrist_camera.width,
+                3,
+            ),
             "names": ["height", "width", "channel"],
         },
         "observation.state": {
@@ -87,6 +106,7 @@ def _build_dataset_features(ref_cfg):
             "names": [PRIMITIVE_COMPLETION],
         },
     }
+    return features
 
 
 def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
@@ -104,7 +124,21 @@ def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
     return torch.from_numpy(state)
 
 
-def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
+def filter_failed_grips(data, fps: int, min_gripped_seconds: float) -> bool:
+    prompts = data["primitive_prompt"]
+    closing = prompts == "close gripper"
+    if not np.any(closing):
+        return True
+    lifting = prompts == "lift object"
+    if not np.any(lifting):
+        return False
+    gripped = data["box_gripped"][:-1]
+    assert gripped.shape == prompts.shape, "Expected one gripped state per transition plus one final state."
+    gripped_seconds = np.count_nonzero(gripped & (closing | lifting)) / fps
+    return bool(gripped_seconds >= min_gripped_seconds)
+
+
+def convert_to_lerobot(source_dir: str, target_dir: str, fps: int, min_gripped_seconds: float):
     """
     Parses flat .npz tracking outputs and corresponding jpegs,
     and converts them into LeRobot/Hugging Face format using LeRobotDataset.create().
@@ -118,8 +152,18 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
         raise FileNotFoundError(f"No episode.npz files found in {source_dir}")
 
     # Discover and validate run configurations
-    ref_cfg = _validate_and_load_configs(episodes)
+    ref_cfg = _validate_and_load_configs(episodes, fps)
     features = _build_dataset_features(ref_cfg)
+
+    accepted_episodes = []
+    for ep_path in episodes:
+        with np.load(ep_path, allow_pickle=True) as data:
+            if filter_failed_grips(data, fps, min_gripped_seconds):
+                accepted_episodes.append(ep_path)
+    print(f"Grip filter: accepted {len(accepted_episodes)}, rejected {len(episodes) - len(accepted_episodes)} recordings.")
+    if not accepted_episodes:
+        raise ValueError("All recordings were rejected by the failed-grip filter.")
+    episodes = accepted_episodes
 
     # Use the target_dir name as the repo_id (e.g. "robot_arm_vla_dataset")
     repo_id = os.path.basename(os.path.normpath(target_dir))
@@ -145,12 +189,12 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
         num_frames = len(data["step"])
 
         for frame_idx in range(num_frames - 1):
-            # Load the corresponding image. The NPZ contains the relative path.
-            # We align observation t with action t (which is technically recorded at step+1 in our loop).
-            image_rel_path = data["image_path"][frame_idx]
-            image_abs_path = os.path.join(ep_dir, image_rel_path)
-
-            img = Image.open(image_abs_path).convert("RGB")
+            external_camera_image = Image.open(
+                os.path.join(ep_dir, data["external_camera_image_path"][frame_idx])
+            ).convert("RGB")
+            wrist_camera_image = Image.open(
+                os.path.join(ep_dir, data["wrist_camera_image_path"][frame_idx])
+            ).convert("RGB")
 
             state = _reconstruct_vla_input_state(data, frame_idx)
 
@@ -168,18 +212,19 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int):
             )
 
             # Add frame to the dataset
-            dataset.add_frame(
-                {
-                    "observation.images.camera1": img,
-                    "observation.state": state,
-                    "action": action,
-                    PRIMITIVE_COMPLETION: primitive_completion,
-                    "task": task,
-                }
-            )
+            frame = {
+                "observation.images.external_camera": external_camera_image,
+                "observation.images.wrist_camera": wrist_camera_image,
+                "observation.state": state,
+                "action": action,
+                PRIMITIVE_COMPLETION: primitive_completion,
+                "task": task,
+            }
+            dataset.add_frame(frame)
 
-        # Complete the episode
-        with _quiet_native_stderr():
-            dataset.save_episode()
+            if frame_idx == num_frames - 2 or data["primitive_index"][frame_idx + 1] != data["primitive_index"][frame_idx]:
+                with _quiet_native_stderr():
+                    dataset.save_episode()
 
+    dataset.finalize()
     print("Dataset conversion complete!")

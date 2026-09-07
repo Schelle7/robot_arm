@@ -119,9 +119,8 @@ class RealArm(Arm):
     def get_tcp(self) -> np.ndarray:
         raise NotImplementedError("Real arm does not have access to pinch point")
 
-    def read_camera(self) -> np.ndarray:
-        print("\033[93mWARNING: READ_CAMERA NOT IMPLEMENTED FOR REAL ARM YET! RETURN DUMMY IMAGE\033[0m")
-        return np.zeros((480, 640, 3), dtype=np.uint8)
+    def read_cameras(self) -> dict[str, np.ndarray]:
+        raise NotImplementedError("Real camera capture is not implemented.")
 
     def set_pwm_mode(self) -> None:
         """

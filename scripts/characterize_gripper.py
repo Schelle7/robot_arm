@@ -26,9 +26,6 @@ class DeltaResult:
     tripped_safety: bool
 
 
-STOWED_BOX_POSITION = (-0.30, 0.0, 0.02)
-
-
 def move_box(arm, body_name: str, position) -> None:
     body_id = mujoco.mj_name2id(arm.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
     joint_id = arm.model.body_jntadr[body_id]
@@ -53,7 +50,6 @@ def place_measurement_scene(arm, start_joint_positions) -> None:
     resting_height = float(arm.model.geom_size[arm.model.body_geomadr[box_body_id]][2])
     jaw_midpoint = arm.get_tcp_pose(arm.read_state()).position
     move_box(arm, BOX_BODY_NAMES[0], (jaw_midpoint[0], jaw_midpoint[1], resting_height))
-    move_box(arm, BOX_BODY_NAMES[1], STOWED_BOX_POSITION)
     mujoco.mj_forward(arm.model, arm.data)
 
 
@@ -111,6 +107,12 @@ class GripperSweep:
     def record(self, state: Dict, delta_index: int, commanded_delta_radians: float, duty_fraction: float) -> None:
         pose = self.arm.get_tcp_pose(state)
         self.recorder.record_transition(
+            box_gripped=self.env.grasp_estimator.update(
+                state["Present_Position"]["gripper"],
+                state["Present_Velocity"]["gripper"],
+                state["Present_Load"]["gripper"],
+                state["sample_time_ns"],
+            ),
             state_idx=self.recorded_states,
             obs=self.observation_of(state),
             sensor_state=state,
@@ -118,7 +120,7 @@ class GripperSweep:
             cartesian_action_path=np.zeros((1, len(CARTESIAN_ACTION_NAMES)), dtype=np.float32),
             pose=pose,
             sim_state=state["sim_state"] if self.cfg.runtime.record_sim_state and self.is_sim else None,
-            image=self.env.read_camera(),
+            images=self.env.read_cameras(),
             vla_input_state=np.zeros(16, dtype=np.float32),
             primitive_prompt=f"hold gripper {commanded_delta_radians:.4f} rad below measured",
             primitive_index=delta_index,
@@ -204,6 +206,12 @@ class GripperSweep:
         # EMA is already over the limit and every further read would raise again.
         state = self.last_state
         self.recorder.record_final_state(
+            box_gripped=self.env.grasp_estimator.update(
+                self.last_state["Present_Position"]["gripper"],
+                self.last_state["Present_Velocity"]["gripper"],
+                self.last_state["Present_Load"]["gripper"],
+                self.last_state["sample_time_ns"],
+            ),
             state_idx=self.recorded_states,
             primitive_index=max(len(self.held_poses) - 1, 0),
             obs={
@@ -213,7 +221,7 @@ class GripperSweep:
             sensor_state=state,
             pose=self.arm.get_tcp_pose(state),
             sim_state=state["sim_state"] if self.cfg.runtime.record_sim_state and self.is_sim else None,
-            image=self.env.read_camera(),
+            images=self.env.read_cameras(),
         )
 
 

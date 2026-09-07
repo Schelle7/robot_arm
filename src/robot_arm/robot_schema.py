@@ -7,6 +7,8 @@ MOTOR_ORDER = (
     "gripper",
 )
 
+CAMERA_NAMES = ("external_camera", "wrist_camera")
+
 POLICY_OBSERVATION_NAMES = (
     "joint_positions",
     "joint_velocities",
@@ -43,7 +45,7 @@ def policy_observation_dim(cartesian_action_dim: int) -> int:
     assert tuple(sizes) == POLICY_OBSERVATION_NAMES
     return sum(sizes.values())
 
-BOX_BODY_NAMES = ("box_0", "box_1")
+BOX_BODY_NAMES = ("box_0",)
 
 TILE_BODY_NAME = "tile"
 

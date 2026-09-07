@@ -36,6 +36,17 @@ class Arm(abc.ABC):
     def get_tcp_axes(self) -> tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError("Arm backend does not expose TCP axes.")
 
+    def physics_metrics(self) -> Dict[str, float]:
+        """
+        Physics parameters that vary between episodes, for logging. Empty where they cannot,
+        which is every backend driving real hardware.
+        """
+        return {}
+
+    @abc.abstractmethod
+    def read_cameras(self) -> dict[str, np.ndarray]:
+        pass
+
     @abc.abstractmethod
     def disconnect(self):
         """

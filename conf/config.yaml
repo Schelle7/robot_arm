@@ -19,6 +19,8 @@ hydra:
 model_path: "models/so101/scene.xml"
 backend: "sim" # "sim" or "real"
 seed: 0
+conversion:
+  min_gripped_seconds: 2.0
 
 # Hardware parameters used if backend == "real"
 hardware:

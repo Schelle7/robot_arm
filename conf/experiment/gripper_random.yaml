@@ -1,0 +1,29 @@
+# @package _global_
+device: "cuda"
+
+runtime:
+  record_policy_debug: false
+  capture_camera: false
+
+reward:
+  tracking:
+    deviation: false
+
+control:
+  frequencies:
+    cartesian: 5
+    joint: 20
+  staging:
+    enabled: false
+
+waypoint:
+  position_speed_meters_per_second: 0.05
+  rotation_speed_radians_per_second: 0.2
+  gripper_speed_radians_per_second: 0.5
+  primitive_probabilities:
+    pick_and_place: 0.5
+    relative_move: 0.0
+    random_waypoint: 0.5
+
+training:
+  total_training_steps: 400000

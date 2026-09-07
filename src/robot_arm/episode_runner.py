@@ -38,9 +38,6 @@ class EpisodeRunner:
         if joint_hz % cartesian_hz != 0:
             raise ValueError(f"joint_hz ({joint_hz}) must be divisible by cartesian_hz ({cartesian_hz})")
 
-        if recorder and not cfg.runtime.capture_camera:
-            raise ValueError("Recording an episode requires runtime.capture_camera, the recorder saves a frame per state.")
-
         self.env = env
         self.joint_steps_per_cartesian_action = joint_hz // cartesian_hz
         self.low_level_policy = low_level_policy
@@ -96,13 +93,14 @@ class EpisodeRunner:
     def _record_final_state(self, state: EnvironmentState, state_idx: int, primitive_index: int):
         if self.recorder:
             self.recorder.record_final_state(
+                box_gripped=state.box_gripped,
                 state_idx=state_idx,
                 primitive_index=primitive_index,
                 obs=state.observation,
                 sensor_state=state.sensor_state,
                 pose=state.end_effector_pose,
                 sim_state=state.sim_state if self.cfg.runtime.record_sim_state else None,
-                image=self.env.read_camera(),
+                images=self.env.read_cameras() if self.cfg.runtime.capture_camera else None,
             )
 
     def _draw_desired_path(self, pose, action, active_waypoint_index):
@@ -115,7 +113,7 @@ class EpisodeRunner:
         state_idx: int,
         state: EnvironmentState,
         reward: float,
-        image: np.ndarray,
+        images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         primitive_prompt: str,
         primitive_index: int,
@@ -123,6 +121,7 @@ class EpisodeRunner:
     ):
         if self.recorder:
             self.recorder.record_transition(
+                box_gripped=state.box_gripped,
                 state_idx=state_idx,
                 obs=state.observation,
                 sensor_state=state.sensor_state,
@@ -130,7 +129,7 @@ class EpisodeRunner:
                 cartesian_action=cartesian_action.cartesian_action,
                 pose=state.end_effector_pose,
                 sim_state=state.sim_state if self.cfg.runtime.record_sim_state else None,
-                image=image,
+                images=images,
                 vla_input_state=vla_input_state,
                 primitive_prompt=primitive_prompt,
                 primitive_index=primitive_index,
@@ -141,6 +140,7 @@ class EpisodeRunner:
     def _publish_cartesian_action_metrics(self, total_reward, cartesian_action_reward_metrics):
         if self.training and self.metrics_queue:
             detailed_metrics = {"total_reward": total_reward}
+            detailed_metrics.update(self.env.arm.physics_metrics())
 
             if self.cfg.training.detailed_metrics:
                 detailed_metrics.update(cartesian_action_reward_metrics)
@@ -307,10 +307,10 @@ class EpisodeRunner:
             current_pose = state.end_effector_pose
             gripper_duty = float(state.observation["gripper_duty"][0])
             vla_input_state = self.primitive_policy.build_vla_input_state(primitive, current_pose, gripper_duty)
-            image = self.env.read_camera() if self.cfg.runtime.capture_camera else None
+            images = self.env.read_cameras() if self.cfg.runtime.capture_camera else None
             cartesian_action = self.cartesian_policy.get_action(
                 current_pose=current_pose,
-                image=image,
+                images=images,
                 vla_input_state=vla_input_state,
                 gripper_duty=gripper_duty,
                 primitive=primitive,
@@ -332,7 +332,7 @@ class EpisodeRunner:
                 completed_steps,
                 state,
                 reward,
-                image,
+                images,
                 vla_input_state,
                 primitive.prompt,
                 primitive_index,

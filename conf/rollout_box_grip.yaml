@@ -1,0 +1,14 @@
+defaults:
+  - rollout
+  - _self_
+
+backend: sim
+
+waypoint:
+  completion_tolerance:
+    primary_rotation_radians: 0.15
+    secondary_rotation_radians: 0.20
+  primitive_probabilities:
+    pick_and_place: 1.0
+    relative_move: 0.0
+    random_waypoint: 0.0

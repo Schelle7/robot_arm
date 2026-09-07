@@ -24,3 +24,8 @@ stall_torque_newton_meters: 1.31
 # ESTIMATED, not measured: ~0.22 s/60 deg at 7.4 V scaled to 5.2 V, biased low for gearbox friction
 # in the 1/345 train. Only matters while a joint is moving quickly; it vanishes at stall.
 no_load_speed_radians_per_second: 3.3
+
+physics_randomization:
+  damping: [0.04, 0.15]
+  frictionloss: [0.015, 0.06]
+  armature: [0.008, 0.03]

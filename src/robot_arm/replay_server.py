@@ -23,6 +23,8 @@ PAGE = """<!doctype html>
     .low-level-controls { grid-template-columns: auto minmax(180px, 1fr) 84px; }
     .controls label { font-weight: 600; }
     .branch-controls { padding: 20px 0; border-bottom: 2px solid var(--ink); overflow-x: auto; }
+    .active-primitive { display: flex; gap: 12px; padding: 16px 0; border-bottom: 2px solid var(--ink); font-size: 18px; font-weight: 700; }
+    .active-primitive-label { color: var(--muted); text-transform: uppercase; }
     .duty-grid { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)); gap: 12px; min-width: 720px; }
     .duty-grid label, .generation-row label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
     .duty-grid input, .generation-row input { width: 100%; padding: 7px 8px; border: 1px solid #899791; background: var(--panel); font: inherit; }
@@ -66,6 +68,10 @@ PAGE = """<!doctype html>
     <input id="lowLevelRange" type="range" min="0" max="0" value="0" disabled>
     <input id="lowLevelNumber" type="number" min="0" max="0" value="0" aria-label="Low-level step number" disabled>
 </div>
+<div class="active-primitive">
+    <span class="active-primitive-label">Active primitive</span>
+    <span id="activePrimitive">N/A</span>
+</div>
 <div id="tables"></div>
 <div id="branchControls" class="branch-controls">
     <h2>Fixed policy-action branch</h2>
@@ -91,6 +97,7 @@ PAGE = """<!doctype html>
     const lowLevelRange = document.getElementById("lowLevelRange");
     const lowLevelNumber = document.getElementById("lowLevelNumber");
     const lowLevelLabel = document.getElementById("lowLevelLabel");
+    const activePrimitive = document.getElementById("activePrimitive");
     const dutyGrid = document.getElementById("dutyGrid");
     const durationSeconds = document.getElementById("durationSeconds");
     const generateButton = document.getElementById("generateButton");
@@ -329,6 +336,7 @@ PAGE = """<!doctype html>
             lowLevelNumber.value = state.current_low_level_step;
         }
         lowLevelLabel.textContent = state.low_level_step_count === 0 ? "N/A" : `${state.current_low_level_step + 1} / ${state.low_level_step_count}`;
+        activePrimitive.textContent = state.active_primitive;
         playButton.textContent = state.auto_play ? "Pause" : "Play";
         status.textContent = state.auto_play ? "Playing" : "Paused";
         branchControls.hidden = !state.branch_available;
@@ -364,6 +372,7 @@ class ReplayServer:
             "duty_limits": duty_limits,
             "auto_play": False,
             "branch_available": branch_available,
+            "active_primitive": "N/A",
         }
         self.port = port
         self.episode_path = str(Path(episode_path).resolve())
@@ -375,7 +384,7 @@ class ReplayServer:
         }
         self.command_queue = queue.SimpleQueue()
 
-    def display(self, sections, warnings, current_frame, current_low_level_step, low_level_step_count, auto_play) -> None:
+    def display(self, sections, warnings, current_frame, current_low_level_step, low_level_step_count, active_primitive, auto_play) -> None:
         self.state = {
             "sections": sections,
             "warnings": list(warnings),
@@ -388,6 +397,7 @@ class ReplayServer:
             "duty_limits": self.state["duty_limits"],
             "auto_play": auto_play,
             "branch_available": self.state["branch_available"],
+            "active_primitive": active_primitive,
         }
 
     def take_commands(self):
