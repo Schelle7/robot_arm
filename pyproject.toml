@@ -33,3 +33,6 @@ target-version = ["py312"]
 
 [tool.ruff]
 line-length = 175
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -3,7 +3,8 @@ import mujoco
 import numpy as np
 
 from robot_arm.backends.arm import Arm
-from robot_arm.experimental_waypoints import shoulder_pan_position
+from robot_arm.waypoints import shoulder_pan_position
+from robot_arm.gripper_geometry import get_tcp_geometry
 from robot_arm.pose import Pose
 from robot_arm.backends.servo import duty_from_action, duty_to_torque
 from robot_arm.robot_schema import BOX_BODY_NAMES, CAMERA_NAMES, OBJECT_COLORS, TILE_BODY_NAME
@@ -15,31 +16,6 @@ def object_color(model, body_name: str) -> str:
     assert body_id != -1, f"Body {body_name!r} not found in MuJoCo model."
     material_id = model.geom_matid[model.body_geomadr[body_id]]
     return mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_MATERIAL, material_id).removeprefix("matte_")
-
-
-def get_tcp_geometry(model, data):
-    fixed_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "fixed_finger_tip")
-    moving_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "moving_finger_tip")
-    fixed = data.site_xpos[fixed_id].copy()
-    moving = data.site_xpos[moving_id].copy()
-
-    frame_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe")
-    secondary = data.site_xmat[frame_id].reshape(3, 3)[:, 1]
-    closing = fixed - moving
-    closing = closing / np.linalg.norm(closing)
-    secondary = secondary - np.dot(secondary, closing) * closing
-    secondary = secondary / np.linalg.norm(secondary)
-
-    gripper_joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "gripper")
-    gripper_qpos_id = model.jnt_qposadr[gripper_joint_id]
-    pose = Pose.from_tcp_axes(
-        (fixed + moving) / 2.0,
-        closing,
-        secondary,
-        float(data.qpos[gripper_qpos_id]),
-    )
-
-    return pose, fixed, moving
 
 
 def tcp_debug_segments(model, data):
@@ -179,6 +155,10 @@ class SimBackend(Arm):
         servo,
     ):
         self.model = mujoco.MjModel.from_xml_path(model_path)
+        self.added_weight_body_id = self.model.body("added_weight").id
+        self.box_mass_kg = float(self.model.body(BOX_BODY_NAMES[0]).mass[0])
+        added_weight_radius = float(self.model.geom("added_weight_geom").size[0])
+        self.added_weight_inertia_per_kg = 2.0 / 5.0 * added_weight_radius**2
         if disable_box_collisions:
             for body_name in BOX_BODY_NAMES:
                 body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
@@ -360,12 +340,17 @@ class SimBackend(Arm):
         assert material_id != -1, f"Material 'matte_{color}' not found in MuJoCo model."
         self.model.geom_matid[self.model.body_geomadr[body_id]] = material_id
 
-    def randomize_physics(self):
+    def randomize_physics(self, enable_added_weight: bool):
         ranges = self.servo.physics_randomization
         count = len(self.actuator_dof_indices)
         self.model.dof_damping[self.actuator_dof_indices] = np.random.uniform(*ranges.damping, size=count)
         self.model.dof_frictionloss[self.actuator_dof_indices] = np.random.uniform(*ranges.frictionloss, size=count)
         self.model.dof_armature[self.actuator_dof_indices] = np.random.uniform(*ranges.armature, size=count)
+        added_weight_kg = (
+            self.box_mass_kg * np.random.uniform(*ranges.added_weight.box_mass_fraction) if enable_added_weight else 0.0
+        )
+        self.model.body_mass[self.added_weight_body_id] = added_weight_kg
+        self.model.body_inertia[self.added_weight_body_id] = added_weight_kg * self.added_weight_inertia_per_kg
         mujoco.mj_setConst(self.model, self.data)
 
     def physics_metrics(self) -> Dict[str, float]:
@@ -374,22 +359,30 @@ class SimBackend(Arm):
             "frictionloss": self.model.dof_frictionloss,
             "armature": self.model.dof_armature,
         }
-        return {
+        metrics = {
             f"physics/{parameter}/{name}": float(values[dof_index])
             for parameter, values in randomized.items()
             for name, dof_index in zip(self.actuator_order, self.actuator_dof_indices)
         }
+        metrics["physics/added_weight_kg"] = float(self.model.body_mass[self.added_weight_body_id])
+        return metrics
 
     def randomize_objects(self):
         body_names = (*BOX_BODY_NAMES, TILE_BODY_NAME)
         positions = self._sample_object_positions(len(body_names))
         colors = np.random.choice(OBJECT_COLORS, size=len(body_names), replace=False)
+        box_offsets = positions[: len(BOX_BODY_NAMES)] - shoulder_pan_position(self.model, self.data)[:2]
+        # The grasp closes tangentially around the shoulder, along the rotated box's local Y axis.
+        half_yaws = 0.5 * np.arctan2(box_offsets[:, 1], box_offsets[:, 0])
+        box_quaternions = np.zeros((len(BOX_BODY_NAMES), 4))
+        box_quaternions[:, 0] = np.cos(half_yaws)
+        box_quaternions[:, 3] = np.sin(half_yaws)
 
-        for body_name, position, color in zip(BOX_BODY_NAMES, positions, colors):
+        for body_name, position, color, quaternion in zip(BOX_BODY_NAMES, positions, colors, box_quaternions):
             body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
             qpos_adr = self.model.jnt_qposadr[self.model.body_jntadr[body_id]]
             self.data.qpos[qpos_adr : qpos_adr + 3] = (*position, self._resting_height(body_id))
-            self.data.qpos[qpos_adr + 3 : qpos_adr + 7] = (1.0, 0.0, 0.0, 0.0)
+            self.data.qpos[qpos_adr + 3 : qpos_adr + 7] = quaternion
             self._paint(body_id, color)
 
         tile_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, TILE_BODY_NAME)
@@ -415,13 +408,13 @@ class SimBackend(Arm):
         else:
             raise ValueError(f"Unknown initial joint mode: {self.initial_joint_mode!r}")
 
-    def reset_sim(self):
+    def reset_sim(self, enable_added_weight: bool):
         mujoco.mj_resetData(self.model, self.data)
         self.commanded_duty[:] = 0.0
         # Placement is measured from the shoulder anchor, which is only valid once kinematics have run.
         mujoco.mj_forward(self.model, self.data)
 
-        self.randomize_physics()
+        self.randomize_physics(enable_added_weight)
         self.randomize_objects()
         self.initialize_arm_pos()
 

@@ -1,5 +1,4 @@
 import json
-import math
 import numpy as np
 from collections import deque
 from dataclasses import dataclass
@@ -9,7 +8,7 @@ from omegaconf import DictConfig
 
 from robot_arm.pose import Pose, axis_angular_distance
 from robot_arm.backends.arm import Arm
-from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.robot_schema import BOX_BODY_NAMES, HISTORY_APPLIED_DUTY_SLICE, HISTORY_FEATURE_NAMES, MOTOR_ORDER
 from robot_arm.grasp_estimator import GraspEstimator
 
 
@@ -19,7 +18,7 @@ class EnvironmentState:
     sensor_state: Dict[str, Any]
     end_effector_pose: Pose
     sim_state: Dict[str, np.ndarray] | None
-    box_gripped: bool
+    grasp_confirmed: bool
 
 
 class RobotEnv:
@@ -36,23 +35,21 @@ class RobotEnv:
         joint_limit_penalty_factor = cfg.reward.joint_limit_penalty_factor
         joint_hz = cfg.control.frequencies.joint
         mujoco_hz = cfg.control.frequencies.mujoco
-        state_history_intervals = joint_hz * cfg.control.state_history_seconds
+        policy_history_steps = joint_hz * cfg.control.policy_history_seconds
 
         assert mujoco_hz % joint_hz == 0, f"mujoco_hz ({mujoco_hz}) must be divisible by joint_hz ({joint_hz})"
-        assert state_history_intervals >= 1, "state_history_seconds must span at least one low-level control interval"
-        assert float(state_history_intervals).is_integer(), "state_history_seconds must contain an integer number of low-level control intervals"
+        assert policy_history_steps >= 2, "policy_history_seconds must span at least two low-level control intervals"
+        assert float(policy_history_steps).is_integer(), "policy_history_seconds must contain an integer number of low-level control intervals"
 
         self.arm = arm
         self.grasp_estimator = GraspEstimator(cfg.control.grasp_estimation)
+        self.max_box_distance_meters = float(cfg.control.grasp_estimation.max_box_distance_meters)
         self.backend = cfg.backend
         self.joint_limit_penalty_factor = joint_limit_penalty_factor
         self.joint_hz = joint_hz
         self.cartesian_hz = cfg.control.frequencies.cartesian
-        self.state_history_seconds = float(cfg.control.state_history_seconds)
-        self.state_history_intervals = int(state_history_intervals)
-        self.joint_position_history = deque(maxlen=self.state_history_intervals + 1)
-        self.tcp_pose_history = deque(maxlen=self.state_history_intervals + 1)
-        self.sample_time_history_ns = deque(maxlen=self.state_history_intervals + 1)
+        self.policy_history_steps = int(policy_history_steps)
+        self.policy_history = deque(maxlen=self.policy_history_steps)
         self.tracking_progress_enabled = cfg.reward.tracking.progress
         self.joint_limit_penalty_enabled = cfg.reward.joint_limit_penalty
         self.sustained_duty_penalty_enabled = cfg.reward.sustained_duty_penalty
@@ -83,8 +80,6 @@ class RobotEnv:
         # Hardcoding the ordered list of motors to ensure deterministic vectorization
         self.motor_order = MOTOR_ORDER
 
-        self.duty_history_alpha = 1.0 - math.exp(-1.0 / (joint_hz * cfg.control.duty_history_seconds))
-        self.duty_history = np.zeros(len(MOTOR_ORDER), dtype=np.float32)
         self.previous_action = np.zeros(len(MOTOR_ORDER), dtype=np.float32)
 
         self.reset_reward_tracking()
@@ -93,80 +88,110 @@ class RobotEnv:
     def get_end_effector_pose(self, state_dict: Dict[str, Any]) -> Pose:
         return self.arm.get_tcp_pose(state_dict)
 
-    def _reset_state_history(self, joint_positions: np.ndarray, tcp_pose: Pose, sample_time_ns: int) -> None:
-        self.joint_position_history.clear()
-        self.tcp_pose_history.clear()
-        self.sample_time_history_ns.clear()
-        control_interval_ns = round(1_000_000_000 / self.joint_hz)
-        for interval in range(self.state_history_intervals, 0, -1):
-            self.joint_position_history.append(joint_positions.copy())
-            self.tcp_pose_history.append(tcp_pose)
-            self.sample_time_history_ns.append(sample_time_ns - interval * control_interval_ns)
+    def _reset_policy_history(self) -> None:
+        self.policy_history.clear()
+        empty_entry = np.zeros(len(HISTORY_FEATURE_NAMES), dtype=np.float32)
+        for _ in range(self.policy_history_steps):
+            self.policy_history.append(empty_entry.copy())
 
-    def _state_history_velocities(self, joint_positions: np.ndarray, tcp_pose: Pose, sample_time_ns: int) -> tuple[np.ndarray, np.ndarray]:
-        self.joint_position_history.append(joint_positions.copy())
-        self.tcp_pose_history.append(tcp_pose)
-        self.sample_time_history_ns.append(sample_time_ns)
-        if self.backend == "real":
-            elapsed_seconds = (self.sample_time_history_ns[-1] - self.sample_time_history_ns[0]) / 1_000_000_000
-        else:
-            elapsed_seconds = self.state_history_seconds
+    def _set_motion_reference(self, joint_positions: np.ndarray, tcp_pose: Pose, sample_time_ns: int) -> None:
+        self.previous_joint_positions = joint_positions.copy()
+        self.previous_tcp_pose = tcp_pose
+        self.previous_sample_time_ns = sample_time_ns
+
+    def _consecutive_velocities(self, joint_positions: np.ndarray, tcp_pose: Pose, sample_time_ns: int) -> tuple[np.ndarray, np.ndarray]:
+        elapsed_seconds = (sample_time_ns - self.previous_sample_time_ns) / 1_000_000_000
         assert elapsed_seconds > 0.0, "Sensor sample timestamps must increase"
-        joint_velocity = (self.joint_position_history[-1] - self.joint_position_history[0]) / elapsed_seconds
-        tcp_velocity = self.tcp_pose_history[0].delta_to(self.tcp_pose_history[-1])[:6] / elapsed_seconds
+        joint_velocity = (joint_positions - self.previous_joint_positions) / elapsed_seconds
+        tcp_velocity = self.previous_tcp_pose.delta_to(tcp_pose)[:6] / elapsed_seconds
+        self._set_motion_reference(joint_positions, tcp_pose, sample_time_ns)
         return joint_velocity.astype(np.float32), tcp_velocity.astype(np.float32)
 
-    def _get_obs(self) -> EnvironmentState:
+    def _read_arm_state(self):
         state_dict = self.arm.read_state()
-        current_pos = np.array(
+        joint_positions = np.array(
             [state_dict["Present_Position"][m] for m in self.motor_order],
             dtype=np.float32,
         )
-        current_duty = np.array(
-            [state_dict["Present_Load"][m] for m in self.motor_order],
-            dtype=np.float32,
-        )
-        self.duty_history += self.duty_history_alpha * (np.abs(current_duty) - self.duty_history)
-
         end_effector_pose = self.get_end_effector_pose(state_dict)
-        current_vel, tcp_velocity = self._state_history_velocities(current_pos, end_effector_pose, state_dict["sample_time_ns"])
+        return state_dict, joint_positions, end_effector_pose
 
+    def _environment_state(
+        self,
+        state_dict: Dict[str, Any],
+        joint_positions: np.ndarray,
+        joint_velocities: np.ndarray,
+        tcp_velocity: np.ndarray,
+        end_effector_pose: Pose,
+    ) -> EnvironmentState:
         obs = {
-            "joint_positions": current_pos,
-            "joint_velocities": current_vel,
-            "previous_action": self.previous_action.copy(),
-            "gripper_duty": np.array([state_dict["Present_Load"]["gripper"]], dtype=np.float32),
-            "duty_history": self.duty_history.copy(),
+            "joint_positions": joint_positions,
+            "joint_velocities": joint_velocities,
+            "tcp_position": end_effector_pose.position.copy(),
             "tcp_velocity": tcp_velocity,
+            "gripper_duty": np.array([state_dict["Present_Load"]["gripper"]], dtype=np.float32),
+            "policy_history": np.stack(self.policy_history),
         }
+
+        grasp_confirmed = self._update_grasp_estimate(state_dict, joint_velocities, end_effector_pose)
 
         return EnvironmentState(
             observation=obs,
             sensor_state=state_dict,
             end_effector_pose=end_effector_pose,
             sim_state=self.arm.sim_state() if self.backend == "sim" else None,
-            box_gripped=self.grasp_estimator.update(
-                state_dict["Present_Position"]["gripper"],
-                current_vel[self.motor_order.index("gripper")],
-                state_dict["Present_Load"]["gripper"],
-                state_dict["sample_time_ns"],
-            ),
+            grasp_confirmed=grasp_confirmed,
         )
 
-    def reset(self) -> EnvironmentState:
+    def _update_grasp_estimate(
+        self,
+        state_dict: Dict[str, Any],
+        joint_velocities: np.ndarray,
+        end_effector_pose: Pose,
+    ) -> bool:
+        grasp_confirmed = self.grasp_estimator.update(
+            state_dict["Present_Position"]["gripper"],
+            joint_velocities[self.motor_order.index("gripper")],
+            state_dict["Present_Load"]["gripper"],
+            state_dict["sample_time_ns"],
+        )
+        if self.box_too_far(end_effector_pose):
+            self.grasp_estimator.reset()
+            grasp_confirmed = False
+
+        return grasp_confirmed
+
+    def box_too_far(self, end_effector_pose: Pose) -> bool:
+        return bool(
+            self.backend == "sim"
+            and np.linalg.norm(
+                self.arm.get_privileged_box_pose(BOX_BODY_NAMES[0]).position - end_effector_pose.position
+            ) > self.max_box_distance_meters
+        )
+
+    def _initial_environment_state(self) -> EnvironmentState:
+        state_dict, joint_positions, end_effector_pose = self._read_arm_state()
+        self._set_motion_reference(joint_positions, end_effector_pose, state_dict["sample_time_ns"])
+        zero_joint_velocity = np.zeros(len(MOTOR_ORDER), dtype=np.float32)
+        zero_tcp_velocity = np.zeros(6, dtype=np.float32)
+        return self._environment_state(
+            state_dict,
+            joint_positions,
+            zero_joint_velocity,
+            zero_tcp_velocity,
+            end_effector_pose,
+        )
+
+    def reset(self, enable_added_weight: bool) -> EnvironmentState:
         self.grasp_estimator.reset()
         self.reset_reward_tracking()
-        self.duty_history[:] = 0.0
         self.previous_action[:] = 0.0
+        self._reset_policy_history()
 
         if self.backend == "sim":
-            self.arm.reset_sim()
+            self.arm.reset_sim(enable_added_weight)
 
-        initial_state = self.arm.read_state()
-        initial_positions = np.array([initial_state["Present_Position"][motor] for motor in self.motor_order], dtype=np.float32)
-        self._reset_state_history(initial_positions, self.arm.get_tcp_pose(initial_state), initial_state["sample_time_ns"])
-
-        return self._get_obs()
+        return self._initial_environment_state()
 
     def reset_from_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> EnvironmentState:
         self.grasp_estimator.reset()
@@ -174,13 +199,10 @@ class RobotEnv:
             raise ValueError("A recorded MuJoCo state can only initialize the simulation backend.")
 
         self.reset_reward_tracking()
-        self.duty_history[:] = 0.0
         self.previous_action[:] = 0.0
+        self._reset_policy_history()
         self.arm.restore_sim_state(qpos, qvel)
-        initial_state = self.arm.read_state()
-        initial_positions = np.array([initial_state["Present_Position"][motor] for motor in self.motor_order], dtype=np.float32)
-        self._reset_state_history(initial_positions, self.arm.get_tcp_pose(initial_state), initial_state["sample_time_ns"])
-        return self._get_obs()
+        return self._initial_environment_state()
 
     def reset_cartesian_action_reward_tracking(self, cartesian_action_start_pose: Pose, cartesian_action: np.ndarray) -> None:
         desired_pose = self._compute_desired_pose(cartesian_action_start_pose, cartesian_action)
@@ -245,7 +267,9 @@ class RobotEnv:
         return joint_limit_penalty
 
     def _compute_sustained_duty_penalty(self) -> float:
-        excess = np.maximum(self.duty_history - self.sustained_duty_allowance, 0.0)
+        history = np.stack(self.policy_history)
+        mean_absolute_duty = np.mean(np.abs(history[:, HISTORY_APPLIED_DUTY_SLICE]), axis=0)
+        excess = np.maximum(mean_absolute_duty - self.sustained_duty_allowance, 0.0)
         return -self.sustained_duty_penalty_factor * float(excess.sum())
 
     def _compute_idle_action_penalty(self, policy_action: np.ndarray, time_left: float) -> float:
@@ -427,8 +451,23 @@ class RobotEnv:
         safe_action_dict = self.arm.write_duty(action_dict, position_dict)
         self.arm.advance_control_step()
 
-        # 3. Get new observation
-        state = self._get_obs()
+        state_dict, current_positions, end_effector_pose = self._read_arm_state()
+        joint_velocities, tcp_velocity = self._consecutive_velocities(
+            current_positions,
+            end_effector_pose,
+            state_dict["sample_time_ns"],
+        )
+        applied_duty = np.array([safe_action_dict[motor] for motor in self.motor_order], dtype=np.float32)
+        history_entry = np.concatenate((policy_action, applied_duty, joint_velocities, tcp_velocity)).astype(np.float32)
+        assert history_entry.shape == (len(HISTORY_FEATURE_NAMES),)
+        self.policy_history.append(history_entry)
+        state = self._environment_state(
+            state_dict,
+            current_positions,
+            joint_velocities,
+            tcp_velocity,
+            end_effector_pose,
+        )
 
         reward, reward_breakdown = self.compute_reward(
             requested_action=action_dict,
@@ -444,6 +483,5 @@ class RobotEnv:
             desired_gripper_duty_active=desired_gripper_duty_active,
         )
         self.previous_action[:] = policy_action
-        state.observation["previous_action"] = self.previous_action.copy()
 
         return state, reward, reward_breakdown

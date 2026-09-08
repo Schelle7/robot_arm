@@ -9,11 +9,6 @@ policy_name: latest
 
 control:
   max_seconds: 45
-  grasp_estimation:
-    position_range_radians: [0.1, 0.7]
-    min_closing_duty: 0.1
-    max_velocity_radians_per_second: 0.05
-    hold_seconds: 0.2
   frequencies:
     cartesian: 5
     joint: 20

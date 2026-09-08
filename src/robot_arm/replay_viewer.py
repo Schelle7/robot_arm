@@ -11,7 +11,7 @@ from robot_arm.backends.sim_arm import (
 )
 from robot_arm.replay import calculate_pose_delta, get_desired_poses
 from robot_arm.replay_display import build_replay_display
-from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.robot_schema import HISTORY_CONTEXT_FEATURE_NAMES, HISTORY_FEATURE_NAMES, MOTOR_ORDER
 
 
 class ReplayViewer:
@@ -129,8 +129,11 @@ class ReplayViewer:
         if self.current_frame < self.num_actions:
             primitive_number = int(self.primitive_indices[self.current_frame]) + 1
             active_primitive_label = f"{primitive_number}: {self.primitive_prompts[self.current_frame]}"
+            flat_policy_history = self.dense_trajectory[self.current_frame][self.current_low_level_step]["obs"]["history"]
+            policy_history = flat_policy_history[len(HISTORY_CONTEXT_FEATURE_NAMES) :].reshape(-1, len(HISTORY_FEATURE_NAMES))
         else:
             active_primitive_label = "N/A"
+            policy_history = []
         display_lines, warnings = build_replay_display(
             self.model,
             self.mdata,
@@ -147,7 +150,20 @@ class ReplayViewer:
             self.recorded_cfg,
         )
         dense_step_count = len(self.dense_trajectory[self.current_frame]) if self.current_frame < self.num_actions else 0
-        display(display_lines, warnings, self.current_frame, self.current_low_level_step, dense_step_count, active_primitive_label, self.auto_play)
+        history_end_time = (
+            sum(len(trajectory) for trajectory in self.dense_trajectory[: self.current_frame]) + self.current_low_level_step
+        ) / self.recorded_cfg.control.frequencies.joint
+        display(
+            display_lines,
+            warnings,
+            self.current_frame,
+            self.current_low_level_step,
+            dense_step_count,
+            np.asarray(policy_history).tolist(),
+            history_end_time,
+            active_primitive_label,
+            self.auto_play,
+        )
 
     def run(self, display, take_commands):
         cartesian_hz = self.recorded_cfg.control.frequencies.cartesian

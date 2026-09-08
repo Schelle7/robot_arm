@@ -1,201 +1,32 @@
 import math
 import time
-from typing import NamedTuple
 
 import hydra
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 from omegaconf import DictConfig
 
-
-class TrainState(NamedTuple):
-    actor_params: dict
-    critic_params: tuple
-    target_critic_params: tuple
-    log_ent_coef: jax.Array
-    actor_optimizer_state: optax.OptState
-    critic_optimizer_state: optax.OptState
-    ent_coef_optimizer_state: optax.OptState
-    random_key: jax.Array
+from robot_arm.jax_sac import Batch, build_update_step, initialize_state
+from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 
-class Batch(NamedTuple):
-    observations: jax.Array
-    actions: jax.Array
-    next_observations: jax.Array
-    rewards: jax.Array
-    dones: jax.Array
-
-
-def init_linear(random_key, input_dim, output_dim):
-    bound = 1.0 / math.sqrt(input_dim)
-    return {
-        "weight": jax.random.uniform(random_key, (input_dim, output_dim), minval=-bound, maxval=bound),
-        "bias": jnp.zeros((output_dim,), dtype=jnp.float32),
-    }
-
-
-def apply_linear(params, inputs):
-    return inputs @ params["weight"] + params["bias"]
-
-
-def init_hidden_layers(random_key, input_dim, hidden_dims):
-    layer_keys = jax.random.split(random_key, len(hidden_dims))
-    layer_dims = (input_dim, *hidden_dims)
-    return tuple(init_linear(layer_key, layer_dims[index], layer_dims[index + 1]) for index, layer_key in enumerate(layer_keys))
-
-
-def apply_hidden_layers(params, inputs):
-    activations = inputs
-    for layer_params in params:
-        activations = jax.nn.relu(apply_linear(layer_params, activations))
-    return activations
-
-
-def init_actor(random_key, observation_dim, action_dim, hidden_dims):
-    trunk_key, mean_key, log_std_key = jax.random.split(random_key, 3)
-    trunk = init_hidden_layers(trunk_key, observation_dim, hidden_dims)
-    latent_dim = hidden_dims[-1]
-    return {
-        "trunk": trunk,
-        "mean": init_linear(mean_key, latent_dim, action_dim),
-        "log_std": init_linear(log_std_key, latent_dim, action_dim),
-    }
-
-
-def sample_actor(actor_params, observations, random_key):
-    latent = apply_hidden_layers(actor_params["trunk"], observations)
-    mean = apply_linear(actor_params["mean"], latent)
-    log_std = jnp.clip(apply_linear(actor_params["log_std"], latent), -20.0, 2.0)
-    noise = jax.random.normal(random_key, mean.shape)
-    unsquashed_actions = mean + jnp.exp(log_std) * noise
-    actions = jnp.tanh(unsquashed_actions)
-    gaussian_log_prob = -0.5 * (jnp.square(noise) + 2.0 * log_std + math.log(2.0 * math.pi))
-    log_prob = jnp.sum(gaussian_log_prob - jnp.log(1.0 - jnp.square(actions) + 1e-6), axis=1, keepdims=True)
-    return actions, log_prob
-
-
-def init_q_network(random_key, observation_dim, action_dim, hidden_dims):
-    hidden_key, output_key = jax.random.split(random_key)
-    hidden = init_hidden_layers(hidden_key, observation_dim + action_dim, hidden_dims)
-    return {
-        "hidden": hidden,
-        "output": init_linear(output_key, hidden_dims[-1], 1),
-    }
-
-
-def apply_q_network(q_params, observations, actions):
-    inputs = jnp.concatenate((observations, actions), axis=1)
-    latent = apply_hidden_layers(q_params["hidden"], inputs)
-    return apply_linear(q_params["output"], latent)
-
-
-def apply_twin_critics(critic_params, observations, actions):
-    return tuple(apply_q_network(q_params, observations, actions) for q_params in critic_params)
-
-
-def make_batch(random_key, batch_size, observation_dim, action_dim):
-    observation_key, action_key, next_observation_key, reward_key, done_key = jax.random.split(random_key, 5)
+def make_batch(random_key, batch_size, observation_sizes, action_dim):
+    group_count = len(POLICY_OBSERVATION_NAMES)
+    random_keys = jax.random.split(random_key, group_count * 2 + 3)
     return Batch(
-        observations=jax.random.normal(observation_key, (batch_size, observation_dim)),
-        actions=jax.random.uniform(action_key, (batch_size, action_dim), minval=-1.0, maxval=1.0),
-        next_observations=jax.random.normal(next_observation_key, (batch_size, observation_dim)),
-        rewards=jax.random.normal(reward_key, (batch_size, 1)),
-        dones=jax.random.bernoulli(done_key, 0.05, (batch_size, 1)).astype(jnp.float32),
+        observations={
+            name: jax.random.normal(random_keys[index], (batch_size, observation_sizes[name]))
+            for index, name in enumerate(POLICY_OBSERVATION_NAMES)
+        },
+        actions=jax.random.uniform(random_keys[group_count * 2], (batch_size, action_dim), minval=-1.0, maxval=1.0),
+        next_observations={
+            name: jax.random.normal(random_keys[index + group_count], (batch_size, observation_sizes[name]))
+            for index, name in enumerate(POLICY_OBSERVATION_NAMES)
+        },
+        rewards=jax.random.normal(random_keys[group_count * 2 + 1], (batch_size, 1)),
+        dones=jax.random.bernoulli(random_keys[group_count * 2 + 2], 0.05, (batch_size, 1)).astype(jnp.float32),
     )
-
-
-def polyak_update(target_params, source_params, tau):
-    return jax.tree.map(lambda target, source: (1.0 - tau) * target + tau * source, target_params, source_params)
-
-
-def build_update_step(batch, actor_optimizer, critic_optimizer, ent_coef_optimizer, gamma, tau, target_entropy):
-    def update_step(state):
-        random_key, actor_key, next_actor_key = jax.random.split(state.random_key, 3)
-        entropy_coefficient = jnp.exp(state.log_ent_coef)
-        _, policy_log_prob = sample_actor(state.actor_params, batch.observations, actor_key)
-
-        def entropy_coefficient_loss(log_ent_coef):
-            return -jnp.mean(log_ent_coef * jax.lax.stop_gradient(policy_log_prob + target_entropy))
-
-        _, entropy_coefficient_gradients = jax.value_and_grad(entropy_coefficient_loss)(state.log_ent_coef)
-        ent_coef_updates, ent_coef_optimizer_state = ent_coef_optimizer.update(
-            entropy_coefficient_gradients,
-            state.ent_coef_optimizer_state,
-            state.log_ent_coef,
-        )
-        log_ent_coef = optax.apply_updates(state.log_ent_coef, ent_coef_updates)
-
-        next_actions, next_log_prob = sample_actor(state.actor_params, batch.next_observations, next_actor_key)
-        next_q_values = apply_twin_critics(state.target_critic_params, batch.next_observations, next_actions)
-        next_q_value = jnp.minimum(*next_q_values) - entropy_coefficient * next_log_prob
-        target_q_value = batch.rewards + (1.0 - batch.dones) * gamma * next_q_value
-        target_q_value = jax.lax.stop_gradient(target_q_value)
-
-        def critic_loss(critic_params):
-            current_q_values = apply_twin_critics(critic_params, batch.observations, batch.actions)
-            return 0.5 * sum(jnp.mean(jnp.square(current_q_value - target_q_value)) for current_q_value in current_q_values)
-
-        _, critic_gradients = jax.value_and_grad(critic_loss)(state.critic_params)
-        critic_updates, critic_optimizer_state = critic_optimizer.update(
-            critic_gradients,
-            state.critic_optimizer_state,
-            state.critic_params,
-        )
-        critic_params = optax.apply_updates(state.critic_params, critic_updates)
-
-        def actor_loss(actor_params):
-            policy_actions, log_prob = sample_actor(actor_params, batch.observations, actor_key)
-            q_values = apply_twin_critics(critic_params, batch.observations, policy_actions)
-            return jnp.mean(entropy_coefficient * log_prob - jnp.minimum(*q_values))
-
-        _, actor_gradients = jax.value_and_grad(actor_loss)(state.actor_params)
-        actor_updates, actor_optimizer_state = actor_optimizer.update(
-            actor_gradients,
-            state.actor_optimizer_state,
-            state.actor_params,
-        )
-        actor_params = optax.apply_updates(state.actor_params, actor_updates)
-        target_critic_params = polyak_update(state.target_critic_params, critic_params, tau)
-
-        return TrainState(
-            actor_params=actor_params,
-            critic_params=critic_params,
-            target_critic_params=target_critic_params,
-            log_ent_coef=log_ent_coef,
-            actor_optimizer_state=actor_optimizer_state,
-            critic_optimizer_state=critic_optimizer_state,
-            ent_coef_optimizer_state=ent_coef_optimizer_state,
-            random_key=random_key,
-        )
-
-    return update_step
-
-
-def initialize_state(random_key, observation_dim, action_dim, hidden_dims, learning_rate):
-    actor_key, first_critic_key, second_critic_key, state_key = jax.random.split(random_key, 4)
-    actor_params = init_actor(actor_key, observation_dim, action_dim, hidden_dims)
-    critic_params = (
-        init_q_network(first_critic_key, observation_dim, action_dim, hidden_dims),
-        init_q_network(second_critic_key, observation_dim, action_dim, hidden_dims),
-    )
-    actor_optimizer = optax.adam(learning_rate, eps=1e-5)
-    critic_optimizer = optax.adam(learning_rate, eps=1e-5)
-    ent_coef_optimizer = optax.adam(learning_rate, eps=1e-5)
-    log_ent_coef = jnp.zeros((), dtype=jnp.float32)
-    state = TrainState(
-        actor_params=actor_params,
-        critic_params=critic_params,
-        target_critic_params=critic_params,
-        log_ent_coef=log_ent_coef,
-        actor_optimizer_state=actor_optimizer.init(actor_params),
-        critic_optimizer_state=critic_optimizer.init(critic_params),
-        ent_coef_optimizer_state=ent_coef_optimizer.init(log_ent_coef),
-        random_key=state_key,
-    )
-    return state, actor_optimizer, critic_optimizer, ent_coef_optimizer
 
 
 def measure_updates(operation, state, call_count, updates_per_call):
@@ -216,44 +47,61 @@ def parameter_count(params):
 
 @hydra.main(version_base=None, config_path="../conf", config_name="benchmark_sac_jax")
 def benchmark(cfg: DictConfig):
-    observation_dim = 29 + int(cfg.waypoint.cartesian_action_dim)
+    configured_history_steps = cfg.control.frequencies.joint * cfg.control.policy_history_seconds
+    assert configured_history_steps >= 2, "policy_history_seconds must span at least two low-level control intervals"
+    assert float(configured_history_steps).is_integer(), "policy_history_seconds must contain an integer number of low-level control intervals"
+    history_steps = int(configured_history_steps)
+    observation_sizes = policy_observation_sizes(int(cfg.waypoint.cartesian_action_dim), history_steps)
+    architecture = {
+        "history_encoder": tuple(int(hidden_dim) for hidden_dim in cfg.policy.history_encoder),
+        "state_encoder": tuple(int(hidden_dim) for hidden_dim in cfg.policy.state_encoder),
+        "goal_encoder": tuple(int(hidden_dim) for hidden_dim in cfg.policy.goal_encoder),
+        "fusion": tuple(int(hidden_dim) for hidden_dim in cfg.policy.fusion),
+        "forward_head": tuple(int(hidden_dim) for hidden_dim in cfg.policy.forward_head),
+    }
     action_dim = 6
-    hidden_dims = tuple(int(hidden_dim) for hidden_dim in cfg.policy.net_arch)
     batch_size = int(cfg.training.batch_size)
     warmup_iterations = int(cfg.benchmark.warmup_iterations)
     measured_iterations = int(cfg.benchmark.measured_iterations)
     updates_per_compiled_block = int(cfg.benchmark.updates_per_compiled_block)
-    learning_rate = float(cfg.training.learning_rate)
 
     random_key = jax.random.PRNGKey(0)
     state, actor_optimizer, critic_optimizer, ent_coef_optimizer = initialize_state(
         random_key,
-        observation_dim,
+        observation_sizes,
         action_dim,
-        hidden_dims,
-        learning_rate,
+        architecture,
+        float(cfg.training.learning_rate),
     )
-    batch = make_batch(random_key, batch_size, observation_dim, action_dim)
+    batch = make_batch(random_key, batch_size, observation_sizes, action_dim)
     update_step = build_update_step(
-        batch,
         actor_optimizer,
         critic_optimizer,
         ent_coef_optimizer,
         float(cfg.training.gamma),
         float(cfg.training.tau),
         -float(action_dim),
+        float(cfg.training.actor_forward_loss_weight),
+        float(cfg.training.critic_forward_loss_weight),
     )
-    compiled_update = jax.jit(update_step)
+
+    def single_update(current_state):
+        return update_step(current_state, batch)[0]
 
     def update_block(current_state):
-        return jax.lax.fori_loop(0, updates_per_compiled_block, lambda _, loop_state: update_step(loop_state), current_state)
+        return jax.lax.fori_loop(
+            0,
+            updates_per_compiled_block,
+            lambda _, loop_state: update_step(loop_state, batch)[0],
+            current_state,
+        )
 
-    compiled_update_block = jax.jit(update_block)
+    compiled_update_block = jax.jit(update_block, donate_argnums=(0,))
 
     for _ in range(warmup_iterations):
-        state = compiled_update(state)
+        state = single_update(state)
     state.log_ent_coef.block_until_ready()
-    state, single_update_seconds = measure_updates(compiled_update, state, measured_iterations, 1)
+    state, single_update_seconds = measure_updates(single_update, state, measured_iterations, 1)
 
     warmup_blocks = math.ceil(warmup_iterations / updates_per_compiled_block)
     for _ in range(warmup_blocks):
@@ -265,7 +113,8 @@ def benchmark(cfg: DictConfig):
     print(f"JAX backend: {jax.default_backend()}")
     print(f"Device: {jax.devices()[0]}")
     print(f"Batch size: {batch_size}")
-    print(f"Hidden dimensions: {list(hidden_dims)}")
+    print(f"Observation groups: {observation_sizes}")
+    print(f"Architecture: {architecture}")
     print(f"Actor parameters: {parameter_count(state.actor_params)}")
     print(f"Twin critic parameters: {parameter_count(state.critic_params)}")
     print(f"Warm-up iterations: {warmup_iterations}")

@@ -1,8 +1,9 @@
 import mujoco
 import numpy as np
+import pytest
 from omegaconf import OmegaConf
 
-from robot_arm.experimental_waypoints import base_rotation_for_position, generate_oriented_waypoint
+from robot_arm.waypoints import base_rotation_for_position, generate_oriented_waypoint
 from robot_arm.policies import ScriptedCartesianPolicy
 from robot_arm.pose import Pose
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
@@ -170,16 +171,25 @@ def test_pick_and_place_uses_single_purpose_primitives():
 
     primitives = generate_pick_and_place(model, data, cfg, start_pose)
 
-    assert len(primitives) == 7
+    assert len(primitives) == 8
     assert primitives[0].prompt == "open gripper"
-    assert primitives[1].prompt.startswith("move to ")
-    assert primitives[2].prompt == "close gripper"
-    assert primitives[3].prompt == "lift object"
-    assert " above the " in primitives[4].prompt
-    assert primitives[5].prompt.startswith("lower ")
-    assert primitives[6].prompt == "open gripper"
+    assert primitives[1].prompt.startswith("move above ")
+    assert primitives[2].prompt.startswith("move to ")
+    assert primitives[3].prompt == "close gripper"
+    assert primitives[4].prompt == "lift object"
+    assert " above the " in primitives[5].prompt
+    assert primitives[6].prompt.startswith("lower ")
+    assert primitives[7].prompt == "open gripper"
+    above_pose = primitives[1].target_pose
+    grasp_pose = primitives[2].target_pose
+    np.testing.assert_allclose(above_pose.position[:2], grasp_pose.position[:2])
+    np.testing.assert_allclose(above_pose.position[2] - grasp_pose.position[2], 0.07)
+    np.testing.assert_allclose(above_pose.closing_axis, grasp_pose.closing_axis)
+    np.testing.assert_allclose(above_pose.secondary_axis, grasp_pose.secondary_axis)
+    assert above_pose.gripper == grasp_pose.gripper
     assert not any(primitive.include_target_offset for primitive in primitives)
     assert [primitive.desired_gripper_duty_active for primitive in primitives] == [
+        False,
         False,
         False,
         True,
@@ -227,7 +237,15 @@ def test_relative_move_prompt_states_the_commanded_offset_exactly():
             assert primitive.prompt == "hold position"
 
 
-def test_experimental_waypoint_derives_azimuth_from_position():
+@pytest.fixture
+def zero_offset_gripper(monkeypatch):
+    def geometry(model, data, gripper):
+        return Pose.from_tcp_axes(np.zeros(3), np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), gripper)
+
+    monkeypatch.setattr("robot_arm.waypoints.gripper_geometry_at_opening", geometry)
+
+
+def test_waypoint_derives_azimuth_from_position_without_gripper_offset(zero_offset_gripper):
     model = mujoco.MjModel.from_xml_path("models/so101/scene.xml")
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
@@ -248,7 +266,7 @@ def test_experimental_waypoint_derives_azimuth_from_position():
     assert pose.gripper == 0.5
 
 
-def test_experimental_waypoint_rotates_drawn_axes_around_pointing_axis():
+def test_waypoint_rotates_axes_around_pointing_axis_without_gripper_offset(zero_offset_gripper):
     model = mujoco.MjModel.from_xml_path("models/so101/scene.xml")
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
@@ -268,7 +286,7 @@ def test_experimental_waypoint_rotates_drawn_axes_around_pointing_axis():
     np.testing.assert_allclose(pose.as_matrix()[:, 2], [1.0, 0.0, 2.0] / np.sqrt(5.0), atol=1e-6)
 
 
-def test_experimental_waypoint_tilt_rotates_pointing_axis_without_moving_position():
+def test_waypoint_tilt_preserves_position_without_gripper_offset(zero_offset_gripper):
     model = mujoco.MjModel.from_xml_path("models/so101/scene.xml")
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)

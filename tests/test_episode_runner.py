@@ -1,11 +1,27 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.env import EnvironmentState
 from robot_arm.pose import Pose
-from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES
+from robot_arm.policies import CartesianAction
+from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, POLICY_OBSERVATION_NAMES, policy_observation_sizes
+
+
+HISTORY_STEPS = 10
+
+
+def raw_observation(joint_position_value):
+    return {
+        "joint_positions": np.full(6, joint_position_value, dtype=np.float32),
+        "joint_velocities": np.zeros(6, dtype=np.float32),
+        "tcp_position": np.zeros(3, dtype=np.float32),
+        "tcp_velocity": np.zeros(6, dtype=np.float32),
+        "gripper_duty": np.zeros(1, dtype=np.float32),
+        "policy_history": np.zeros((HISTORY_STEPS, len(HISTORY_FEATURE_NAMES)), dtype=np.float32),
+    }
 
 
 class LowLevelPolicyStub:
@@ -29,6 +45,7 @@ class EnvironmentStub:
         self.received_actions = []
         self.pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
         self.arm = SimpleNamespace(physics_metrics=lambda: {})
+        self.policy_history_steps = HISTORY_STEPS
 
     def get_end_effector_pose(self):
         return self.pose
@@ -52,18 +69,11 @@ class EnvironmentStub:
         self.received_paths.append(cartesian_action)
         return (
             EnvironmentState(
-                observation={
-                    "joint_positions": np.ones(6, dtype=np.float32),
-                    "joint_velocities": np.zeros(6, dtype=np.float32),
-                    "previous_action": np.zeros(6, dtype=np.float32),
-                    "gripper_duty": np.zeros(1, dtype=np.float32),
-                    "duty_history": np.zeros(6, dtype=np.float32),
-                    "tcp_velocity": np.zeros(6, dtype=np.float32),
-                },
+                observation=raw_observation(1.0),
                 sensor_state={},
                 end_effector_pose=self.pose,
                 sim_state=None,
-                box_gripped=False,
+                grasp_confirmed=False,
             ),
             float(sum(self.reward_breakdown.values())),
             self.reward_breakdown,
@@ -83,6 +93,7 @@ def make_cfg(detailed_metrics=True):
         control=SimpleNamespace(
             frequencies=SimpleNamespace(cartesian=2, joint=4),
             max_seconds=1,
+            duty_compensation_enabled=True,
         ),
         runtime=SimpleNamespace(draw_waypoints=False, draw_tcp=False),
         training=SimpleNamespace(
@@ -91,6 +102,7 @@ def make_cfg(detailed_metrics=True):
             sync_weights_every_n_cartesian_actions=2,
             terminate_at_cartesian_action_end=True,
         ),
+        waypoint=SimpleNamespace(cartesian_action_dim=7),
     )
 
 
@@ -111,6 +123,7 @@ def make_runner(environment, low_level_policy, metrics_queue, detailed_metrics=T
     runner.cartesian_action_scale = 1.0
     runner.duty_limits = np.ones(6, dtype=np.float32)
     runner.duty_compensator = SimpleNamespace(calculate=lambda positions, velocities: np.zeros(6, dtype=np.float32))
+    runner.policy_observation_sizes = policy_observation_sizes(7, HISTORY_STEPS)
     return runner
 
 
@@ -120,14 +133,7 @@ def test_cartesian_action_measures_every_policy_observation_against_one_desired_
     low_level_policy = LowLevelPolicyStub()
     runner = make_runner(environment, low_level_policy, MetricsQueueStub())
 
-    raw_obs = {
-        "joint_positions": np.zeros(6, dtype=np.float32),
-        "joint_velocities": np.zeros(6, dtype=np.float32),
-        "previous_action": np.zeros(6, dtype=np.float32),
-        "gripper_duty": np.zeros(1, dtype=np.float32),
-        "duty_history": np.zeros(6, dtype=np.float32),
-        "tcp_velocity": np.zeros(6, dtype=np.float32),
-    }
+    raw_obs = raw_observation(0.0)
 
     runner.execute_cartesian_action(
         EnvironmentState(
@@ -135,7 +141,7 @@ def test_cartesian_action_measures_every_policy_observation_against_one_desired_
             sensor_state={},
             end_effector_pose=environment.pose,
             sim_state=None,
-            box_gripped=False,
+            grasp_confirmed=False,
         ),
         cartesian_action,
         0.0,
@@ -145,7 +151,7 @@ def test_cartesian_action_measures_every_policy_observation_against_one_desired_
     assert len(low_level_policy.observations) == runner.joint_steps_per_cartesian_action
     # The stub never moves, so the delta still to travel must stay the one the action asked for.
     for observation in low_level_policy.observations:
-        np.testing.assert_allclose(observation["remaining_delta"], cartesian_action, atol=1e-6)
+        np.testing.assert_allclose(observation["goal"][:7], cartesian_action, atol=1e-6)
     for received_path in environment.received_paths:
         assert received_path is cartesian_action
 
@@ -156,21 +162,14 @@ def test_policy_observation_keys_match_declared_observation_space():
     low_level_policy = LowLevelPolicyStub()
     runner = make_runner(environment, low_level_policy, MetricsQueueStub())
 
-    raw_obs = {
-        "joint_positions": np.zeros(6, dtype=np.float32),
-        "joint_velocities": np.zeros(6, dtype=np.float32),
-        "previous_action": np.zeros(6, dtype=np.float32),
-        "gripper_duty": np.zeros(1, dtype=np.float32),
-        "duty_history": np.zeros(6, dtype=np.float32),
-        "tcp_velocity": np.zeros(6, dtype=np.float32),
-    }
+    raw_obs = raw_observation(0.0)
     runner.execute_cartesian_action(
         EnvironmentState(
             observation=raw_obs,
             sensor_state={},
             end_effector_pose=environment.pose,
             sim_state=None,
-            box_gripped=False,
+            grasp_confirmed=False,
         ),
         cartesian_action,
         0.0,
@@ -180,18 +179,27 @@ def test_policy_observation_keys_match_declared_observation_space():
     assert set(low_level_policy.observations[0]) == set(POLICY_OBSERVATION_NAMES)
 
 
+def test_latest_joint_positions_anchor_history_and_remain_in_current_state():
+    runner = make_runner(EnvironmentStub({"joint_limit_penalty": 0.0}), LowLevelPolicyStub(), MetricsQueueStub())
+    observation = raw_observation(0.25)
+
+    policy_observation = runner._build_policy_observation(
+        observation,
+        np.zeros(7, dtype=np.float32),
+        0,
+        0.0,
+        False,
+    )
+
+    np.testing.assert_array_equal(policy_observation["history"][:6], observation["joint_positions"])
+    np.testing.assert_array_equal(policy_observation["state"][:6], observation["joint_positions"])
+
+
 def test_duty_compensation_excludes_gripper():
     environment = EnvironmentStub({"joint_limit_penalty": 0.0})
     runner = make_runner(environment, LowLevelPolicyStub(), MetricsQueueStub())
     runner.duty_compensator.calculate = lambda positions, velocities: np.array([0.25, 0.25, 0.25, 0.25, 0.25, 0.0], dtype=np.float32)
-    raw_obs = {
-        "joint_positions": np.zeros(6, dtype=np.float32),
-        "joint_velocities": np.zeros(6, dtype=np.float32),
-        "previous_action": np.zeros(6, dtype=np.float32),
-        "gripper_duty": np.zeros(1, dtype=np.float32),
-        "duty_history": np.zeros(6, dtype=np.float32),
-        "tcp_velocity": np.zeros(6, dtype=np.float32),
-    }
+    raw_obs = raw_observation(0.0)
 
     runner.execute_cartesian_action(
         EnvironmentState(raw_obs, {}, environment.pose, None, False),
@@ -211,23 +219,16 @@ def test_detailed_metrics_only_include_returned_reward_components():
     metrics_queue = MetricsQueueStub()
     runner = make_runner(environment, low_level_policy, metrics_queue)
 
-    raw_obs = {
-        "joint_positions": np.zeros(6, dtype=np.float32),
-        "joint_velocities": np.zeros(6, dtype=np.float32),
-        "previous_action": np.zeros(6, dtype=np.float32),
-        "gripper_duty": np.zeros(1, dtype=np.float32),
-        "duty_history": np.zeros(6, dtype=np.float32),
-        "tcp_velocity": np.zeros(6, dtype=np.float32),
-    }
+    raw_obs = raw_observation(0.0)
     runner.execute_cartesian_action(
         EnvironmentState(
             observation=raw_obs,
             sensor_state={},
             end_effector_pose=environment.pose,
             sim_state=None,
-            box_gripped=False,
+            grasp_confirmed=False,
         ),
-        np.zeros(10, dtype=np.float32),
+        np.zeros(7, dtype=np.float32),
         0.0,
         False,
     )
@@ -255,3 +256,64 @@ def test_weights_sync_at_configured_cartesian_action_interval():
     runner._sync_weights_if_due()
 
     assert sync_calls == [2, 4]
+
+
+@pytest.mark.parametrize("angle,holding,too_far,failed", [
+    (0.299, True, False, True),
+    (0.3, True, False, False),
+    (0.3415, True, False, False),
+    (0.3415, True, True, True),
+    (0.0, False, True, False),
+])
+def test_grip_abort_checks_angle_and_box_distance_only_while_holding(angle, holding, too_far, failed):
+    runner = EpisodeRunner.__new__(EpisodeRunner)
+    runner.env = SimpleNamespace(box_too_far=lambda pose: too_far)
+    runner.cfg = SimpleNamespace(waypoint=SimpleNamespace(
+        pick_and_place=SimpleNamespace(gripper_abort_below_radians=0.3),
+    ))
+    state = SimpleNamespace(end_effector_pose=SimpleNamespace(gripper=angle))
+    primitive = SimpleNamespace(desired_gripper_duty_active=holding)
+
+    assert runner.grip_failed(state, primitive) == failed
+
+
+@pytest.mark.parametrize("flags,angles,too_far,expected_steps,aborted", [
+    ([False, False], [0.4, 0.4], False, 1, False),
+    ([False, False], [0.4, 0.299], False, 1, True),
+    ([True, False], [0.4, 0.4], False, 1, False),
+    ([True, False], [0.4, 0.4], True, 1, True),
+])
+def test_runner_preserves_policy_completion_and_aborts_failed_grips(flags, angles, too_far, expected_steps, aborted):
+    runner = EpisodeRunner.__new__(EpisodeRunner)
+    runner.env = SimpleNamespace(box_too_far=lambda pose: too_far)
+    runner.cfg = SimpleNamespace(
+        waypoint=SimpleNamespace(pick_and_place=SimpleNamespace(gripper_abort_below_radians=0.3)),
+        runtime=SimpleNamespace(capture_camera=False),
+    )
+    runner.max_cartesian_steps = 10
+    runner.training = False
+    runner.primitive_policy = SimpleNamespace(build_vla_input_state=lambda *args: np.zeros(16))
+    runner.cartesian_policy = SimpleNamespace(
+        get_action=lambda **kwargs: CartesianAction(np.zeros(7), {}, True),
+    )
+    runner._draw_desired_path = lambda *args: None
+    recorded_actions = []
+    runner._record_transition = lambda *args: recorded_actions.append(args[-1])
+    states = [SimpleNamespace(
+        end_effector_pose=SimpleNamespace(gripper=angle),
+        observation={"gripper_duty": np.array([-0.35])},
+        grasp_confirmed=flag,
+    ) for angle, flag in zip(angles, flags)]
+    remaining_states = iter(states[1:])
+    runner.execute_cartesian_action = lambda *args: (next(remaining_states), 0.0)
+    primitive = SimpleNamespace(
+        prompt="close gripper", desired_gripper_duty=-0.35, desired_gripper_duty_active=True,
+    )
+
+    final_state, completed_steps, truncated = runner.execute_primitive(states[0], primitive, 0, 0)
+
+    assert completed_steps == expected_steps
+    assert truncated == aborted
+    assert final_state is states[-1]
+    assert recorded_actions[-1].completes_active_primitive is True
+    assert recorded_actions[-1].diagnostics == {}

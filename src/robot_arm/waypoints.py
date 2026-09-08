@@ -2,6 +2,7 @@ import mujoco
 import numpy as np
 
 from robot_arm.pose import Pose
+from robot_arm.gripper_geometry import gripper_geometry_at_opening, align_gripper_to_target
 
 
 def shoulder_pan_position(model, data) -> np.ndarray:
@@ -37,17 +38,23 @@ def generate_oriented_waypoint(
     gripper: float,
 ) -> Pose:
     position = np.asarray(position, dtype=np.float32)
-    pointing_axis_tilt = np.deg2rad(pointing_axis_tilt_degrees)
-    pointing_axis_rotation = np.deg2rad(pointing_axis_rotation_degrees)
     pivot = shoulder_pan_position(model, data)
     pointing_axis = position - pivot
     pointing_axis = pointing_axis / np.linalg.norm(pointing_axis)
     base_rotation = base_rotation_for_position(model, data, position)
     secondary_axis = np.array([-np.sin(base_rotation), np.cos(base_rotation), 0.0], dtype=np.float32)
     closing_axis = np.cross(secondary_axis, pointing_axis)
-    tilted_pointing_axis = np.cos(pointing_axis_tilt) * pointing_axis + np.sin(pointing_axis_tilt) * np.cross(secondary_axis, pointing_axis)
-    tilted_closing_axis = np.cos(pointing_axis_tilt) * closing_axis + np.sin(pointing_axis_tilt) * np.cross(secondary_axis, closing_axis)
-    rotated_closing_axis = np.cos(pointing_axis_rotation) * tilted_closing_axis + np.sin(pointing_axis_rotation) * np.cross(tilted_pointing_axis, tilted_closing_axis)
-    rotated_secondary_axis = np.cos(pointing_axis_rotation) * secondary_axis + np.sin(pointing_axis_rotation) * np.cross(tilted_pointing_axis, secondary_axis)
-
-    return Pose.from_tcp_axes(position, rotated_closing_axis, rotated_secondary_axis, gripper)
+    radial_frame = np.column_stack((closing_axis, secondary_axis, pointing_axis))
+    local_pose = gripper_geometry_at_opening(model, data, gripper)
+    aligned_pose, _ = align_gripper_to_target(
+        local_pose,
+        np.linalg.norm(position - pivot),
+        pointing_axis_tilt_degrees,
+        pointing_axis_rotation_degrees,
+    )
+    return Pose.from_tcp_axes(
+        position,
+        radial_frame @ aligned_pose.closing_axis,
+        radial_frame @ aligned_pose.secondary_axis,
+        gripper,
+    )

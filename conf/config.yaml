@@ -26,3 +26,4 @@ conversion:
 hardware:
   port: "/dev/ttyACM0"
   calibration_id: "my_follower"
+  read_timeout_margin_ms: 5.0

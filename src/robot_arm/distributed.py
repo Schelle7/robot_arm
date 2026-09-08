@@ -15,6 +15,7 @@ from robot_arm.model_snapshot import snapshot_model_files
 from robot_arm.numpy_policy import NumpySACPolicy
 from robot_arm.policies import ScriptedCartesianPolicy
 from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
+from robot_arm.robot_schema import policy_observation_sizes
 from robot_arm.scalar_writer import ScalarWriter
 
 log = logging.getLogger(__name__)
@@ -144,7 +145,11 @@ def worker_process(
     log.info(f"Worker {worker_id}: Initializing Simulation...")
     env = make_env(cfg, output_dir)
     initial_actor_params = weights_queue.get()
-    low_level_policy = NumpySACPolicy(initial_actor_params, int(cfg.seed) + worker_id + 1)
+    observation_sizes = policy_observation_sizes(
+        int(cfg.waypoint.cartesian_action_dim),
+        env.policy_history_steps,
+    )
+    low_level_policy = NumpySACPolicy(initial_actor_params, observation_sizes, int(cfg.seed) + worker_id + 1)
 
     cartesian_policy = ScriptedCartesianPolicy(cfg)
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(cfg)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from robot_arm.backends.sim_arm import get_tcp_geometry
+from robot_arm.gripper_geometry import get_tcp_geometry
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
 def format_value(value):
@@ -63,7 +63,11 @@ def build_replay_display(
     else:
         primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
 
-    observation_rows = [[key, "  ".join(format_vector(value))] for key, value in low_level_observation.items()]
+    observation_rows = [
+        [key, "  ".join(format_vector(value))]
+        for key, value in low_level_observation.items()
+        if key != "history"
+    ]
     if not observation_rows:
         observation_rows = [["Status", "Not available for this step"]]
 

@@ -4,7 +4,7 @@ import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.pose import Pose
-from robot_arm.primitives import ActionPrimitive, generate_action_primitives
+from robot_arm.primitives import ActionPrimitive, generate_action_primitives, select_task
 
 
 class ScriptedPrimitiveGeneratorPolicy:
@@ -17,8 +17,11 @@ class ScriptedPrimitiveGeneratorPolicy:
     def target_poses(self) -> list[np.ndarray]:
         return [primitive.target_pose.as_10d() for primitive in self.primitives]
 
+    def select_task(self) -> None:
+        self.task = select_task(self.cfg)
+
     def generate(self, model: Any, data: Any, start_pose: Pose) -> None:
-        self.primitives = generate_action_primitives(model, data, self.cfg, start_pose)
+        self.primitives = generate_action_primitives(model, data, self.cfg, start_pose, self.task)
         self.next_primitive_index = 0
 
     def has_next_primitive(self) -> bool:

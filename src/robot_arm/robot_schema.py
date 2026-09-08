@@ -9,41 +9,55 @@ MOTOR_ORDER = (
 
 CAMERA_NAMES = ("external_camera", "wrist_camera")
 
-POLICY_OBSERVATION_NAMES = (
-    "joint_positions",
-    "joint_velocities",
-    "previous_action",
-    "remaining_delta",
-    "time_left",
-    "tcp_velocity",
-    "duty_history",
-    "gripper_duty",
-    "desired_gripper_duty",
-    "desired_gripper_duty_active",
-    "gripper_duty_difference",
+POLICY_OBSERVATION_NAMES = ("history", "state", "goal")
+
+HISTORY_CONTEXT_FEATURE_NAMES = tuple(f"current_joint_position_{motor}" for motor in MOTOR_ORDER)
+
+HISTORY_POLICY_ACTION_SLICE = slice(0, len(MOTOR_ORDER))
+HISTORY_APPLIED_DUTY_SLICE = slice(len(MOTOR_ORDER), 2 * len(MOTOR_ORDER))
+HISTORY_JOINT_VELOCITY_SLICE = slice(2 * len(MOTOR_ORDER), 3 * len(MOTOR_ORDER))
+HISTORY_TCP_VELOCITY_SLICE = slice(3 * len(MOTOR_ORDER), 4 * len(MOTOR_ORDER))
+
+HISTORY_FEATURE_NAMES = (
+    *[f"policy_action_{motor}" for motor in MOTOR_ORDER],
+    *[f"applied_duty_{motor}" for motor in MOTOR_ORDER],
+    *[f"joint_velocity_{motor}" for motor in MOTOR_ORDER],
+    "tcp_velocity_x",
+    "tcp_velocity_y",
+    "tcp_velocity_z",
+    "tcp_velocity_rx",
+    "tcp_velocity_ry",
+    "tcp_velocity_rz",
 )
 
+STATE_FEATURE_NAMES = (
+    *[f"joint_position_{motor}" for motor in MOTOR_ORDER],
+    *[f"joint_velocity_{motor}" for motor in MOTOR_ORDER],
+    "tcp_position_x",
+    "tcp_position_y",
+    "tcp_position_z",
+    "tcp_velocity_x",
+    "tcp_velocity_y",
+    "tcp_velocity_z",
+    "tcp_velocity_rx",
+    "tcp_velocity_ry",
+    "tcp_velocity_rz",
+    "gripper_duty",
+)
 
-def policy_observation_sizes(cartesian_action_dim: int) -> dict[str, int]:
+STATE_JOINT_POSITION_SLICE = slice(0, len(MOTOR_ORDER))
+STATE_JOINT_VELOCITY_SLICE = slice(len(MOTOR_ORDER), 2 * len(MOTOR_ORDER))
+STATE_TCP_POSITION_SLICE = slice(2 * len(MOTOR_ORDER), 2 * len(MOTOR_ORDER) + 3)
+STATE_TCP_VELOCITY_SLICE = slice(2 * len(MOTOR_ORDER) + 3, 3 * len(MOTOR_ORDER) + 3)
+STATE_GRIPPER_DUTY_SLICE = slice(3 * len(MOTOR_ORDER) + 3, 3 * len(MOTOR_ORDER) + 4)
+
+
+def policy_observation_sizes(cartesian_action_dim: int, history_steps: int) -> dict[str, int]:
     return {
-        "joint_positions": 6,
-        "joint_velocities": 6,
-        "previous_action": 6,
-        "remaining_delta": cartesian_action_dim,
-        "time_left": 1,
-        "tcp_velocity": 6,
-        "duty_history": 6,
-        "gripper_duty": 1,
-        "desired_gripper_duty": 1,
-        "desired_gripper_duty_active": 1,
-        "gripper_duty_difference": 1,
+        "history": len(HISTORY_CONTEXT_FEATURE_NAMES) + len(HISTORY_FEATURE_NAMES) * history_steps,
+        "state": len(STATE_FEATURE_NAMES),
+        "goal": cartesian_action_dim + 4,
     }
-
-
-def policy_observation_dim(cartesian_action_dim: int) -> int:
-    sizes = policy_observation_sizes(cartesian_action_dim)
-    assert tuple(sizes) == POLICY_OBSERVATION_NAMES
-    return sum(sizes.values())
 
 BOX_BODY_NAMES = ("box_0",)
 

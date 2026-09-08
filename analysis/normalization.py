@@ -17,7 +17,7 @@ from omegaconf import OmegaConf
 
 from analysis.rollouts import Rollout, dense_steps, find_rollouts, load_rollout
 from robot_arm.numpy_policy import load_numpy_policy
-from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.robot_schema import MOTOR_ORDER, STATE_JOINT_POSITION_SLICE, STATE_JOINT_VELOCITY_SLICE
 
 
 def reconstruct_body_ticks(positions: np.ndarray, calibration: dict) -> np.ndarray:
@@ -58,8 +58,8 @@ def print_normalization_audit(rollout: Rollout, calibration: dict) -> None:
         return
     model = mujoco.MjModel.from_xml_path(str(rollout.model_path))
     limits = np.array([model.jnt_range[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)] for name in MOTOR_ORDER])
-    q = np.array([s["obs"]["joint_positions"] for s in steps])
-    next_q = np.array([s["next_obs"]["joint_positions"] for s in steps])
+    q = np.array([s["obs"]["state"][STATE_JOINT_POSITION_SLICE] for s in steps])
+    next_q = np.array([s["next_obs"]["state"][STATE_JOINT_POSITION_SLICE] for s in steps])
     ticks = reconstruct_body_ticks(q, calibration)
     next_ticks = reconstruct_body_ticks(next_q, calibration)
     print("Assumption: supplied calibration was active; body observations used LeRobot DEGREES.")
@@ -105,7 +105,10 @@ def print_normalization_audit(rollout: Rollout, calibration: dict) -> None:
     cfg = rollout.config
     joint_velocity_scale = float(cfg.control.joint_velocity_scale_radians_per_second)
     print(f"Joint velocity policy divisor: {joint_velocity_scale}; positions stay in radians.")
-    print(f"Maximum |physical finite-difference velocity|: {max(np.max(np.abs(s['obs']['joint_velocities'])) for s in steps) * joint_velocity_scale:.3f} rad/s")
+    print(
+        "Maximum |physical consecutive-sample velocity|: "
+        f"{max(np.max(np.abs(s['obs']['state'][STATE_JOINT_VELOCITY_SLICE])) for s in steps) * joint_velocity_scale:.3f} rad/s"
+    )
     checkpoint = Path(cfg.policy_name)
     config_path = checkpoint.parent.parent / ".hydra/config.yaml"
     if config_path.exists():
@@ -113,8 +116,7 @@ def print_normalization_audit(rollout: Rollout, calibration: dict) -> None:
         fields = (
             "control.frequencies",
             "control.joint_velocity_scale_radians_per_second",
-            "control.state_history_seconds",
-            "control.duty_history_seconds",
+            "control.policy_history_seconds",
             "waypoint.position_speed_meters_per_second",
             "waypoint.rotation_speed_radians_per_second",
             "waypoint.gripper_speed_radians_per_second",

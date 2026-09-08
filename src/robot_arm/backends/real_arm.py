@@ -9,7 +9,7 @@ from lerobot.motors.feetech import OperatingMode
 from robot_arm.backends.arm import Arm
 from robot_arm.backends.read_sensors import read_block, read_configuration
 from robot_arm.backends.servo import CURRENT_AMPS_PER_TICK, FULL_SCALE_DUTY
-from robot_arm.backends.sim_arm import get_tcp_geometry
+from robot_arm.gripper_geometry import get_tcp_geometry
 from robot_arm.pose import Pose
 from robot_arm.robot_schema import MOTOR_ORDER
 
@@ -67,8 +67,29 @@ class RealArm(Arm):
         """
         return int(rad * self.max_res / (2.0 * math.pi))
 
+    def configure_read_timeout(self, margin_ms: float) -> None:
+        assert margin_ms > 0.0, "Read timeout margin must be positive"
+        port = self.bus.port_handler
+
+        def set_packet_timeout(packet_length):
+            port.packet_start_time = port.getCurrentTime()
+            port.packet_timeout = port.tx_time_per_byte * (packet_length + 3.0) + margin_ms
+
+        port.setPacketTimeout = set_packet_timeout
+
+    def _read_feedback(self):
+        try:
+            return read_block(self.bus)
+        except ConnectionError as error:
+            log.warning("\033[38;5;208mSENSOR READ FAILED: %s. RETRYING ONCE.\033[0m", str(error).upper())
+        try:
+            return read_block(self.bus)
+        except ConnectionError:
+            self.disconnect()
+            raise
+
     def read_state(self) -> Dict[str, Dict[str, float]]:
-        raw_state = read_block(self.bus)
+        raw_state = self._read_feedback()
         raw_state["python_recording_time"] = time.time()
 
         position_ticks = {}

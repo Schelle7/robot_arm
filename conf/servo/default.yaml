@@ -29,3 +29,6 @@ physics_randomization:
   damping: [0.04, 0.15]
   frictionloss: [0.015, 0.06]
   armature: [0.008, 0.03]
+  added_weight:
+    # Relative to the scene box so the training load follows changes to its mass; [0, 0] disables it.
+    box_mass_fraction: [0.0, 1.3]

@@ -107,7 +107,7 @@ class GripperSweep:
     def record(self, state: Dict, delta_index: int, commanded_delta_radians: float, duty_fraction: float) -> None:
         pose = self.arm.get_tcp_pose(state)
         self.recorder.record_transition(
-            box_gripped=self.env.grasp_estimator.update(
+            grasp_confirmed=self.env.grasp_estimator.update(
                 state["Present_Position"]["gripper"],
                 state["Present_Velocity"]["gripper"],
                 state["Present_Load"]["gripper"],
@@ -206,7 +206,7 @@ class GripperSweep:
         # EMA is already over the limit and every further read would raise again.
         state = self.last_state
         self.recorder.record_final_state(
-            box_gripped=self.env.grasp_estimator.update(
+            grasp_confirmed=self.env.grasp_estimator.update(
                 self.last_state["Present_Position"]["gripper"],
                 self.last_state["Present_Velocity"]["gripper"],
                 self.last_state["Present_Load"]["gripper"],
@@ -238,7 +238,7 @@ def main(cfg: DictConfig):
     snapshot_model_files(cfg.model_path, run_dir)
 
     env = make_env(cfg, run_dir)
-    env.reset()
+    env.reset(enable_added_weight=False)
     if cfg.backend == "sim":
         place_measurement_scene(env.arm, cfg.sweep.start_joint_positions)
 

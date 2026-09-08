@@ -10,7 +10,7 @@ def main(cfg: DictConfig):
     output_dir = HydraConfig.get().runtime.output_dir
     env = make_env(cfg, output_dir)
     try:
-        state = env.reset()
+        state = env.reset(enable_added_weight=False)
         print("Staging complete. Final joint positions:")
         for name, position in zip(env.motor_order, state.observation["joint_positions"]):
             print(f"  {name}: {position:.4f} rad")

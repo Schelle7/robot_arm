@@ -63,7 +63,21 @@ kinematics: each terminal transition maps the current joint state and one desire
 Cartesian pose delta to one joint delta. This isolates the low-level mapping
 before introducing terminal multi-step action paths.
 
-Continue training from the configured SAC checkpoint with a fresh replay buffer:
+SAC training includes independent forward dynamics heads for the actor and both critics.
+Each predicts six joint and six TCP interval velocities from its own history and state encodings
+plus the recorded action, using the observation's existing velocity normalization. Predictions
+are auxiliary training outputs, not inputs to the Q-value or action outputs. Configure hidden
+layers with `policy.forward_head` and loss weights with `training.actor_forward_loss_weight`
+and `training.critic_forward_loss_weight` (initially 0.1 each; zero removes the respective gradient
+contribution). TensorBoard reports `actor_loss`, `actor_total_loss`, `forward_loss`,
+`forward_joint_loss`, and `forward_tcp_loss` under `train/`, plus `critic_loss`,
+`critic_total_loss`, `critic_forward_loss`, `critic_forward_joint_loss`, and
+`critic_forward_tcp_loss`. Critic forward metrics are averaged across the two critics.
+Auxiliary heads are omitted from actor inference exports. Older training checkpoints with
+missing heads or different head inputs cannot resume this architecture; their actor exports
+still work for rollout.
+
+Continue training from a compatible configured SAC checkpoint with a fresh replay buffer:
 
 ```bash
 python scripts/train_low_level.py experiment=continue_training
@@ -124,7 +138,7 @@ threads the result through:
   `RealArm` runs forward kinematics on `state["Present_Position"]`; `SimBackend` ignores the
   argument and reads MuJoCo directly.
 - `RobotEnv.step(action, joint_positions, ...)` takes the joint positions the caller already
-  observed, passed by `EpisodeRunner` as `policy_observation["joint_positions"]`.
+  observed, passed separately by `EpisodeRunner` from the current environment state.
 
 The trade is deliberate: the commanded target is built from a reading one control period old
 instead of a fresh one. At 200 Hz that is 5 ms of staleness against 1 to 3 ms of round trip

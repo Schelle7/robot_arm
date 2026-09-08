@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -14,6 +15,50 @@ from robot_arm.backends.real_arm import RealArm
 from robot_arm.robot_schema import MOTOR_ORDER
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_feedback_retry_returns_fresh_read_and_warns(monkeypatch, caplog):
+    arm = RealArm.__new__(RealArm)
+    arm.bus = object()
+    arm.disconnect = Mock()
+    feedback = {"sample_time_ns": 123}
+    read = Mock(side_effect=[ConnectionError("missing motor"), feedback])
+    monkeypatch.setattr("robot_arm.backends.real_arm.read_block", read)
+
+    assert arm._read_feedback() is feedback
+    assert read.call_count == 2
+    arm.disconnect.assert_not_called()
+    assert "SENSOR READ FAILED: MISSING MOTOR. RETRYING ONCE." in caplog.text
+
+
+def test_second_feedback_failure_disconnects_and_raises(monkeypatch):
+    arm = RealArm.__new__(RealArm)
+    arm.bus = object()
+    arm.disconnect = Mock()
+    second_error = ConnectionError("second failure")
+    read = Mock(side_effect=[ConnectionError("first failure"), second_error])
+    monkeypatch.setattr("robot_arm.backends.real_arm.read_block", read)
+
+    with pytest.raises(ConnectionError) as raised:
+        arm._read_feedback()
+
+    assert raised.value is second_error
+    assert read.call_count == 2
+    arm.disconnect.assert_called_once_with()
+
+
+def test_configured_read_timeout_restarts_timer():
+    port = SimpleNamespace(tx_time_per_byte=0.01, getCurrentTime=Mock(side_effect=[100.0, 200.0]))
+    arm = RealArm.__new__(RealArm)
+    arm.bus = SimpleNamespace(port_handler=port)
+    arm.configure_read_timeout(5.0)
+
+    port.setPacketTimeout(126)
+    assert port.packet_start_time == 100.0
+    assert port.packet_timeout == pytest.approx(6.29)
+    port.setPacketTimeout(21)
+    assert port.packet_start_time == 200.0
+    assert port.packet_timeout == pytest.approx(5.24)
 
 
 @pytest.fixture

@@ -2,20 +2,17 @@ frequencies:
   cartesian: 5
   joint: 20
   mujoco: 200
-max_seconds: 15
+max_seconds: 30
+duty_compensation_enabled: true
 grasp_estimation:
   # Initial estimates; calibrate the angle interval against the box in the gripper.
-  position_range_radians: [0.1, 0.7]
+  position_range_radians: [0.3, 0.5]
+  max_box_distance_meters: 0.04
   min_closing_duty: 0.1
   max_velocity_radians_per_second: 0.05
   hold_seconds: 0.2
 joint_velocity_scale_radians_per_second: 1.5708  # = pi/2 somewhat random
-state_history_seconds: 0.1
-
-# How far back the duty the policy observes reaches. Short on purpose: it is a stand-in for state,
-# not a safety signal. How to give the policy proper state and let it act against the control delay
-# is still undecided.
-duty_history_seconds: 0.1
+policy_history_seconds: 0.5
 
 initial_joints:
   mode: random_range

@@ -99,6 +99,7 @@ class CartesianPolicy(ABC):
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         gripper_duty: float,
+        grasp_confirmed: bool,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         raise NotImplementedError
@@ -152,6 +153,7 @@ class VLACartesianPolicy(CartesianPolicy):
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         gripper_duty: float,
+        grasp_confirmed: bool,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         import torch
@@ -167,7 +169,8 @@ class VLACartesianPolicy(CartesianPolicy):
         return CartesianAction(
             cartesian_action=action.squeeze(0).cpu().numpy().reshape(len(CARTESIAN_ACTION_NAMES)),
             diagnostics={"completion_probability": float(completion_probability.item())},
-            completes_active_primitive=bool(completion_probability.item() >= 0.5),
+            completes_active_primitive=bool(completion_probability.item() >= 0.5)
+            and (primitive.prompt != "close gripper" or grasp_confirmed),
         )
 
 
@@ -247,6 +250,7 @@ class ScriptedCartesianPolicy(CartesianPolicy):
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
         gripper_duty: float,
+        grasp_confirmed: bool,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         waypoint_delta, diagnostics, completes_active_primitive = self._evaluate_target(
@@ -254,6 +258,9 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             primitive.target_pose,
             gripper_duty,
             primitive,
+        )
+        completes_active_primitive = completes_active_primitive and (
+            primitive.prompt != "close gripper" or grasp_confirmed
         )
 
         # The completion tolerances are set independently of the speeds, so a completing step can

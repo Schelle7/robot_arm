@@ -64,6 +64,7 @@
     <material name="base_motor_holder_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
     <material name="base_so101_v2_material" rgba="0.95 0.95 0.95 1"/>
     <material name="sts3215_03a_v1_material" rgba="0.1 0.1 0.1 1"/>
+    <material name="gripper_servo_material" rgba="0.1 0.1 0.1 0.5"/>
     <material name="waveshare_mounting_plate_so101_v2_material" rgba="0.95 0.95 0.95 1"/>
     <material name="motor_holder_so101_base_v1_material" rgba="0.95 0.95 0.95 1"/>
     <material name="rotation_pitch_so101_v1_material" rgba="0.95 0.95 0.95 1"/>
@@ -166,7 +167,7 @@
                   fullinertia="2.75087e-05 4.33657e-05 3.45059e-05 -3.35241e-07 -5.7352e-06 -5.17847e-08"/>
                 <!-- Part sts3215_03a_v1_5 -->
                 <geom type="mesh" class="visual" pos="0.0077 0.0001 -0.0234" quat="1 -1 0 0" mesh="sts3215_03a_v1"
-                  material="sts3215_03a_v1_material"/>
+                  material="gripper_servo_material"/>
                 <!-- Part wrist_roll_follower_so101_v1 (fixed jaw) -->
                 <geom type="mesh" class="visual" pos="0 -0.000218 0.00095" quat="0 1 0 0"
                   mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material"/>
@@ -208,6 +209,10 @@
                     pos="-0.0025 0.03 -0.03"/>
                   <geom name="camera_box2" class="collision_gripper" type="box" size="0.021 0.021 0.003"
                     pos="-0.001 0.06 -0.04" euler="-0.55 0 0"/>
+                </body>
+                <body name="added_weight" pos="0 0 -0.025">
+                  <geom name="added_weight_geom" type="sphere" size="0.01" mass="0"
+                    contype="0" conaffinity="0" group="2" rgba="0.7 0.45 0.15 1"/>
                 </body>
                 <!-- Link moving_jaw_so101_v1 -->
                 <body name="moving_jaw_so101_v1" pos="0.0202 0.0188 -0.0234" quat="1 1 0 0">

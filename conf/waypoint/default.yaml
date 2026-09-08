@@ -9,7 +9,7 @@ primitive_probabilities:
   random_waypoint: 0.5
 completion_tolerance:
   position_meters: 0.01
-  primary_rotation_radians: 0.08
+  primary_rotation_radians: 0.1
   secondary_rotation_radians: 0.12
   gripper_radians: 0.1
 
@@ -22,10 +22,11 @@ random_pose:
   pointing_axis_rotation_degrees: [-150.0, 150.0]
 
 pick_and_place:
-  grasp_z_offset_meters: 0.01
+  grasp_z_offset_meters: -0.005
   lift_z_offset_meters: 0.08
   gripper_open_radians: 0.8
-  gripper_closed_radians: 0.0
+  gripper_closed_radians: 0.2
+  gripper_abort_below_radians: 0.3
   desired_gripper_duty: -0.35
 
 relative_move:

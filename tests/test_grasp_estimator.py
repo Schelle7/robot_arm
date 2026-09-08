@@ -8,7 +8,7 @@ from robot_arm.grasp_estimator import GraspEstimator
 @pytest.fixture
 def estimator():
     return GraspEstimator(SimpleNamespace(
-        position_range_radians=(0.1, 0.7),
+        position_range_radians=(0.3, 0.7),
         min_closing_duty=0.1,
         max_velocity_radians_per_second=0.05,
         hold_seconds=0.2,
@@ -23,6 +23,7 @@ def test_requires_continuous_stationary_closing_contact(estimator):
 
 @pytest.mark.parametrize("position,velocity,duty", [
     (0.0, 0.0, -0.3),
+    (0.299, 0.0, -0.3),
     (0.8, 0.0, -0.3),
     (0.4, 0.2, -0.3),
     (0.4, 0.0, 0.3),
@@ -41,3 +42,8 @@ def test_reset_discards_previous_episode_contact(estimator):
     assert estimator.update(0.4, 0.0, -0.3, 200_000_000)
     estimator.reset()
     assert not estimator.update(0.4, 0.0, -0.3, 1_000_000_000)
+
+
+def test_lower_position_boundary_can_confirm_a_grasp(estimator):
+    assert not estimator.update(0.3, 0.0, -0.3, 0)
+    assert estimator.update(0.3, 0.0, -0.3, 200_000_000)

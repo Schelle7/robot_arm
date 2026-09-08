@@ -10,6 +10,7 @@ from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.primitives import ActionPrimitive
 from robot_arm.envs.env import EnvironmentState, RobotEnv
 from robot_arm.recorder import EpisodeRecorder
+from robot_arm.robot_schema import HISTORY_JOINT_VELOCITY_SLICE, HISTORY_TCP_VELOCITY_SLICE, policy_observation_sizes
 
 
 class EpisodeRunner:
@@ -37,6 +38,14 @@ class EpisodeRunner:
 
         if joint_hz % cartesian_hz != 0:
             raise ValueError(f"joint_hz ({joint_hz}) must be divisible by cartesian_hz ({cartesian_hz})")
+
+        abort_angle = float(cfg.waypoint.pick_and_place.gripper_abort_below_radians)
+        closed_angle = float(cfg.waypoint.pick_and_place.gripper_closed_radians)
+        if abort_angle < closed_angle:
+            raise ValueError(
+                f"Gripper abort threshold ({abort_angle} rad) must not be below "
+                f"the requested closed angle ({closed_angle} rad)."
+            )
 
         self.env = env
         self.joint_steps_per_cartesian_action = joint_hz // cartesian_hz
@@ -67,6 +76,10 @@ class EpisodeRunner:
             [cfg.waypoint.position_speed_meters_per_second] * 3 + [cfg.waypoint.rotation_speed_radians_per_second] * 3,
             dtype=np.float32,
         )
+        self.policy_observation_sizes = policy_observation_sizes(
+            int(cfg.waypoint.cartesian_action_dim),
+            self.env.policy_history_steps,
+        )
 
         self.max_cartesian_steps = int(cfg.control.max_seconds * cartesian_hz)
         self.episode_low_level_step = 0
@@ -93,7 +106,7 @@ class EpisodeRunner:
     def _record_final_state(self, state: EnvironmentState, state_idx: int, primitive_index: int):
         if self.recorder:
             self.recorder.record_final_state(
-                box_gripped=state.box_gripped,
+                grasp_confirmed=state.grasp_confirmed,
                 state_idx=state_idx,
                 primitive_index=primitive_index,
                 obs=state.observation,
@@ -121,7 +134,7 @@ class EpisodeRunner:
     ):
         if self.recorder:
             self.recorder.record_transition(
-                box_gripped=state.box_gripped,
+                grasp_confirmed=state.grasp_confirmed,
                 state_idx=state_idx,
                 obs=state.observation,
                 sensor_state=state.sensor_state,
@@ -155,20 +168,37 @@ class EpisodeRunner:
         desired_gripper_duty: float,
         desired_gripper_duty_active: bool,
     ) -> Dict[str, np.ndarray]:
-        policy_observation = dict(observation)
-        policy_observation["joint_velocities"] = observation["joint_velocities"] / self.joint_velocity_scale
-        policy_observation["tcp_velocity"] = observation["tcp_velocity"] / self.tcp_velocity_scale
-        policy_observation["remaining_delta"] = remaining_delta / self.cartesian_action_scale
-        policy_observation["time_left"] = np.array(
-            [(self.joint_steps_per_cartesian_action - joint_step) / self.joint_steps_per_cartesian_action],
-            dtype=np.float32,
+        history_steps = observation["policy_history"].copy()
+        history_steps[:, HISTORY_JOINT_VELOCITY_SLICE] /= self.joint_velocity_scale
+        history_steps[:, HISTORY_TCP_VELOCITY_SLICE] /= self.tcp_velocity_scale
+        history = np.concatenate((observation["joint_positions"], history_steps.reshape(-1))).astype(np.float32)
+
+        state = np.concatenate(
+            (
+                observation["joint_positions"],
+                observation["joint_velocities"] / self.joint_velocity_scale,
+                observation["tcp_position"],
+                observation["tcp_velocity"] / self.tcp_velocity_scale,
+                observation["gripper_duty"],
+            )
+        ).astype(np.float32)
+        goal = np.concatenate(
+            (
+                remaining_delta / self.cartesian_action_scale,
+                np.array(
+                    [
+                        (self.joint_steps_per_cartesian_action - joint_step) / self.joint_steps_per_cartesian_action,
+                        desired_gripper_duty,
+                        float(desired_gripper_duty_active),
+                        desired_gripper_duty - float(observation["gripper_duty"][0]),
+                    ],
+                    dtype=np.float32,
+                ),
+            )
         )
-        policy_observation["desired_gripper_duty"] = np.array([desired_gripper_duty], dtype=np.float32)
-        policy_observation["desired_gripper_duty_active"] = np.array([float(desired_gripper_duty_active)], dtype=np.float32)
-        policy_observation["gripper_duty_difference"] = np.array(
-            [desired_gripper_duty - float(observation["gripper_duty"][0])],
-            dtype=np.float32,
-        )
+        policy_observation = {"history": history, "state": state, "goal": goal}
+        for name, values in policy_observation.items():
+            assert values.shape == (self.policy_observation_sizes[name],)
         return policy_observation
 
     def _record_low_level_transition(
@@ -218,6 +248,8 @@ class EpisodeRunner:
     def _step_low_level(
         self,
         policy_observation: Dict[str, np.ndarray],
+        joint_positions: np.ndarray,
+        joint_velocities: np.ndarray,
         cartesian_action: np.ndarray,
         cartesian_action_start_pose: object,
         cartesian_action_ends: bool,
@@ -225,16 +257,16 @@ class EpisodeRunner:
         desired_gripper_duty_active: bool,
     ):
         low_level_action, _ = self.low_level_policy.predict(policy_observation, deterministic=not self.training)
-        duty_compensation = self.duty_compensator.calculate(
-            policy_observation["joint_positions"],
-            policy_observation["joint_velocities"] * self.joint_velocity_scale,
-        )
+        if self.cfg.control.duty_compensation_enabled:
+            duty_compensation = self.duty_compensator.calculate(joint_positions, joint_velocities)
+        else:
+            duty_compensation = np.zeros_like(low_level_action)
         compensated_duty_action = compensated_duty(low_level_action, duty_compensation, self.duty_limits)
         next_state, reward, reward_breakdown = self.env.step(
             compensated_duty_action,
-            policy_observation["joint_positions"],
+            joint_positions,
             low_level_action,
-            float(policy_observation["time_left"][0]),
+            float(policy_observation["goal"][len(cartesian_action)]),
             cartesian_action,
             cartesian_action_start_pose,
             cartesian_action_ends,
@@ -261,13 +293,18 @@ class EpisodeRunner:
 
     def run_episode(self, generate_primitives: bool):
         try:
-            self._run_episode(generate_primitives, self.env.reset())
+            if generate_primitives:
+                self.primitive_policy.select_task()
+            state = self.env.reset(enable_added_weight=self.primitive_policy.task != "pick_and_place")
+            self._run_episode(generate_primitives, state)
         finally:
             if self.recorder:
                 self.recorder.save()
 
     def run_episode_from_sim_state(self, generate_primitives: bool, qpos: np.ndarray, qvel: np.ndarray):
         try:
+            if generate_primitives:
+                self.primitive_policy.select_task()
             self._run_episode(generate_primitives, self.env.reset_from_sim_state(qpos, qvel))
         finally:
             if self.recorder:
@@ -313,6 +350,7 @@ class EpisodeRunner:
                 images=images,
                 vla_input_state=vla_input_state,
                 gripper_duty=gripper_duty,
+                grasp_confirmed=state.grasp_confirmed,
                 primitive=primitive,
             )
 
@@ -345,8 +383,20 @@ class EpisodeRunner:
             if self.training:
                 self._sync_weights_if_due()
 
+            if self.grip_failed(state, primitive):
+                return state, completed_steps, True
+
             if cartesian_action.completes_active_primitive:
                 return state, completed_steps, False
+
+    def grip_failed(self, state: EnvironmentState, primitive: ActionPrimitive) -> bool:
+        return bool(
+            primitive.desired_gripper_duty_active
+            and (
+                state.end_effector_pose.gripper < self.cfg.waypoint.pick_and_place.gripper_abort_below_radians
+                or self.env.box_too_far(state.end_effector_pose)
+            )
+        )
 
     def _sync_weights_if_due(self):
         self.training_cartesian_action_count += 1
@@ -388,12 +438,16 @@ class EpisodeRunner:
         total_reward = 0.0
 
         cartesian_action_reward_metrics = {}
+        current_joint_positions = state.observation["joint_positions"]
+        current_joint_velocities = state.observation["joint_velocities"]
 
         for joint_step in range(1, self.joint_steps_per_cartesian_action + 1):
             cartesian_action_ends = joint_step == self.joint_steps_per_cartesian_action
             cartesian_action_terminated = self.cfg.training.terminate_at_cartesian_action_end and cartesian_action_ends
             low_level_action, duty_compensation, compensated_duty_action, next_state, reward, reward_breakdown = self._step_low_level(
                 policy_observation,
+                current_joint_positions,
+                current_joint_velocities,
                 cartesian_action,
                 cartesian_action_start_pose_obj,
                 cartesian_action_ends,
@@ -428,6 +482,8 @@ class EpisodeRunner:
 
             self.episode_low_level_step += 1
             policy_observation = next_policy_observation
+            current_joint_positions = next_state.observation["joint_positions"]
+            current_joint_velocities = next_state.observation["joint_velocities"]
 
         self._publish_cartesian_action_metrics(total_reward, cartesian_action_reward_metrics)
 

@@ -60,7 +60,7 @@ class EpisodeRecorder:
         primitive_index: int,
         diagnostics: Dict[str, Any],
         completes_active_primitive: bool,
-        box_gripped: bool,
+        grasp_confirmed: bool,
     ):
         self.states.append(
             self._make_state(
@@ -71,7 +71,7 @@ class EpisodeRecorder:
                 pose=pose,
                 sim_state=sim_state,
                 images=images,
-                box_gripped=box_gripped,
+                grasp_confirmed=grasp_confirmed,
             )
         )
         self.transitions.append(
@@ -90,7 +90,7 @@ class EpisodeRecorder:
 
     def record_final_state(
         self,
-        box_gripped: bool,
+        grasp_confirmed: bool,
         state_idx: int,
         primitive_index: int,
         obs: Dict[str, np.ndarray],
@@ -108,13 +108,13 @@ class EpisodeRecorder:
                 pose=pose,
                 sim_state=sim_state,
                 images=images,
-                box_gripped=box_gripped,
+                grasp_confirmed=grasp_confirmed,
             )
         )
 
-    def _make_state(self, state_idx, primitive_index, obs, sensor_state, pose, sim_state, images, box_gripped):
+    def _make_state(self, state_idx, primitive_index, obs, sensor_state, pose, sim_state, images, grasp_confirmed):
         return {
-            "box_gripped": bool(box_gripped),
+            "grasp_confirmed": bool(grasp_confirmed),
             "step": state_idx,
             "primitive_index": primitive_index,
             "image_paths": self._save_images(state_idx, images) if self.capture_camera else None,
@@ -189,7 +189,7 @@ class EpisodeRecorder:
         # TODO(lerobot): Review this state/transition layout against LeRobot's dataset schema.
 
         data_dict = {
-            "box_gripped": np.array([s["box_gripped"] for s in self.states], dtype=bool),
+            "box_gripped": np.array([s["grasp_confirmed"] for s in self.states], dtype=bool),
             "step": np.array([s["step"] for s in self.states], dtype=np.int32),
             "primitive_prompt": np.array([t["primitive_prompt"] for t in self.transitions], dtype=str),
             "primitive_index": np.array([s["primitive_index"] for s in self.states], dtype=np.int32),

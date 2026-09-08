@@ -86,7 +86,7 @@ def read_block(bus):
     for name, motor in bus.motors.items():
         i = motor.id
         if not bus.sync_reader.isAvailable(i, 56, 15):
-            continue
+            raise ConnectionError(f"Block read failed: missing feedback for motor {name!r} (ID {i})")
 
         # Extract from the already-fetched buffer
         pos = bus.sync_reader.getData(i, 56, 2)

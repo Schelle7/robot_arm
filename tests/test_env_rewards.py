@@ -3,8 +3,9 @@ from collections import deque
 from types import SimpleNamespace
 
 from robot_arm.envs.env import RobotEnv
+from robot_arm.grasp_estimator import GraspEstimator
 from robot_arm.pose import Pose
-from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, MOTOR_ORDER
 
 
 def make_env() -> RobotEnv:
@@ -39,72 +40,91 @@ def make_pose(position, angles, gripper=0.0) -> Pose:
     return Pose.from_euler(position, angles, gripper, "XYZ", False)
 
 
-def test_real_state_history_velocity_uses_sample_timestamps():
+def test_consecutive_velocity_uses_only_the_previous_sample():
     env = make_env()
-    env.backend = "real"
-    env.state_history_seconds = 0.1
-    env.state_history_intervals = 2
-    env.sample_time_history_ns = deque([900_000_000, 950_000_000], maxlen=3)
-    env.joint_position_history = deque(
-        [np.zeros(6, dtype=np.float32), np.full(6, 0.05, dtype=np.float32)],
-        maxlen=3,
-    )
-    env.tcp_pose_history = deque(
-        [make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]), make_pose([0.005, 0.0, 0.0], [0.0, 0.0, 0.0])],
-        maxlen=3,
-    )
-
-    joint_velocity, tcp_velocity = env._state_history_velocities(
-        np.full(6, 0.1, dtype=np.float32),
-        make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.02]),
+    env._set_motion_reference(
+        np.zeros(6, dtype=np.float32),
+        make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
         1_000_000_000,
     )
 
-    np.testing.assert_allclose(joint_velocity, np.ones(6))
-    np.testing.assert_allclose(tcp_velocity, [0.1, 0.0, 0.0, 0.0, 0.0, 0.2], atol=1e-6)
+    joint_velocity, tcp_velocity = env._consecutive_velocities(
+        np.full(6, 0.1, dtype=np.float32),
+        make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.02]),
+        1_050_000_000,
+    )
+
+    np.testing.assert_allclose(joint_velocity, np.full(6, 2.0))
+    np.testing.assert_allclose(tcp_velocity, [0.2, 0.0, 0.0, 0.0, 0.0, 0.4], atol=1e-6)
 
 
-def test_sim_state_history_velocity_uses_configured_seconds():
+def test_consecutive_velocity_advances_its_reference():
+    env = make_env()
+    first_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    second_pose = make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.0])
+    env._set_motion_reference(np.zeros(6, dtype=np.float32), first_pose, 1_000_000_000)
+    env._consecutive_velocities(
+        np.full(6, 0.1, dtype=np.float32),
+        second_pose,
+        1_050_000_000,
+    )
+    joint_velocity, tcp_velocity = env._consecutive_velocities(
+        np.full(6, 0.15, dtype=np.float32),
+        make_pose([0.015, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        1_100_000_000,
+    )
+
+    np.testing.assert_allclose(joint_velocity, np.ones(6), atol=1e-6)
+    np.testing.assert_allclose(tcp_velocity, [0.1, 0.0, 0.0, 0.0, 0.0, 0.0], atol=1e-6)
+
+
+def test_reset_policy_history_fills_one_window_with_zeros():
+    env = make_env()
+    env.policy_history_steps = 10
+    env.policy_history = deque([np.ones(len(HISTORY_FEATURE_NAMES), dtype=np.float32)], maxlen=10)
+
+    env._reset_policy_history()
+
+    assert len(env.policy_history) == 10
+    np.testing.assert_array_equal(np.stack(env.policy_history), np.zeros((10, len(HISTORY_FEATURE_NAMES))))
+
+
+def test_box_distance_rejects_grasp_and_restarts_continuous_hold():
     env = make_env()
     env.backend = "sim"
-    env.state_history_seconds = 0.1
-    env.sample_time_history_ns = deque([800_000_000, 900_000_000], maxlen=3)
-    env.joint_position_history = deque(
-        [np.zeros(6, dtype=np.float32), np.full(6, 0.05, dtype=np.float32)],
-        maxlen=3,
+    env.motor_order = MOTOR_ORDER
+    env.max_box_distance_meters = 0.04
+    env.grasp_estimator = GraspEstimator(SimpleNamespace(
+        position_range_radians=(0.3, 0.7),
+        min_closing_duty=0.1,
+        max_velocity_radians_per_second=0.05,
+        hold_seconds=0.2,
+    ))
+    env.policy_history = deque([np.zeros(len(HISTORY_FEATURE_NAMES))])
+    box_pose = SimpleNamespace(position=np.array([0.04, 0.0, 0.0]))
+    env.arm = SimpleNamespace(
+        get_privileged_box_pose=lambda body_name: box_pose,
+        sim_state=lambda: {},
     )
-    env.tcp_pose_history = deque(
-        [make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]), make_pose([0.005, 0.0, 0.0], [0.0, 0.0, 0.0])],
-        maxlen=3,
-    )
+    pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.4)
+    sensor_state = {
+        "Present_Position": {"gripper": 0.4},
+        "Present_Load": {"gripper": -0.35},
+        "sample_time_ns": 0,
+    }
 
-    joint_velocity, tcp_velocity = env._state_history_velocities(
-        np.full(6, 0.1, dtype=np.float32),
-        make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.02]),
-        1_000_000_000,
-    )
+    def observe(sample_time_ns):
+        sensor_state["sample_time_ns"] = sample_time_ns
+        return env._environment_state(sensor_state, np.zeros(6), np.zeros(6), np.zeros(6), pose)
 
-    np.testing.assert_allclose(joint_velocity, np.ones(6))
-    np.testing.assert_allclose(tcp_velocity, [0.1, 0.0, 0.0, 0.0, 0.0, 0.2], atol=1e-6)
-
-
-def test_reset_state_history_fills_one_window_without_crossing_episodes():
-    env = make_env()
-    env.joint_hz = 20
-    env.state_history_intervals = 2
-    env.joint_position_history = deque([np.ones(6)], maxlen=3)
-    env.tcp_pose_history = deque([make_pose([1.0, 0.0, 0.0], [0.0, 0.0, 0.0])], maxlen=3)
-    env.sample_time_history_ns = deque([1], maxlen=3)
-    joint_positions = np.full(6, 0.25, dtype=np.float32)
-    tcp_pose = make_pose([0.2, 0.0, 0.3], [0.0, 0.0, 0.0])
-
-    env._reset_state_history(joint_positions, tcp_pose, 1_000_000_000)
-
-    assert len(env.joint_position_history) == 2
-    assert len(env.tcp_pose_history) == 2
-    assert list(env.sample_time_history_ns) == [900_000_000, 950_000_000]
-    np.testing.assert_array_equal(env.joint_position_history[0], joint_positions)
-    assert env.tcp_pose_history[0] is tcp_pose
+    assert not observe(0).grasp_confirmed
+    assert observe(200_000_000).grasp_confirmed
+    box_pose.position[0] = 0.041
+    assert not observe(250_000_000).grasp_confirmed
+    box_pose.position[0] = 0.039
+    assert not observe(300_000_000).grasp_confirmed
+    assert not observe(499_000_000).grasp_confirmed
+    assert observe(500_000_000).grasp_confirmed
 
 
 def test_desired_pose_is_constructed_from_one_delta():
@@ -264,7 +284,9 @@ def test_sustained_duty_penalty_charges_only_the_excess_per_joint():
     env = make_env()
     env.sustained_duty_allowance = 0.7
     env.sustained_duty_penalty_factor = 2.0
-    env.duty_history = np.array([0.9, 0.7, 0.2, 0.0, 0.0, 0.8], dtype=np.float32)
+    history = np.zeros((10, len(HISTORY_FEATURE_NAMES)), dtype=np.float32)
+    history[:, 6:12] = [0.9, 0.7, 0.2, 0.0, 0.0, 0.8]
+    env.policy_history = deque(history, maxlen=10)
 
     # 0.2 over on one joint and 0.1 on another, with the rest at or below the allowance.
     np.testing.assert_allclose(env._compute_sustained_duty_penalty(), -0.6, rtol=1e-6)
@@ -301,25 +323,18 @@ def test_action_change_penalty_uses_actor_action_before_compensation():
 
 def test_reset_clears_tracking_state():
     env = make_env()
-    pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-    initial_state = {
-        "Present_Position": {motor: 0.0 for motor in MOTOR_ORDER},
-        "sample_time_ns": 0,
-    }
-    env.arm = type("ArmStub", (), {"read_state": lambda self: initial_state, "get_tcp_pose": lambda self, state: pose})()
-    env._get_obs = lambda: {}
-    env._reset_state_history = lambda joint_positions, tcp_pose, sample_time_ns: None
+    env._initial_environment_state = lambda: object()
     env.backend = "real"
     env.motor_order = MOTOR_ORDER
-    env.staging_enabled = False
+    env.policy_history_steps = 10
+    env.policy_history = deque(maxlen=10)
     env.previous_position_distance = 2.0
     env.previous_primary_orientation_distance = 3.0
     env.previous_secondary_orientation_distance = 4.0
     env.previous_gripper_distance = 4.0
-    env.duty_history = np.ones(6, dtype=np.float32)
     env.previous_action = np.ones(6, dtype=np.float32)
 
-    env.reset()
+    env.reset(enable_added_weight=False)
 
     assert env.previous_position_distance == 0.0
     assert env.previous_primary_orientation_distance == 0.0

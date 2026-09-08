@@ -10,6 +10,7 @@ reward:
     deviation: false
 
 control:
+  duty_compensation_enabled: true
   frequencies:
     cartesian: 5
     joint: 20
@@ -26,4 +27,4 @@ waypoint:
     random_waypoint: 0.5
 
 training:
-  total_training_steps: 400000
+  total_training_steps: 1000000

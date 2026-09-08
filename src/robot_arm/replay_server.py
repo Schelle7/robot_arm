@@ -3,8 +3,9 @@ import queue
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from uuid import uuid4
 
-from robot_arm.robot_schema import MOTOR_ORDER
+from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, MOTOR_ORDER
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -50,6 +51,8 @@ PAGE = """<!doctype html>
     .action-plot { padding: 12px 0; border-bottom: 1px solid var(--line); }
     .action-plot h3 { margin: 0 0 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
     .action-plot canvas { display: block; width: 100%; height: 150px; background: rgba(255, 255, 255, 0.72); }
+    .plot-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 6px; color: var(--muted); font: 11px "DejaVu Sans Mono", monospace; }
+    .plot-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; background: var(--series-color); }
     #warnings { margin: 18px 0 0; color: var(--warn); white-space: pre-wrap; }
     [hidden] { display: none; }
     @media (max-width: 620px) { .controls { grid-template-columns: 1fr 84px; } .controls label { grid-column: 1 / -1; } .controls button { grid-column: 1 / -1; } .generation-row { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } }
@@ -83,6 +86,10 @@ PAGE = """<!doctype html>
     </div>
     <p id="dutyWarning" hidden></p>
 </div>
+<section id="historySection" hidden>
+    <h2>Policy history</h2>
+    <div id="historyPlots" class="action-plots"></div>
+</section>
 <section>
     <h2>Policy actions</h2>
     <div id="actionPlots" class="action-plots"></div>
@@ -106,26 +113,37 @@ PAGE = """<!doctype html>
     const branchControls = document.getElementById("branchControls");
     const overviewTable = document.getElementById("overviewTable");
     const tables = document.getElementById("tables");
+    const historySection = document.getElementById("historySection");
+    const historyPlots = document.getElementById("historyPlots");
     const actionPlots = document.getElementById("actionPlots");
     const status = document.getElementById("status");
     let overviewStructure = "";
     let tableStructure = "";
     let dutyInputsCreated = false;
+    let episodeId = null;
+    let polling = false;
+    const plotColors = ["#087f5b", "#9c36b5", "#e67700", "#1971c2", "#c92a2a", "#5f3dc4"];
+    const historyGroups = [
+        ["Policy action", 0, "policy_action_"],
+        ["Applied duty", 6, "applied_duty_"],
+        ["Joint velocity (normalized)", 12, "joint_velocity_"],
+        ["TCP velocity (normalized)", 18, "tcp_velocity_"],
+    ];
 
     function requestFrame(value) {
         frameRange.value = value;
         frameNumber.value = value;
-        fetch("/frame", {method: "POST", body: value});
+        fetch("/frame", {method: "POST", headers: {"X-Episode-ID": episodeId}, body: value});
     }
 
     function togglePlay() {
-        fetch("/play", {method: "POST"});
+        fetch("/play", {method: "POST", headers: {"X-Episode-ID": episodeId}});
     }
 
     function requestLowLevelStep(value) {
         lowLevelRange.value = value;
         lowLevelNumber.value = value;
-        fetch("/low-level-step", {method: "POST", body: value});
+        fetch("/low-level-step", {method: "POST", headers: {"X-Episode-ID": episodeId}, body: value});
     }
 
     function updateDutyWarning() {
@@ -161,20 +179,18 @@ PAGE = """<!doctype html>
     }
 
     async function exportBranchRequest() {
+        const requestedEpisode = episodeId;
         const duties = {};
         for (const input of dutyGrid.querySelectorAll("input")) {
             duties[input.dataset.motor] = Number(input.value);
         }
         const response = await fetch("/generate", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
+            headers: {"Content-Type": "application/json", "X-Episode-ID": requestedEpisode},
             body: JSON.stringify({frame_index: Number(frameNumber.value), duration_seconds: Number(durationSeconds.value), duties}),
         });
-        if (!response.ok) {
-            generationStatus.textContent = await response.text();
-            return;
-        }
-        generationStatus.textContent = "Saved. Close replay, then run: python scripts/rollout_fixed_duty.py";
+        const message = response.ok ? "Branch request saved." : await response.text();
+        if (episodeId === requestedEpisode) generationStatus.textContent = message;
     }
 
     function renderTableContainer(container, sections, currentStructure) {
@@ -287,8 +303,103 @@ PAGE = """<!doctype html>
         }
     }
 
-    async function createActionPlots() {
-        const actionData = await (await fetch("/actions")).json();
+    function drawHistoryPlot(canvas, history, startIndex, endTime, jointHz) {
+        const pixelRatio = window.devicePixelRatio || 1;
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        const context = canvas.getContext("2d");
+        context.scale(pixelRatio, pixelRatio);
+
+        const left = 48;
+        const right = 12;
+        const top = 10;
+        const bottom = 24;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const values = history.flatMap(sample => sample.slice(startIndex, startIndex + 6));
+        const magnitude = Math.max(1.0, ...values.map(value => Math.abs(value)));
+        const x = index => left + index * plotWidth / (history.length - 1);
+        const y = value => top + (magnitude - value) * plotHeight / (2 * magnitude);
+
+        context.strokeStyle = "#ccd5d1";
+        context.lineWidth = 1;
+        for (const value of [-magnitude, 0, magnitude]) {
+            context.beginPath();
+            context.moveTo(left, y(value));
+            context.lineTo(width - right, y(value));
+            context.stroke();
+            context.fillStyle = "#61706a";
+            context.font = '11px "DejaVu Sans Mono", monospace';
+            context.textAlign = "right";
+            context.textBaseline = "middle";
+            context.fillText(value.toFixed(2), left - 6, y(value));
+        }
+
+        for (let seriesIndex = 0; seriesIndex < 6; seriesIndex += 1) {
+            context.strokeStyle = plotColors[seriesIndex];
+            context.lineWidth = 1.5;
+            context.beginPath();
+            for (let historyIndex = 0; historyIndex < history.length; historyIndex += 1) {
+                const pointX = x(historyIndex);
+                const pointY = y(history[historyIndex][startIndex + seriesIndex]);
+                if (historyIndex === 0) {
+                    context.moveTo(pointX, pointY);
+                } else {
+                    context.lineTo(pointX, pointY);
+                }
+            }
+            context.stroke();
+            context.fillStyle = plotColors[seriesIndex];
+            for (let historyIndex = 0; historyIndex < history.length; historyIndex += 1) {
+                context.beginPath();
+                context.arc(x(historyIndex), y(history[historyIndex][startIndex + seriesIndex]), 2.5, 0, 2 * Math.PI);
+                context.fill();
+            }
+        }
+
+        context.fillStyle = "#61706a";
+        context.textBaseline = "bottom";
+        context.textAlign = "left";
+        context.fillText(`${(endTime - (history.length - 1) / jointHz).toFixed(2)} s`, left, height);
+        context.textAlign = "right";
+        context.fillText(`${endTime.toFixed(2)} s`, width - right, height);
+        context.textAlign = "center";
+        context.fillText("Episode time (negative = reset padding)", left + plotWidth / 2, height);
+    }
+
+    function renderHistoryPlots(history, featureNames, endTime, jointHz) {
+        historySection.hidden = history.length === 0;
+        if (history.length === 0) {
+            return;
+        }
+        if (historyPlots.childElementCount === 0) {
+            for (const [title, startIndex, featurePrefix] of historyGroups) {
+                const plot = document.createElement("div");
+                const heading = document.createElement("h3");
+                const legend = document.createElement("div");
+                const canvas = document.createElement("canvas");
+                plot.className = "action-plot";
+                heading.textContent = title;
+                legend.className = "plot-legend";
+                for (let seriesIndex = 0; seriesIndex < 6; seriesIndex += 1) {
+                    const item = document.createElement("span");
+                    item.textContent = featureNames[startIndex + seriesIndex].replace(featurePrefix, "").replaceAll("_", " ");
+                    item.style.setProperty("--series-color", plotColors[seriesIndex]);
+                    legend.appendChild(item);
+                }
+                canvas.dataset.startIndex = startIndex;
+                plot.append(heading, legend, canvas);
+                historyPlots.appendChild(plot);
+            }
+        }
+        for (const canvas of historyPlots.querySelectorAll("canvas")) {
+            drawHistoryPlot(canvas, history, Number(canvas.dataset.startIndex), endTime, jointHz);
+        }
+    }
+
+    function createActionPlots(actionData) {
         for (let motorIndex = 0; motorIndex < actionData.motor_names.length; motorIndex += 1) {
             const plot = document.createElement("div");
             const heading = document.createElement("h3");
@@ -314,10 +425,33 @@ PAGE = """<!doctype html>
             togglePlay();
         }
     });
-    createActionPlots();
+    function resetEpisode(state, actionData) {
+        overviewStructure = "";
+        tableStructure = "";
+        dutyInputsCreated = false;
+        for (const container of [overviewTable, tables, dutyGrid, historyPlots, actionPlots]) {
+            container.replaceChildren();
+        }
+        generationStatus.textContent = "";
+        dutyWarning.textContent = "";
+        dutyWarning.hidden = true;
+        historySection.hidden = true;
+        durationSeconds.value = state.frame_period;
+        for (const input of [frameRange, frameNumber, lowLevelRange, lowLevelNumber]) {
+            input.blur();
+            input.value = 0;
+        }
+        createActionPlots(actionData);
+        episodeId = state.episode_id;
+    }
 
-  setInterval(async () => {
-        const state = await (await fetch("/state")).json();
+    async function pollState() {
+        const state = await (await fetch("/state", {cache: "no-store"})).json();
+        if (state.episode_id !== episodeId) {
+            const actionData = await (await fetch("/actions", {cache: "no-store"})).json();
+            if (actionData.episode_id !== state.episode_id) return;
+            resetEpisode(state, actionData);
+        }
         const maxFrame = state.frame_count - 1;
         frameRange.max = maxFrame;
         frameNumber.max = maxFrame;
@@ -337,6 +471,7 @@ PAGE = """<!doctype html>
         }
         lowLevelLabel.textContent = state.low_level_step_count === 0 ? "N/A" : `${state.current_low_level_step + 1} / ${state.low_level_step_count}`;
         activePrimitive.textContent = state.active_primitive;
+        renderHistoryPlots(state.policy_history, state.history_feature_names, state.history_end_time, state.joint_hz);
         playButton.textContent = state.auto_play ? "Pause" : "Play";
         status.textContent = state.auto_play ? "Playing" : "Paused";
         branchControls.hidden = !state.branch_available;
@@ -347,7 +482,17 @@ PAGE = """<!doctype html>
         }
         renderTables(state.sections);
     document.getElementById("warnings").textContent = state.warnings.join("\\n");
-  }, 100);
+    }
+
+    setInterval(async () => {
+        if (polling) return;
+        polling = true;
+        try {
+            await pollState();
+        } finally {
+            polling = false;
+        }
+    }, 100);
 </script>
 </html>
 """
@@ -360,7 +505,9 @@ class ReplayServer:
     """
 
     def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits, joint_hz, actions, branch_available):
+        self.episode_id = uuid4().hex
         self.state = {
+            "episode_id": self.episode_id,
             "sections": [],
             "warnings": [],
             "current_frame": 0,
@@ -373,19 +520,36 @@ class ReplayServer:
             "auto_play": False,
             "branch_available": branch_available,
             "active_primitive": "N/A",
+            "policy_history": [],
+            "history_end_time": 0.0,
+            "joint_hz": joint_hz,
+            "history_feature_names": HISTORY_FEATURE_NAMES,
         }
         self.port = port
         self.episode_path = str(Path(episode_path).resolve())
         self.branch_request_path = Path(branch_request_path).resolve()
         self.action_data = {
+            "episode_id": self.episode_id,
             "motor_names": MOTOR_ORDER,
             "joint_hz": joint_hz,
             "actions": actions,
         }
         self.command_queue = queue.SimpleQueue()
 
-    def display(self, sections, warnings, current_frame, current_low_level_step, low_level_step_count, active_primitive, auto_play) -> None:
+    def display(
+        self,
+        sections,
+        warnings,
+        current_frame,
+        current_low_level_step,
+        low_level_step_count,
+        policy_history,
+        history_end_time,
+        active_primitive,
+        auto_play,
+    ) -> None:
         self.state = {
+            "episode_id": self.episode_id,
             "sections": sections,
             "warnings": list(warnings),
             "current_frame": current_frame,
@@ -398,6 +562,10 @@ class ReplayServer:
             "auto_play": auto_play,
             "branch_available": self.state["branch_available"],
             "active_primitive": active_primitive,
+            "policy_history": policy_history,
+            "history_end_time": history_end_time,
+            "joint_hz": self.state["joint_hz"],
+            "history_feature_names": self.state["history_feature_names"],
         }
 
     def take_commands(self):
@@ -423,11 +591,15 @@ class ReplayServer:
 
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
 
             def do_POST(self):
+                if self.headers["X-Episode-ID"] != state_of.episode_id:
+                    self.send_error(409, "Episode changed; wait for the viewer to refresh")
+                    return
                 if self.path == "/frame":
                     content_length = int(self.headers["Content-Length"])
                     frame_index = int(self.rfile.read(content_length))

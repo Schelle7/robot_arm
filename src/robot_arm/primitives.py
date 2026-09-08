@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 from robot_arm.backends.sim_arm import object_color
 from robot_arm.pose import Pose
 from robot_arm.robot_schema import BOX_BODY_NAMES, TILE_BODY_NAME
-from robot_arm.experimental_waypoints import (
+from robot_arm.waypoints import (
     generate_oriented_waypoint,
     position_from_base_rotation,
     shoulder_pan_position,
@@ -64,6 +64,16 @@ def generate_pick_and_place(
     grasp_height = float(box_pos[2] + pnp_cfg.grasp_z_offset_meters)
     lift_height = float(box_pos[2] + pnp_cfg.lift_z_offset_meters)
 
+    def target_pose(position: np.ndarray, gripper: float) -> Pose:
+        return generate_oriented_waypoint(
+            model=model,
+            data=data,
+            position=position,
+            pointing_axis_tilt_degrees=45.0,
+            pointing_axis_rotation_degrees=90.0,
+            gripper=gripper,
+        )
+
     open_pose = Pose.from_tcp_axes(
         position=start_pose.position,
         closing_axis=start_pose.closing_axis,
@@ -79,16 +89,26 @@ def generate_pick_and_place(
         desired_gripper_duty_active=False,
     )
 
-    approach_pose = generate_oriented_waypoint(
-        model=model,
-        data=data,
+    approach_pose = target_pose(
         position=np.array([box_pos[0], box_pos[1], grasp_height], dtype=np.float32),
-        pointing_axis_tilt_degrees=45.0,
-        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_open_radians),
     )
-    move_to_box = ActionPrimitive(
+    above_box_pose = Pose.from_tcp_axes(
+        position=np.array([box_pos[0], box_pos[1], lift_height], dtype=np.float32),
+        closing_axis=approach_pose.closing_axis,
+        secondary_axis=approach_pose.secondary_axis,
+        gripper=float(pnp_cfg.gripper_open_radians),
+    )
+    move_above_box = ActionPrimitive(
         start_pose=open_pose,
+        target_pose=above_box_pose,
+        prompt=f"move above {box_color} box",
+        include_target_offset=False,
+        desired_gripper_duty=0.0,
+        desired_gripper_duty_active=False,
+    )
+    move_to_box = ActionPrimitive(
+        start_pose=above_box_pose,
         target_pose=approach_pose,
         prompt=f"move to {box_color} box",
         include_target_offset=False,
@@ -96,10 +116,8 @@ def generate_pick_and_place(
         desired_gripper_duty_active=False,
     )
 
-    closed_approach_pose = Pose.from_tcp_axes(
+    closed_approach_pose = target_pose(
         position=approach_pose.position,
-        closing_axis=approach_pose.closing_axis,
-        secondary_axis=approach_pose.secondary_axis,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
     close_gripper = ActionPrimitive(
@@ -111,12 +129,8 @@ def generate_pick_and_place(
         desired_gripper_duty_active=True,
     )
 
-    lift_pose = generate_oriented_waypoint(
-        model=model,
-        data=data,
+    lift_pose = target_pose(
         position=np.array([box_pos[0], box_pos[1], lift_height], dtype=np.float32),
-        pointing_axis_tilt_degrees=45.0,
-        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
     lift_object = ActionPrimitive(
@@ -128,12 +142,8 @@ def generate_pick_and_place(
         desired_gripper_duty_active=True,
     )
 
-    transport_pose = generate_oriented_waypoint(
-        model=model,
-        data=data,
+    transport_pose = target_pose(
         position=np.array([tile_pos[0], tile_pos[1], lift_height], dtype=np.float32),
-        pointing_axis_tilt_degrees=45.0,
-        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
     move_above_tile = ActionPrimitive(
@@ -145,12 +155,8 @@ def generate_pick_and_place(
         desired_gripper_duty_active=True,
     )
 
-    place_pose = generate_oriented_waypoint(
-        model=model,
-        data=data,
+    place_pose = target_pose(
         position=np.array([tile_pos[0], tile_pos[1], grasp_height], dtype=np.float32),
-        pointing_axis_tilt_degrees=45.0,
-        pointing_axis_rotation_degrees=90.0,
         gripper=float(pnp_cfg.gripper_closed_radians),
     )
     lower_object = ActionPrimitive(
@@ -162,10 +168,8 @@ def generate_pick_and_place(
         desired_gripper_duty_active=True,
     )
 
-    release_pose = Pose.from_tcp_axes(
+    release_pose = target_pose(
         position=place_pose.position,
-        closing_axis=place_pose.closing_axis,
-        secondary_axis=place_pose.secondary_axis,
         gripper=float(pnp_cfg.gripper_open_radians),
     )
     release_object = ActionPrimitive(
@@ -179,6 +183,7 @@ def generate_pick_and_place(
 
     return [
         open_gripper,
+        move_above_box,
         move_to_box,
         close_gripper,
         lift_object,
@@ -274,12 +279,7 @@ def generate_random_waypoint(
     ]
 
 
-def generate_action_primitives(
-    model,
-    data,
-    cfg: DictConfig,
-    start_pose: Pose,
-) -> List[ActionPrimitive]:
+def select_task(cfg: DictConfig) -> str:
     probabilities = cfg.waypoint.primitive_probabilities
     task_probabilities = np.array(
         [
@@ -292,10 +292,21 @@ def generate_action_primitives(
     assert np.all(task_probabilities >= 0.0)
     assert np.isclose(task_probabilities.sum(), 1.0)
 
-    task = np.random.choice(
-        ["pick_and_place", "relative_move", "random_waypoint"],
-        p=task_probabilities,
+    return str(
+        np.random.choice(
+            ["pick_and_place", "relative_move", "random_waypoint"],
+            p=task_probabilities,
+        )
     )
+
+
+def generate_action_primitives(
+    model,
+    data,
+    cfg: DictConfig,
+    start_pose: Pose,
+    task: str,
+) -> List[ActionPrimitive]:
     if task == "pick_and_place":
         return generate_pick_and_place(model, data, cfg, start_pose)
     elif task == "relative_move":

@@ -18,7 +18,7 @@ def bus(pytestconfig):
     calibration_id = pytestconfig.getoption("id")
 
     if port is None or calibration_id is None:
-        pytest.fail("Hardware test requires both --port and --id")
+        pytest.skip("Hardware test requires both --port and --id")
 
     follower = SO101Follower(SO101FollowerConfig(port=port, id=calibration_id))
     follower.connect(calibrate=False)

@@ -4,7 +4,7 @@ import time
 import numpy as np
 
 from robot_arm.numpy_policy import load_numpy_policy
-from robot_arm.robot_schema import policy_observation_sizes
+from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES
 
 
 def main():
@@ -16,8 +16,8 @@ def main():
 
     policy = load_numpy_policy(args.checkpoint)
     observation = {
-        name: np.zeros(size, dtype=np.float32)
-        for name, size in policy_observation_sizes(cartesian_action_dim=7).items()
+        name: np.zeros(policy.observation_sizes[name], dtype=np.float32)
+        for name in POLICY_OBSERVATION_NAMES
     }
 
     for _ in range(args.warmup):

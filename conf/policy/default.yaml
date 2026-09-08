@@ -1,5 +1,14 @@
-net_arch:
-  - 512
-  - 512
+history_encoder:
+  - 256
+  - 128
+state_encoder:
+  - 128
+  - 128
+goal_encoder:
+  - 64
+  - 64
+fusion:
   - 256
   - 256
+forward_head:
+  - 128

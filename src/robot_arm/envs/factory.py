@@ -46,6 +46,7 @@ def make_env(cfg: DictConfig, output_dir: str):
 
         # Prevent garbage collection of the follower object
         backend.follower_keepalive = follower
+        backend.configure_read_timeout(cfg.hardware.read_timeout_margin_ms)
     else:
         raise ValueError(f"Unknown backend requested: {cfg.backend}")
 
