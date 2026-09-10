@@ -29,10 +29,17 @@ def primitive_diagnostic_rows(action_diagnostics):
         ("Gripper position", "gripper_distance", "gripper_threshold"),
         ("Gripper duty", "gripper_duty_distance", "duty_threshold"),
     )
-    return [
-        [label, format_value(action_diagnostics[difference_key]), format_value(action_diagnostics[threshold_key])]
+    rows = [
+        [
+            label,
+            format_value(action_diagnostics[difference_key]) if difference_key in action_diagnostics else "Not available for this rollout",
+            format_value(action_diagnostics[threshold_key]) if threshold_key in action_diagnostics else "Not available for this rollout",
+        ]
         for label, difference_key, threshold_key in diagnostic_pairs
     ]
+    if "completion_probability" in action_diagnostics:
+        rows.append(["Completion probability", format_value(action_diagnostics["completion_probability"]), "N/A"])
+    return rows
 
 
 def build_replay_display(
@@ -57,11 +64,8 @@ def build_replay_display(
     compensated_duty_action = dense_sample["compensated_duty"] if dense_sample else None
     low_level_observation = dense_sample["obs"] if dense_sample else {}
     episode_time = frame_index / recorded_cfg.control.frequencies.cartesian
-    if action_diagnostics:
-        primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
-        primitive_rows.extend(primitive_diagnostic_rows(action_diagnostics))
-    else:
-        primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
+    primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
+    primitive_rows.extend(primitive_diagnostic_rows(action_diagnostics))
 
     observation_rows = [
         [key, "  ".join(format_vector(value))]
@@ -121,7 +125,7 @@ def build_replay_display(
         ),
         section(
             "Primitive",
-            ["Metric", "Difference", "Threshold"],
+            ["Metric", "Value / difference", "Threshold"],
             primitive_rows,
         ),
         section("Low-level observation", ["Input", "Values"], observation_rows),

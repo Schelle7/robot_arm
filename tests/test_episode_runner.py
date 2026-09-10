@@ -285,6 +285,7 @@ def test_grip_abort_checks_angle_and_box_distance_only_while_holding(angle, hold
 ])
 def test_runner_preserves_policy_completion_and_aborts_failed_grips(flags, angles, too_far, expected_steps, aborted):
     runner = EpisodeRunner.__new__(EpisodeRunner)
+    runner.progress = None
     runner.env = SimpleNamespace(box_too_far=lambda pose: too_far)
     runner.cfg = SimpleNamespace(
         waypoint=SimpleNamespace(pick_and_place=SimpleNamespace(gripper_abort_below_radians=0.3)),

@@ -24,6 +24,8 @@ class ReplayViewer:
         self.mdata = mujoco.MjData(self.model)
         self.has_sim_state = recorded_cfg.backend == "sim"
         if self.has_sim_state:
+            self.model.body_pos[:] = data["body_pos"]
+            self.model.geom_matid[:] = data["geom_matid"]
             self.qpos_recording = data["qpos"]
             self.qvel_recording = data["qvel"]
         else:

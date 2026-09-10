@@ -32,6 +32,7 @@ class EpisodeRunner:
         replay_buffer,
         metrics_queue,
         weights_queue,
+        progress,
     ):
         cartesian_hz = cfg.control.frequencies.cartesian
         joint_hz = cfg.control.frequencies.joint
@@ -58,6 +59,7 @@ class EpisodeRunner:
         self.metrics_queue = metrics_queue
         self.cfg = cfg
         self.weights_queue = weights_queue
+        self.progress = progress
         self.joint_velocity_scale = cfg.control.joint_velocity_scale_radians_per_second
         self.duty_limits = np.array(
             [float(cfg.servo.max_duty[motor] / cfg.servo.full_scale_duty) for motor in self.env.motor_order],
@@ -338,9 +340,9 @@ class EpisodeRunner:
         primitive_index: int,
         completed_steps: int,
     ) -> tuple[EnvironmentState, int, bool]:
-        while True:
-            if completed_steps >= self.max_cartesian_steps:
-                return state, completed_steps, True
+        if self.progress is not None:
+            self.progress.set_description(primitive.prompt)
+        while completed_steps < self.max_cartesian_steps:
             current_pose = state.end_effector_pose
             gripper_duty = float(state.observation["gripper_duty"][0])
             vla_input_state = self.primitive_policy.build_vla_input_state(primitive, current_pose, gripper_duty)
@@ -379,6 +381,8 @@ class EpisodeRunner:
 
             state = next_state
             completed_steps += 1
+            if self.progress is not None:
+                self.progress.update(1)
 
             if self.training:
                 self._sync_weights_if_due()
@@ -388,6 +392,8 @@ class EpisodeRunner:
 
             if cartesian_action.completes_active_primitive:
                 return state, completed_steps, False
+
+        return state, completed_steps, True
 
     def grip_failed(self, state: EnvironmentState, primitive: ActionPrimitive) -> bool:
         return bool(

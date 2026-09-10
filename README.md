@@ -3,6 +3,14 @@
 Personal control code and experiments for an SO-101 **follower** arm using
 [LeRobot](https://huggingface.co/docs/lerobot).
 
+## Simulation example
+
+[Watch on YouTube ↗](https://youtu.be/o0uG7idjmQ8)
+
+[![Watch: low-level duty control gripping and relocating a box](https://img.youtube.com/vi/o0uG7idjmQ8/hqdefault.jpg)](https://youtu.be/o0uG7idjmQ8)
+
+Scripted Cartesian targets executed by the learned low-level duty controller.
+
 ## Environment
 
 A conda env named `lerobot` (Python 3.12, with `ffmpeg`) has already been created.

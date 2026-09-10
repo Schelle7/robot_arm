@@ -237,6 +237,8 @@ class EpisodeRecorder:
             )
 
         if self.record_sim_state:
+            data_dict["body_pos"] = self.states[0]["sim_state"]["body_pos"]
+            data_dict["geom_matid"] = self.states[0]["sim_state"]["geom_matid"]
             data_dict["qpos"] = np.array([s["sim_state"]["qpos"] for s in self.states], dtype=np.float32)
             data_dict["qvel"] = np.array([s["sim_state"]["qvel"] for s in self.states], dtype=np.float32)
 

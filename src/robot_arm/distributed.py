@@ -168,6 +168,7 @@ def worker_process(
         replay_buffer=worker_episode_buffer,
         metrics_queue=worker_metrics_buffer,
         weights_queue=weights_queue,
+        progress=None,
     )
 
     # Continuous episodes loop

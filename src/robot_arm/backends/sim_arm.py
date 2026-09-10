@@ -268,6 +268,8 @@ class SimBackend(Arm):
         return {
             "qpos": self.data.qpos.copy(),
             "qvel": self.data.qvel.copy(),
+            "body_pos": self.model.body_pos.copy(),
+            "geom_matid": self.model.geom_matid.copy(),
         }
 
     def restore_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> None:

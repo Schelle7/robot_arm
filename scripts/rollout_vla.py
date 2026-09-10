@@ -2,6 +2,7 @@ import os
 import hydra
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
+from tqdm import tqdm
 
 from robot_arm.recorder import EpisodeRecorder
 from robot_arm.policies import VLACartesianPolicy, latest_vla_checkpoint_path
@@ -29,20 +30,26 @@ def main(rollout_cfg: DictConfig):
         episode_name="vla_run_01",
     )
 
-    runner = EpisodeRunner(
-        cfg=merged_cfg,
-        env=env,
-        low_level_policy=low_level_policy,
-        primitive_policy=primitive_policy,
-        cartesian_policy=cartesian_policy,
-        training=False,
-        recorder=recorder,
-        replay_buffer=None,
-        metrics_queue=None,
-        weights_queue=None,
-    )
+    with tqdm(
+        total=int(merged_cfg.control.max_seconds * merged_cfg.control.frequencies.cartesian),
+        desc="VLA rollout",
+        unit="action",
+    ) as progress:
+        runner = EpisodeRunner(
+            cfg=merged_cfg,
+            env=env,
+            low_level_policy=low_level_policy,
+            primitive_policy=primitive_policy,
+            cartesian_policy=cartesian_policy,
+            training=False,
+            recorder=recorder,
+            replay_buffer=None,
+            metrics_queue=None,
+            weights_queue=None,
+            progress=progress,
+        )
 
-    runner.run_episode(generate_primitives=True)
+        runner.run_episode(generate_primitives=True)
 
 
 if __name__ == "__main__":

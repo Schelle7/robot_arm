@@ -43,6 +43,14 @@
     <!-- Placement target. Fixed to the world, moved between episodes via model.body_pos. -->
     <body name="tile" pos="0.40 0.0 0.0001">
       <geom name="tile_geom" type="box" size="0.02 0.02 0.0001" material="matte_blue"/>
+      <geom name="tile_border_left" type="box" pos="-0.035 0 0" size="0.015 0.05 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="tile_border_right" type="box" pos="0.035 0 0" size="0.015 0.05 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="tile_border_front" type="box" pos="0 -0.035 0" size="0.02 0.015 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="tile_border_back" type="box" pos="0 0.035 0" size="0.02 0.015 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
     </body>
   </worldbody>
 </mujoco>

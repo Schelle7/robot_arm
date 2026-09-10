@@ -24,6 +24,7 @@ def main(cfg: DictConfig):
         target_dir=target_dir,
         fps=cfg.control.frequencies.cartesian,
         min_gripped_seconds=cfg.conversion.min_gripped_seconds,
+        video_files_size_in_mb=cfg.conversion.video_files_size_in_mb,
     )
 
 

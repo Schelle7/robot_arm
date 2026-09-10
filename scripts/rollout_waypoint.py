@@ -41,6 +41,7 @@ def main(rollout_cfg: DictConfig):
         replay_buffer=None,
         metrics_queue=None,
         weights_queue=None,
+        progress=None,
     )
 
     runner.run_episode(generate_primitives=True)

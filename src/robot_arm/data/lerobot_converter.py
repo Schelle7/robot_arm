@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import logging
 import sys
 import tempfile
@@ -124,21 +125,52 @@ def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
     return torch.from_numpy(state)
 
 
-def filter_failed_grips(data, fps: int, min_gripped_seconds: float) -> bool:
+def grip_filter_result(data, fps: int, min_gripped_seconds: float) -> dict:
     prompts = data["primitive_prompt"]
     closing = prompts == "close gripper"
-    if not np.any(closing):
-        return True
     lifting = prompts == "lift object"
-    if not np.any(lifting):
-        return False
+    transporting = np.char.startswith(prompts, "move ") & np.char.endswith(prompts, " tile")
+    lowering = np.char.startswith(prompts, "lower ") & np.char.endswith(prompts, " tile")
     gripped = data["box_gripped"][:-1]
     assert gripped.shape == prompts.shape, "Expected one gripped state per transition plus one final state."
-    gripped_seconds = np.count_nonzero(gripped & (closing | lifting)) / fps
-    return bool(gripped_seconds >= min_gripped_seconds)
+    holding = closing | lifting | transporting | lowering
+    gripped_seconds = float(np.count_nonzero(gripped & holding) / fps)
+    if not np.any(closing):
+        accepted, reason = True, "No close-gripper primitive; grip filter does not apply."
+    elif not np.any(lifting):
+        accepted, reason = False, "Closing occurred but no lift-object primitive was recorded."
+    elif gripped_seconds < min_gripped_seconds:
+        accepted, reason = False, "Confirmed grasp time during closing/lifting/transport/lowering is below the minimum."
+    else:
+        accepted, reason = True, "Confirmed grasp time meets the minimum."
+    return {
+        "accepted": accepted,
+        "reason": reason,
+        "confirmed_grasp_seconds": gripped_seconds,
+        "required_grasp_seconds": min_gripped_seconds,
+        "recorded_seconds": len(prompts) / fps,
+        "has_closing": bool(np.any(closing)),
+        "has_lifting": bool(np.any(lifting)),
+    }
 
 
-def convert_to_lerobot(source_dir: str, target_dir: str, fps: int, min_gripped_seconds: float):
+def filter_failed_grips(data, fps: int, min_gripped_seconds: float) -> bool:
+    return grip_filter_result(data, fps, min_gripped_seconds)["accepted"]
+
+
+def write_conversion_report(path: str, report: dict) -> None:
+    with open(path, "w", encoding="utf-8") as report_file:
+        json.dump(report, report_file, indent=2)
+        report_file.write("\n")
+
+
+def convert_to_lerobot(
+    source_dir: str,
+    target_dir: str,
+    fps: int,
+    min_gripped_seconds: float,
+    video_files_size_in_mb: float,
+):
     """
     Parses flat .npz tracking outputs and corresponding jpegs,
     and converts them into LeRobot/Hugging Face format using LeRobotDataset.create().
@@ -156,10 +188,31 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int, min_gripped_s
     features = _build_dataset_features(ref_cfg)
 
     accepted_episodes = []
+    episode_results = {}
     for ep_path in episodes:
         with np.load(ep_path, allow_pickle=True) as data:
-            if filter_failed_grips(data, fps, min_gripped_seconds):
+            result = grip_filter_result(data, fps, min_gripped_seconds)
+            result["source_episode"] = os.path.abspath(ep_path)
+            result["conversion_status"] = "pending" if result["accepted"] else "not_selected"
+            episode_results[ep_path] = result
+            if result["accepted"]:
                 accepted_episodes.append(ep_path)
+            else:
+                print(f"Rejected {ep_path}: {result['reason']} ({result['confirmed_grasp_seconds']:.2f}s confirmed)")
+    report_path = os.path.abspath(target_dir) + ".conversion_report.json"
+    report = {
+        "source_dir": os.path.abspath(source_dir),
+        "target_dir": os.path.abspath(target_dir),
+        "fps": fps,
+        "video_files_size_in_mb": video_files_size_in_mb,
+        "accepted_count": len(accepted_episodes),
+        "rejected_count": len(episodes) - len(accepted_episodes),
+        "conversion_complete": False,
+        "episodes": list(episode_results.values()),
+    }
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    write_conversion_report(report_path, report)
+    print(f"Conversion report: {report_path}")
     print(f"Grip filter: accepted {len(accepted_episodes)}, rejected {len(episodes) - len(accepted_episodes)} recordings.")
     if not accepted_episodes:
         raise ValueError("All recordings were rejected by the failed-grip filter.")
@@ -177,11 +230,14 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int, min_gripped_s
         use_videos=True,
         vcodec="h264",
     )
+    dataset.meta.update_chunk_settings(video_files_size_in_mb=video_files_size_in_mb)
 
     print(f"Found {len(episodes)} episodes. Converting to LeRobot dataset at {target_dir}...")
 
     # 3. Process each episode
     for ep_idx, ep_path in enumerate(tqdm(episodes)):
+        episode_results[ep_path]["conversion_status"] = "converting"
+        write_conversion_report(report_path, report)
         ep_dir = os.path.dirname(ep_path)
 
         # Load the numeric data
@@ -226,5 +282,10 @@ def convert_to_lerobot(source_dir: str, target_dir: str, fps: int, min_gripped_s
                 with _quiet_native_stderr():
                     dataset.save_episode()
 
+        episode_results[ep_path]["conversion_status"] = "converted"
+        write_conversion_report(report_path, report)
+
     dataset.finalize()
+    report["conversion_complete"] = True
+    write_conversion_report(report_path, report)
     print("Dataset conversion complete!")

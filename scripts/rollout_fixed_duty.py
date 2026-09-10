@@ -60,6 +60,7 @@ def main(cfg: DictConfig):
         replay_buffer=None,
         metrics_queue=None,
         weights_queue=None,
+        progress=None,
     )
     runner.run_episode_from_sim_state(
         generate_primitives=True,
