@@ -38,7 +38,7 @@ def rollout_timestamp(episode_path: str) -> datetime:
 
 
 def find_latest_episode():
-    outputs_dir = Path(__file__).resolve().parents[2] / "outputs"
+    outputs_dir = Path(__file__).resolve().parents[3] / "outputs"
     search_pattern = os.path.join(str(outputs_dir), "rollout", "*", "*", "*", "**", "episode.npz")
     files = glob.glob(search_pattern, recursive=True)
 

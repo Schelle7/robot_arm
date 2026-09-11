@@ -3,9 +3,9 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 from robot_arm.envs.factory import make_env
-from robot_arm.git_snapshot import snapshot_git_state
-from robot_arm.model_snapshot import snapshot_model_files
-from robot_arm.policies import load_low_level_policy, resolve_low_level_checkpoint
+from robot_arm.recording.git_snapshot import snapshot_git_state
+from robot_arm.recording.model_snapshot import snapshot_model_files
+from robot_arm.policies.joint import load_low_level_policy, resolve_low_level_checkpoint
 
 
 def assert_matching_policy_constraints(

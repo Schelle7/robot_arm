@@ -9,8 +9,8 @@ from robot_arm.backends.sim_arm import (
     update_tcp_debug_user_scene,
     update_waypoint_debug_user_scene,
 )
-from robot_arm.replay import calculate_pose_delta, get_desired_poses
-from robot_arm.replay_display import build_replay_display
+from robot_arm.replay.recording import calculate_pose_delta, get_desired_poses
+from robot_arm.replay.display import build_replay_display
 from robot_arm.robot_schema import HISTORY_CONTEXT_FEATURE_NAMES, HISTORY_FEATURE_NAMES, MOTOR_ORDER
 
 

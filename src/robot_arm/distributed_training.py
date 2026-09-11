@@ -9,14 +9,14 @@ from tqdm import tqdm
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
-from robot_arm.git_snapshot import snapshot_git_state
-from robot_arm.gpu_monitor import GpuMonitor
-from robot_arm.model_snapshot import snapshot_model_files
-from robot_arm.numpy_policy import NumpySACPolicy
-from robot_arm.policies import ScriptedCartesianPolicy
-from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
+from robot_arm.recording.git_snapshot import snapshot_git_state
+from robot_arm.monitoring.gpu_monitor import GpuMonitor
+from robot_arm.recording.model_snapshot import snapshot_model_files
+from robot_arm.policies.numpy_policy import NumpySACPolicy
+from robot_arm.policies.cartesian import ScriptedCartesianPolicy
+from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.robot_schema import policy_observation_sizes
-from robot_arm.scalar_writer import ScalarWriter
+from robot_arm.monitoring.scalar_writer import ScalarWriter
 
 log = logging.getLogger(__name__)
 

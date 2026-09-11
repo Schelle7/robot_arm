@@ -115,10 +115,8 @@ Fine-tune the standard pretrained SmolVLA policy with LeRobot's trainer:
 
 ```bash
 python scripts/train_vla.py \
-	--dataset-root datasets/smolvla_waypoints \
-	--output-dir outputs/train_vla/smolvla_waypoints \
-	--steps 30000 \
-	--batch-size 8
+	dataset_root=datasets/smolvla_waypoints \
+	steps=30000
 ```
 
 ## Linux Serial Permissions
@@ -179,7 +177,7 @@ The simulation can learn a inverse kinematics control from 3D position, 3D rotat
 I will later extend this to use pwm control on the real robot and hope to achieve smooth movement.
 
 
-I will focus next on smol vla and etaching it some tasks.
-smolvla is there to define the desired path in 3d space + 3d orientation + 1d gripepr open/closed
+I will focus next on smol vla and teaching it some tasks.
+smolvla is there to define the desired path in 3d space + 3d orientation + 1d gripper open/closed
 
-I also want to work on function calling and teaching llms that so I will probably add a third level a general llm that can tell the vla what to do. Like grab box. move it to the right and so on. (as function calls).
+I also want to work on function calling and teaching llms that, so I will probably add a third level a general llm that can tell the vla what to do. Like grab box. move it to the right and so on. (as function calls).

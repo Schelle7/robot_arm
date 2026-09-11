@@ -10,12 +10,13 @@ from omegaconf import DictConfig, OmegaConf
 
 from robot_arm.envs.factory import make_env
 from robot_arm.episode_runner import EpisodeRunner
-from robot_arm.git_snapshot import snapshot_git_state
-from robot_arm.model_snapshot import snapshot_model_files
-from robot_arm.policies import FixedDutyPolicy, ScriptedCartesianPolicy
-from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.recorder import EpisodeRecorder
-from robot_arm.replay import load_recorded_timing, recorded_model_path
+from robot_arm.recording.git_snapshot import snapshot_git_state
+from robot_arm.recording.model_snapshot import snapshot_model_files
+from robot_arm.policies.cartesian import ScriptedCartesianPolicy
+from robot_arm.policies.joint import FixedDutyPolicy
+from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
+from robot_arm.recording.recorder import EpisodeRecorder
+from robot_arm.replay.recording import load_recorded_timing, recorded_model_path
 from robot_arm.robot_schema import MOTOR_ORDER
 
 

@@ -16,7 +16,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from analysis.rollouts import Rollout, dense_steps, find_rollouts, load_rollout
-from robot_arm.numpy_policy import load_numpy_policy
+from robot_arm.policies.numpy_policy import load_numpy_policy
 from robot_arm.robot_schema import MOTOR_ORDER, STATE_JOINT_POSITION_SLICE, STATE_JOINT_VELOCITY_SLICE
 
 
@@ -82,7 +82,7 @@ def print_normalization_audit(rollout: Rollout, calibration: dict) -> None:
     print("Guarded duty is reconstructed from the recorded request and run model, not recorded bus output.")
     print("Wrapped angle differences are diagnostic only; they do not establish absolute joint alignment.")
     print(f"{'step':>5} {'joint':16} {'tick':>9} {'next tick':>10} {'request':>9} {'guarded':>9} {'dq deg':>10} {'wrap dq':>10}")
-    requested = np.array([s["compensated_duty"] for s in steps])
+    requested = np.array([s["requested_duty"] for s in steps])
     guarded = np.where(((q <= limits[:, 0]) & (requested < 0)) | ((q >= limits[:, 1]) & (requested > 0)), 0, requested)
     delta = next_q - q
     wrapped_delta = delta.copy()

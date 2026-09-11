@@ -2,7 +2,6 @@ import mujoco
 import numpy as np
 
 from robot_arm.backends.sim_arm import build_desired_poses
-from robot_arm.duty_compensation import DutyCompensator
 from robot_arm.pose import Pose
 
 
@@ -47,16 +46,3 @@ def test_so101_sim_load():
     assert not np.any(np.isnan(d.qvel)), "Simulation exploded: NaNs in velocities"
 
     print("\nForward physics step passed (no NaNs).")
-
-
-def test_duty_compensation_uses_measured_joint_state_and_excludes_gripper():
-    model = mujoco.MjModel.from_xml_path("models/so101/scene.xml")
-    compensator = DutyCompensator(model, 1.31)
-    compensation = compensator.calculate(
-        np.zeros(6, dtype=np.float32),
-        np.zeros(6, dtype=np.float32),
-    )
-
-    assert compensation.shape == (6,)
-    assert np.all(np.isfinite(compensation))
-    assert compensation[-1] == 0.0

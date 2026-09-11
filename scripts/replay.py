@@ -4,9 +4,9 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
-from robot_arm.replay import load_replay_recording, recorded_model_path, rollout_timestamp
-from robot_arm.replay_server import ReplayServer
-from robot_arm.replay_viewer import ReplayViewer
+from robot_arm.replay.recording import load_replay_recording, recorded_model_path, rollout_timestamp
+from robot_arm.replay.server import ReplayServer
+from robot_arm.replay.viewer import ReplayViewer
 
 
 def format_rollout_age(episode_path: str) -> str:

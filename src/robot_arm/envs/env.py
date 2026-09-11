@@ -420,8 +420,7 @@ class RobotEnv:
             reward_breakdown["idle_action_penalty"] = self._compute_idle_action_penalty(policy_action, time_left)
         if self.action_change_penalty_enabled:
             # This fights chattering and may reduce long-term wear, but is primarily an attempted
-            # workaround for the current oscillation. It can reduce responsiveness and does not
-            # penalize changes introduced by gravity and velocity compensation.
+            # workaround for the current oscillation. It can reduce responsiveness.
             action_change = policy_action - self.previous_action
             reward_breakdown["action_change_penalty"] = -self.action_change_penalty_factor * float(np.mean(np.square(action_change)))
         if self.termination_penalty_enabled:

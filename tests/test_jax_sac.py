@@ -7,8 +7,8 @@ import pytest
 
 from robot_arm.jax_sac import actor_distribution as jax_actor_distribution
 from robot_arm.jax_sac import Batch, JaxSAC, apply_q_network, build_update_step, forward_motion_loss, init_actor, initialize_state, predict_forward_motion
-from robot_arm.numpy_policy import actor_distribution as numpy_actor_distribution
-from robot_arm.numpy_policy import load_numpy_policy
+from robot_arm.policies.numpy_policy import actor_distribution as numpy_actor_distribution
+from robot_arm.policies.numpy_policy import load_numpy_policy
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 

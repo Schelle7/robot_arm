@@ -1,0 +1,28 @@
+defaults:
+  - _self_
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+dataset_root: ???
+# LeRobot requires a new directory; Hydra has already created its run directory.
+output_dir: ${hydra:runtime.output_dir}/training
+job_name: robot_arm_smolvla
+steps: 5000
+batch_size: 8
+
+environment:
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+
+policy:
+  type: cartesian_smolvla
+  pretrained_path: lerobot/smolvla_base
+  discover_packages_path: robot_arm.cartesian_smolvla
+  chunk_size: 1
+  n_action_steps: 1
+  push_to_hub: false
+
+wandb:
+  enable: false

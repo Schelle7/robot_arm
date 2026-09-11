@@ -292,7 +292,7 @@ def test_sustained_duty_penalty_charges_only_the_excess_per_joint():
     np.testing.assert_allclose(env._compute_sustained_duty_penalty(), -0.6, rtol=1e-6)
 
 
-def test_action_change_penalty_uses_actor_action_before_compensation():
+def test_action_change_penalty_uses_actor_action_before_duty_scaling():
     env = make_env()
     env.tracking_progress_enabled = False
     env.joint_limit_penalty_enabled = False

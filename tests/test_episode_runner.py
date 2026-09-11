@@ -6,7 +6,7 @@ import pytest
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.env import EnvironmentState
 from robot_arm.pose import Pose
-from robot_arm.policies import CartesianAction
+from robot_arm.policies.cartesian import CartesianAction
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 
@@ -93,7 +93,6 @@ def make_cfg(detailed_metrics=True):
         control=SimpleNamespace(
             frequencies=SimpleNamespace(cartesian=2, joint=4),
             max_seconds=1,
-            duty_compensation_enabled=True,
         ),
         runtime=SimpleNamespace(draw_waypoints=False, draw_tcp=False),
         training=SimpleNamespace(
@@ -122,7 +121,6 @@ def make_runner(environment, low_level_policy, metrics_queue, detailed_metrics=T
     runner.tcp_velocity_scale = 1.0
     runner.cartesian_action_scale = 1.0
     runner.duty_limits = np.ones(6, dtype=np.float32)
-    runner.duty_compensator = SimpleNamespace(calculate=lambda positions, velocities: np.zeros(6, dtype=np.float32))
     runner.policy_observation_sizes = policy_observation_sizes(7, HISTORY_STEPS)
     return runner
 
@@ -195,10 +193,11 @@ def test_latest_joint_positions_anchor_history_and_remain_in_current_state():
     np.testing.assert_array_equal(policy_observation["state"][:6], observation["joint_positions"])
 
 
-def test_duty_compensation_excludes_gripper():
+def test_direct_duty_scales_policy_action_by_motor_limits():
     environment = EnvironmentStub({"joint_limit_penalty": 0.0})
     runner = make_runner(environment, LowLevelPolicyStub(), MetricsQueueStub())
-    runner.duty_compensator.calculate = lambda positions, velocities: np.array([0.25, 0.25, 0.25, 0.25, 0.25, 0.0], dtype=np.float32)
+    runner.duty_limits = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.5], dtype=np.float32)
+    runner.low_level_policy.predict = lambda observation, deterministic: (np.array([0.25, -0.25, 1.0, -1.0, 0.0, -0.8], dtype=np.float32), None)
     raw_obs = raw_observation(0.0)
 
     runner.execute_cartesian_action(
@@ -209,7 +208,7 @@ def test_duty_compensation_excludes_gripper():
     )
 
     for action in environment.received_actions:
-        np.testing.assert_allclose(action, [0.25, 0.25, 0.25, 0.25, 0.25, 0.0])
+        np.testing.assert_allclose(action, [0.25, -0.25, 1.0, -1.0, 0.0, -0.4])
 
 
 def test_detailed_metrics_only_include_returned_reward_components():

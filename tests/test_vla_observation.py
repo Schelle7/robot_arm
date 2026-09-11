@@ -4,7 +4,7 @@ import os
 import numpy as np
 import pytest
 
-from robot_arm.policies import build_vla_observation
+from robot_arm.policies.cartesian import build_vla_observation
 from robot_arm.robot_schema import CAMERA_NAMES
 
 

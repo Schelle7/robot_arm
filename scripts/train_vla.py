@@ -1,37 +1,37 @@
-import argparse
+import os
 import subprocess
 from pathlib import Path
 
+import hydra
+from hydra.utils import to_absolute_path
+from omegaconf import DictConfig
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--steps", type=int, required=True)
-    parser.add_argument("--batch-size", type=int, required=True)
-    args = parser.parse_args()
 
-    dataset_root = args.dataset_root.resolve()
-    output_dir = args.output_dir.resolve()
+@hydra.main(version_base=None, config_path="../conf", config_name="train_vla")
+def main(cfg: DictConfig) -> None:
+    project_root = Path(__file__).resolve().parent.parent
+    dataset_root = Path(to_absolute_path(cfg.dataset_root))
+    output_dir = Path(to_absolute_path(cfg.output_dir))
     subprocess.run(
         [
             "lerobot-train",
-            "--policy.type=cartesian_smolvla",
-            "--policy.pretrained_path=lerobot/smolvla_base",
-            "--policy.discover_packages_path=robot_arm.cartesian_smolvla",
-            "--policy.n_action_steps=1",
+            f"--policy.type={cfg.policy.type}",
+            f"--policy.pretrained_path={cfg.policy.pretrained_path}",
+            f"--policy.discover_packages_path={cfg.policy.discover_packages_path}",
+            f"--policy.chunk_size={cfg.policy.chunk_size}",
+            f"--policy.n_action_steps={cfg.policy.n_action_steps}",
             f"--dataset.repo_id={dataset_root.name}",
             f"--dataset.root={dataset_root}",
             f"--output_dir={output_dir}",
-            "--job_name=robot_arm_smolvla",
-            f"--steps={args.steps}",
-            f"--batch_size={args.batch_size}",
-            "--policy.push_to_hub=false",
-            "--wandb.enable=false",
+            f"--job_name={cfg.job_name}",
+            f"--steps={cfg.steps}",
+            f"--batch_size={cfg.batch_size}",
+            f"--policy.push_to_hub={str(cfg.policy.push_to_hub).lower()}",
+            f"--wandb.enable={str(cfg.wandb.enable).lower()}",
         ],
         check=True,
+        env={**os.environ, **dict(cfg.environment)},
     )
-    project_root = Path(__file__).resolve().parent.parent
     latest_run_file = project_root / "outputs" / "train_vla" / "latest_run.txt"
     latest_run_file.write_text(str(output_dir))
 

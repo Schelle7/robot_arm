@@ -3,9 +3,9 @@ import hydra
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 
-from robot_arm.recorder import EpisodeRecorder
-from robot_arm.policies import ScriptedCartesianPolicy
-from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
+from robot_arm.recording.recorder import EpisodeRecorder
+from robot_arm.policies.cartesian import ScriptedCartesianPolicy
+from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.rollout_config import setup_rollout_context
 

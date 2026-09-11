@@ -1,6 +1,6 @@
 import numpy as np
 
-from robot_arm.backends.servo import commanded_duty, compensated_duty, duty_to_torque, encoder_tick_radians
+from robot_arm.backends.servo import commanded_duty, duty_to_torque, encoder_tick_radians
 
 # The values read off the arm in outputs/characterize_gripper/2026-08-31/17-47-08.
 TICKS_PER_REVOLUTION = 4096
@@ -43,23 +43,6 @@ def test_duty_clips_at_the_per_motor_torque_limit():
     # lerobot writes 500 for the gripper and leaves 1000 everywhere else.
     assert duty_for(1000, max_torque_limit=500) == 500.0
     assert duty_for(1000, max_torque_limit=1000) == 1000.0
-
-
-def test_compensated_duty_centers_zero_on_compensation_and_preserves_limits():
-    compensation = np.array([0.3, -0.2, 0.1])
-    limits = np.array([1.0, 1.0, 0.5])
-
-    np.testing.assert_allclose(compensated_duty(np.zeros(3), compensation, limits), compensation)
-    np.testing.assert_allclose(compensated_duty(np.ones(3), compensation, limits), limits)
-    np.testing.assert_allclose(compensated_duty(-np.ones(3), compensation, limits), -limits)
-
-
-def test_compensated_duty_scales_each_side_over_its_available_range():
-    compensation = np.array([0.3, 0.3])
-    limits = np.ones(2)
-    policy_action = np.array([0.5, -0.5])
-
-    np.testing.assert_allclose(compensated_duty(policy_action, compensation, limits), [0.65, -0.35])
 
 
 def test_torque_is_full_at_stall_and_zero_at_no_load_speed():

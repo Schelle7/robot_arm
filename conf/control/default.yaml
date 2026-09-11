@@ -3,7 +3,6 @@ frequencies:
   joint: 20
   mujoco: 200
 max_seconds: 30
-duty_compensation_enabled: false
 grasp_estimation:
   # Initial estimates; calibrate the angle interval against the box in the gripper.
   position_range_radians: [0.3, 0.5]

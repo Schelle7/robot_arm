@@ -1,5 +1,3 @@
-import os
-import glob
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,13 +6,12 @@ import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.pose import Pose, axis_angular_distance
-from robot_arm.primitives import ActionPrimitive
+from robot_arm.action_primitives import ActionPrimitive
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES
-from robot_arm.numpy_policy import load_numpy_policy
 
 
 def latest_vla_checkpoint_path() -> str:
-    latest_run_file = Path(__file__).resolve().parents[2] / "outputs" / "train_vla" / "latest_run.txt"
+    latest_run_file = Path(__file__).resolve().parents[3] / "outputs" / "train_vla" / "latest_run.txt"
     training_output_dir = Path(latest_run_file.read_text().strip())
     checkpoint_path = training_output_dir / "checkpoints" / "last" / "pretrained_model"
     return str(checkpoint_path)
@@ -81,14 +78,6 @@ class CartesianAction:
     cartesian_action: np.ndarray
     diagnostics: Dict[str, Any]
     completes_active_primitive: bool
-
-
-class FixedDutyPolicy:
-    def __init__(self, duties: np.ndarray):
-        self.duties = np.asarray(duties, dtype=np.float32)
-
-    def predict(self, observation, deterministic):
-        return self.duties.copy(), None
 
 
 class CartesianPolicy(ABC):
@@ -283,55 +272,3 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             diagnostics=diagnostics,
             completes_active_primitive=completes_active_primitive,
         )
-
-
-def find_latest_low_level_checkpoint() -> str:
-    """
-    Loads the most recent low-level SAC policy from the outputs/ directory.
-    Searches the directory structure for the newest final checkpoint.
-    """
-    outputs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "outputs"))
-    if not os.path.exists(outputs_dir):
-        raise FileNotFoundError(f"Outputs directory not found at {outputs_dir}.")
-
-    search_pattern = os.path.join(
-        outputs_dir,
-        "train_low_level",
-        "*",
-        "*",
-        "checkpoints",
-        "jax_sac_final_*.pkl",
-    )
-    checkpoints = glob.glob(search_pattern)
-
-    if not checkpoints:
-        raise FileNotFoundError("No final low-level policy checkpoints found in any outputs directory.")
-
-    # Sort by the YYYY-MM-DD and HH-MM-SS folder names implicitly found in the path
-    # Path structure: .../outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/jax_sac...pkl
-    def extract_datetime_key(filepath):
-        parts = filepath.split(os.sep)
-        return (parts[-4], parts[-3])
-
-    latest_checkpoint = max(checkpoints, key=extract_datetime_key)
-
-    return latest_checkpoint
-
-
-def resolve_low_level_checkpoint(policy_name: str) -> str:
-    if policy_name == "latest":
-        return find_latest_low_level_checkpoint()
-
-    policy_path = Path(policy_name)
-    if not policy_path.is_absolute():
-        policy_path = Path(__file__).resolve().parents[2] / policy_path
-    return str(policy_path.resolve())
-
-
-def load_low_level_policy(checkpoint_path: str):
-    print(f"Loading low level policy from: {checkpoint_path}")
-    return load_numpy_policy(checkpoint_path)
-
-
-def load_latest_low_level_policy():
-    return load_low_level_policy(find_latest_low_level_checkpoint())

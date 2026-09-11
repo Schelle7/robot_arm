@@ -4,10 +4,10 @@ import pytest
 from omegaconf import OmegaConf
 
 from robot_arm.waypoints import base_rotation_for_position, generate_oriented_waypoint
-from robot_arm.policies import ScriptedCartesianPolicy
+from robot_arm.policies.cartesian import ScriptedCartesianPolicy
 from robot_arm.pose import Pose
-from robot_arm.primitive_policy import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.primitives import ActionPrimitive, generate_pick_and_place, generate_relative_moves
+from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy, generate_pick_and_place
+from robot_arm.action_primitives import ActionPrimitive, relative_move_primitive
 
 
 def make_policy():
@@ -224,7 +224,7 @@ def test_relative_move_prompt_states_the_commanded_offset_exactly():
     start_pose = Pose.from_euler([0.35, 0.0, 0.25], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
 
     for _ in range(50):
-        primitive = generate_relative_moves(model, data, cfg, start_pose)[0]
+        primitive = relative_move_primitive(model, data, cfg, start_pose)
         offset = primitive.target_pose.position - start_pose.position
         offset_cm = np.rint(offset * 100).astype(int)
 

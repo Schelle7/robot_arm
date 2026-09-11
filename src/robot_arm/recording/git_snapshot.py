@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 def _git(*arguments: str) -> str:
-    repository = Path(__file__).resolve().parents[2]
+    repository = Path(__file__).resolve().parents[3]
     return subprocess.run(
         ["git", *arguments],
         cwd=repository,

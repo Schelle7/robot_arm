@@ -113,9 +113,8 @@ def _print_dense_traces(rollout: Rollout) -> None:
 
     _banner(f"per-dense-step traces, {len(steps)} low level joint steps")
 
-    _trace("action, policy output before compensation", MOTOR_ORDER, stack_dense(steps, "action"))
-    _trace("duty_compensation, model derived", MOTOR_ORDER, stack_dense(steps, "duty_compensation"))
-    _trace("compensated_duty, what was written to the arm", MOTOR_ORDER, stack_dense(steps, "compensated_duty"))
+    _trace("action, policy output before duty scaling", MOTOR_ORDER, stack_dense(steps, "action"))
+    _trace("requested_duty, before safety processing", MOTOR_ORDER, stack_dense(steps, "requested_duty"))
     _trace("end_effector_pose", _numbered("p", 10), stack_dense(steps, "end_effector_pose"))
     _trace("next_end_effector_pose", _numbered("p", 10), stack_dense(steps, "next_end_effector_pose"))
 

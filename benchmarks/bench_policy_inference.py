@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from robot_arm.numpy_policy import load_numpy_policy
+from robot_arm.policies.numpy_policy import load_numpy_policy
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES
 
 

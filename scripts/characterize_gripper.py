@@ -12,8 +12,8 @@ from omegaconf import DictConfig
 
 from robot_arm.envs.factory import make_env
 from robot_arm.envs.safety import SafetyException
-from robot_arm.model_snapshot import snapshot_model_files
-from robot_arm.recorder import EpisodeRecorder
+from robot_arm.recording.model_snapshot import snapshot_model_files
+from robot_arm.recording.recorder import EpisodeRecorder
 from robot_arm.robot_schema import BOX_BODY_NAMES, CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
 
