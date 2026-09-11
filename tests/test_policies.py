@@ -55,6 +55,7 @@ def get_scripted_action(policy, current_pose: Pose, target_pose: Pose):
         },
         vla_input_state=np.zeros(16, dtype=np.float32),
         gripper_duty=0.0,
+        grasp_confirmed=False,
         primitive=make_primitive(current_pose, target_pose),
     )
 

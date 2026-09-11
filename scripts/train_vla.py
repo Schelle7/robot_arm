@@ -20,6 +20,7 @@ def main(cfg: DictConfig) -> None:
             f"--policy.discover_packages_path={cfg.policy.discover_packages_path}",
             f"--policy.chunk_size={cfg.policy.chunk_size}",
             f"--policy.n_action_steps={cfg.policy.n_action_steps}",
+            f"--policy.max_action_dim={cfg.policy.max_action_dim}",
             f"--dataset.repo_id={dataset_root.name}",
             f"--dataset.root={dataset_root}",
             f"--output_dir={output_dir}",

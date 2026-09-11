@@ -1,12 +1,64 @@
 from types import SimpleNamespace
 
+import pytest
 import torch
 from torch import nn
+from safetensors.torch import load_model, save_model
 
 from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy, VLAFlowMatching
 
 from robot_arm.cartesian_smolvla.modeling_cartesian_smolvla import CartesianSmolVLAPolicy
+from robot_arm.cartesian_smolvla.pretrained import load_base_backbone
 from robot_arm.robot_schema import PRIMITIVE_COMPLETION
+
+
+def projection_policy(action_dim: int) -> nn.Module:
+    policy = nn.Module()
+    policy.model = nn.Module()
+    policy.model.backbone = nn.Linear(4, 4)
+    policy.model.action_in_proj = nn.Linear(action_dim, 4)
+    policy.model.action_out_proj = nn.Linear(4, action_dim)
+    return policy
+
+
+def test_base_loading_preserves_fresh_cartesian_projections(tmp_path):
+    base = projection_policy(32)
+    path = str(tmp_path / "base.safetensors")
+    save_model(base, path)
+    policy = projection_policy(7)
+    policy.completion_head = nn.Linear(4, 1)
+    fresh = {name: value.clone() for name, value in policy.state_dict().items()}
+
+    load_base_backbone(policy, path)
+
+    for name, value in policy.state_dict().items():
+        expected = base.state_dict()[name] if name.startswith("model.backbone.") else fresh[name]
+        torch.testing.assert_close(value, expected)
+    assert policy.model.action_out_proj(policy.model.action_in_proj(torch.zeros(2, 1, 7))).shape == (2, 1, 7)
+
+    trained_path = str(tmp_path / "cartesian.safetensors")
+    save_model(policy, trained_path)
+    restored = projection_policy(7)
+    restored.completion_head = nn.Linear(4, 1)
+    load_model(restored, trained_path, strict=True)
+    for name, value in policy.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[name], value)
+
+
+def test_base_loading_rejects_missing_backbone_weights(tmp_path):
+    base = projection_policy(32)
+    del base.model.backbone
+    path = str(tmp_path / "incomplete.safetensors")
+    save_model(base, path)
+
+    with pytest.raises(RuntimeError, match="backbone"):
+        load_base_backbone(projection_policy(7), path)
+
+
+def test_cartesian_policy_rejects_padded_action_dimension():
+    config = SimpleNamespace(chunk_size=1, n_action_steps=1, max_action_dim=32, action_feature=SimpleNamespace(shape=(7,)))
+    with pytest.raises(AssertionError, match="seven action dimensions"):
+        CartesianSmolVLAPolicy(config)
 
 
 class VLMStub(nn.Module):
