@@ -14,7 +14,3 @@ should I add a new head entirely?
 with 7dims?
 
 Maybe 8dims and the task finished included?
-
-
-# general
-refactor my code / make it simpler / better

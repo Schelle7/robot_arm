@@ -5,7 +5,7 @@ from typing import Dict, Any
 import numpy as np
 from omegaconf import DictConfig
 
-from robot_arm.pose import Pose, axis_angular_distance
+from robot_arm.geometry.pose import Pose, axis_angular_distance
 from robot_arm.action_primitives import ActionPrimitive
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES
 

@@ -7,7 +7,8 @@ import jax.numpy as jnp
 import numpy as np
 from omegaconf import DictConfig
 
-from robot_arm.jax_sac import Batch, build_update_step, initialize_state
+from robot_arm.training.jax_sac import build_update_step, initialize_state
+from robot_arm.training.replay_buffer import Batch
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 
@@ -26,6 +27,7 @@ def make_batch(random_key, batch_size, observation_sizes, action_dim):
         },
         rewards=jax.random.normal(random_keys[group_count * 2 + 1], (batch_size, 1)),
         dones=jax.random.bernoulli(random_keys[group_count * 2 + 2], 0.05, (batch_size, 1)).astype(jnp.float32),
+        is_real=jnp.zeros(batch_size, dtype=bool),
     )
 
 

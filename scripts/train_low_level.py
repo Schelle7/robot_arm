@@ -5,7 +5,7 @@ import subprocess
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
 
-from robot_arm.distributed_training import run_distributed_training
+from robot_arm.training.distributed_training import run_distributed_training
 
 log = logging.getLogger(__name__)
 

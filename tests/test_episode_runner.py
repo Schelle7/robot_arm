@@ -5,7 +5,7 @@ import pytest
 
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.env import EnvironmentState
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 from robot_arm.policies.cartesian import CartesianAction
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, POLICY_OBSERVATION_NAMES, policy_observation_sizes
 

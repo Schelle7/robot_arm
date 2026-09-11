@@ -1,6 +1,6 @@
 import numpy as np
 
-from robot_arm.gripper_geometry import get_tcp_geometry
+from robot_arm.geometry.gripper_geometry import get_tcp_geometry
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
 def format_value(value):

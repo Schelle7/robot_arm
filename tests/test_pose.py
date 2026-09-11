@@ -1,5 +1,5 @@
 import numpy as np
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 
 
 def test_10d_roundtrip():

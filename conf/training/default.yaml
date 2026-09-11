@@ -8,6 +8,10 @@ learning_rate: 0.0003
 actor_forward_loss_weight: 0.1
 critic_forward_loss_weight: 0.1
 buffer_size: 100000
+real_data:
+  episode_paths: []
+  buffer_size: 10000
+  fraction: 0.0
 learning_starts: 5000
 batch_size: 1024
 gamma: 1.0

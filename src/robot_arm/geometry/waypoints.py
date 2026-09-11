@@ -1,8 +1,8 @@
 import mujoco
 import numpy as np
 
-from robot_arm.pose import Pose
-from robot_arm.gripper_geometry import gripper_geometry_at_opening, align_gripper_to_target
+from robot_arm.geometry.pose import Pose
+from robot_arm.geometry.gripper_geometry import gripper_geometry_at_opening, align_gripper_to_target
 
 
 def shoulder_pan_position(model, data) -> np.ndarray:

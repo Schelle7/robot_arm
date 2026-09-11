@@ -3,9 +3,9 @@ import numpy as np
 import pytest
 from omegaconf import OmegaConf
 
-from robot_arm.waypoints import base_rotation_for_position, generate_oriented_waypoint
+from robot_arm.geometry.waypoints import base_rotation_for_position, generate_oriented_waypoint
 from robot_arm.policies.cartesian import ScriptedCartesianPolicy
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy, generate_pick_and_place
 from robot_arm.action_primitives import ActionPrimitive, relative_move_primitive
 
@@ -242,7 +242,7 @@ def zero_offset_gripper(monkeypatch):
     def geometry(model, data, gripper):
         return Pose.from_tcp_axes(np.zeros(3), np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), gripper)
 
-    monkeypatch.setattr("robot_arm.waypoints.gripper_geometry_at_opening", geometry)
+    monkeypatch.setattr("robot_arm.geometry.waypoints.gripper_geometry_at_opening", geometry)
 
 
 def test_waypoint_derives_azimuth_from_position_without_gripper_offset(zero_offset_gripper):

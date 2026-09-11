@@ -91,6 +91,10 @@ Continue training from a compatible configured SAC checkpoint with a fresh repla
 python scripts/train_low_level.py experiment=continue_training
 ```
 
+SAC can mix recorded real-robot transitions with simulation data. Configure recording paths
+and the real-data sampling fraction under `training.real_data` in
+[conf/training/default.yaml](conf/training/default.yaml). By default, training uses simulation only.
+
 Replay the latest simulation recording, seek to a frame, and export a fixed policy-action branch request:
 
 ```bash

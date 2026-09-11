@@ -10,6 +10,7 @@ import optax
 from omegaconf import DictConfig
 
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, STATE_JOINT_VELOCITY_SLICE, STATE_TCP_VELOCITY_SLICE, policy_observation_sizes
+from robot_arm.training.replay_buffer import Batch, MixedReplayBuffer
 
 # jax.config.update("jax_default_matmul_precision", "highest")
 
@@ -24,14 +25,6 @@ class TrainState(NamedTuple):
     ent_coef_optimizer_state: optax.OptState
     random_key: jax.Array
     update_count: jax.Array
-
-
-class Batch(NamedTuple):
-    observations: dict[str, jax.Array]
-    actions: jax.Array
-    next_observations: dict[str, jax.Array]
-    rewards: jax.Array
-    dones: jax.Array
 
 
 class UpdateMetrics(NamedTuple):
@@ -49,40 +42,6 @@ class UpdateMetrics(NamedTuple):
     ent_coef: jax.Array
     mean_q: jax.Array
     finite: jax.Array
-
-
-class NumpyReplayBuffer:
-    def __init__(self, capacity: int, observation_sizes: dict[str, int], action_dim: int, random_seed: int, device):
-        self.capacity = capacity
-        self.observations = {name: np.empty((capacity, observation_sizes[name]), dtype=np.float32) for name in POLICY_OBSERVATION_NAMES}
-        self.next_observations = {name: np.empty((capacity, observation_sizes[name]), dtype=np.float32) for name in POLICY_OBSERVATION_NAMES}
-        self.actions = np.empty((capacity, action_dim), dtype=np.float32)
-        self.rewards = np.empty((capacity, 1), dtype=np.float32)
-        self.dones = np.empty((capacity, 1), dtype=np.float32)
-        self.position = 0
-        self.size = 0
-        self.random = np.random.default_rng(random_seed)
-        self.device = device
-
-    def add(self, observation: dict[str, np.ndarray], next_observation: dict[str, np.ndarray], action: np.ndarray, reward: float, done: bool) -> None:
-        for name in POLICY_OBSERVATION_NAMES:
-            self.observations[name][self.position] = np.asarray(observation[name], dtype=np.float32)
-            self.next_observations[name][self.position] = np.asarray(next_observation[name], dtype=np.float32)
-        self.actions[self.position] = action
-        self.rewards[self.position, 0] = reward
-        self.dones[self.position, 0] = done
-        self.position = (self.position + 1) % self.capacity
-        self.size = min(self.size + 1, self.capacity)
-
-    def sample(self, batch_size: int) -> Batch:
-        indices = self.random.integers(self.size, size=batch_size)
-        return Batch(
-            observations={name: jax.device_put(self.observations[name][indices], self.device) for name in POLICY_OBSERVATION_NAMES},
-            actions=jax.device_put(self.actions[indices], self.device),
-            next_observations={name: jax.device_put(self.next_observations[name][indices], self.device) for name in POLICY_OBSERVATION_NAMES},
-            rewards=jax.device_put(self.rewards[indices], self.device),
-            dones=jax.device_put(self.dones[indices], self.device),
-        )
 
 
 def init_linear(random_key: jax.Array, input_dim: int, output_dim: int) -> dict[str, jax.Array]:
@@ -407,7 +366,15 @@ class JaxSAC:
         if cfg.device != "cuda":
             raise ValueError(f"JAX SAC requires device='cuda', got {cfg.device!r}")
         self.device = jax.devices("gpu")[0]
-        self.replay_buffer = NumpyReplayBuffer(int(cfg.training.buffer_size), self.observation_sizes, self.action_dim, self.random_seed, self.device)
+        self.replay_buffer = MixedReplayBuffer(
+            int(cfg.training.buffer_size),
+            int(cfg.training.real_data.buffer_size),
+            self.observation_sizes,
+            self.action_dim,
+            self.random_seed,
+            float(cfg.training.real_data.fraction),
+            self.device,
+        )
         with jax.default_device(self.device):
             state, actor_optimizer, critic_optimizer, ent_coef_optimizer = initialize_state(
                 jax.random.PRNGKey(self.random_seed),

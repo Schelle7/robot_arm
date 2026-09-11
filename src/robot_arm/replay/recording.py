@@ -7,7 +7,7 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
 from robot_arm.backends.sim_arm import build_desired_poses
-from robot_arm.pose import Pose, axis_angular_distance
+from robot_arm.geometry.pose import Pose, axis_angular_distance
 
 
 def calculate_pose_delta(start_pose_10d, end_pose_10d):

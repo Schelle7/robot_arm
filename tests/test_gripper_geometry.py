@@ -2,8 +2,8 @@ import mujoco
 import numpy as np
 import pytest
 
-from robot_arm.gripper_geometry import align_gripper_to_target, get_tcp_geometry, gripper_geometry_at_opening
-from robot_arm.waypoints import generate_oriented_waypoint, shoulder_pan_position
+from robot_arm.geometry.gripper_geometry import align_gripper_to_target, get_tcp_geometry, gripper_geometry_at_opening
+from robot_arm.geometry.waypoints import generate_oriented_waypoint, shoulder_pan_position
 
 
 @pytest.fixture

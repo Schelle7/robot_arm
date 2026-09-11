@@ -5,8 +5,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from robot_arm.jax_sac import actor_distribution as jax_actor_distribution
-from robot_arm.jax_sac import Batch, JaxSAC, apply_q_network, build_update_step, forward_motion_loss, init_actor, initialize_state, predict_forward_motion
+from robot_arm.training.jax_sac import actor_distribution as jax_actor_distribution
+from robot_arm.training.jax_sac import JaxSAC, apply_q_network, build_update_step, forward_motion_loss, init_actor, initialize_state, predict_forward_motion
+from robot_arm.training.replay_buffer import Batch
 from robot_arm.policies.numpy_policy import actor_distribution as numpy_actor_distribution
 from robot_arm.policies.numpy_policy import load_numpy_policy
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, policy_observation_sizes
@@ -58,7 +59,7 @@ def forward_case():
     observations = {name: jnp.asarray(random.standard_normal((8, size)), dtype=jnp.float32) for name, size in sizes.items()}
     next_observations = {name: jnp.full((8, size), 99.0) for name, size in sizes.items()}
     next_observations["state"] = next_observations["state"].at[:, 6:12].set(2.0).at[:, 15:21].set(3.0)
-    batch = Batch(observations, jnp.asarray(random.uniform(-1, 1, (8, 6)), dtype=jnp.float32), next_observations, jnp.zeros((8, 1)), jnp.ones((8, 1)))
+    batch = Batch(observations, jnp.asarray(random.uniform(-1, 1, (8, 6)), dtype=jnp.float32), next_observations, jnp.zeros((8, 1)), jnp.ones((8, 1)), jnp.zeros(8, dtype=bool))
     return state, (actor_optimizer, critic_optimizer, entropy_optimizer), batch, sizes, architecture
 
 

@@ -14,7 +14,7 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
 
 

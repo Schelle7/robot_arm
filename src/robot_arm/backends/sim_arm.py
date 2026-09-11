@@ -3,9 +3,9 @@ import mujoco
 import numpy as np
 
 from robot_arm.backends.arm import Arm
-from robot_arm.waypoints import shoulder_pan_position
-from robot_arm.gripper_geometry import get_tcp_geometry
-from robot_arm.pose import Pose
+from robot_arm.geometry.waypoints import shoulder_pan_position
+from robot_arm.geometry.gripper_geometry import get_tcp_geometry
+from robot_arm.geometry.pose import Pose
 from robot_arm.backends.servo import duty_from_action, duty_to_torque
 from robot_arm.robot_schema import BOX_BODY_NAMES, CAMERA_NAMES, OBJECT_COLORS, TILE_BODY_NAME
 

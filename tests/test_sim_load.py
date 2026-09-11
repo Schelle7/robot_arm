@@ -2,7 +2,7 @@ import mujoco
 import numpy as np
 
 from robot_arm.backends.sim_arm import build_desired_poses
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 
 
 def test_build_desired_poses_applies_gripper_delta():

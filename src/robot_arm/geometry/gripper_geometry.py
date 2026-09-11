@@ -2,7 +2,7 @@ import mujoco
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 
 
 def get_tcp_geometry(model, data):

@@ -1,7 +1,7 @@
 import abc
 from typing import Dict
 import numpy as np
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 
 
 class Arm(abc.ABC):

@@ -17,6 +17,7 @@ from robot_arm.policies.cartesian import ScriptedCartesianPolicy
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.robot_schema import policy_observation_sizes
 from robot_arm.monitoring.scalar_writer import ScalarWriter
+from robot_arm.data.transition_loader import load_real_transitions
 
 log = logging.getLogger(__name__)
 
@@ -58,11 +59,15 @@ def create_training_queues(cfg):
 
 
 def create_central_sac_model(cfg):
-    from robot_arm.jax_sac import JaxSAC
+    from robot_arm.training.jax_sac import JaxSAC
 
     model = JaxSAC(cfg)
     if "continue_from" in cfg:
         model.load(cfg.continue_from)
+    loaded = load_real_transitions(list(cfg.training.real_data.episode_paths), cfg, model.replay_buffer.real)
+    if cfg.training.real_data.fraction > 0 and loaded == 0:
+        raise ValueError("A positive real-data fraction requires real transitions at startup")
+    log.info("Loaded %d real transitions; configured real sampling fraction: %.4f", loaded, cfg.training.real_data.fraction)
     return model
 
 
@@ -216,7 +221,7 @@ def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
 
 def _add_transition_and_train(episode, model, sac_training_step, worker_queues, writer):
     for t_obs, t_next_obs, t_action, t_reward, t_done in episode:
-        model.replay_buffer.add(t_obs, t_next_obs, t_action, t_reward, t_done)
+        model.replay_buffer.sim.add(t_obs, t_next_obs, t_action, t_reward, t_done)
         sac_training_step += 1
 
         if sac_training_step > model.learning_starts and sac_training_step % model.train_frequency == 0:
@@ -236,6 +241,11 @@ def _add_transition_and_train(episode, model, sac_training_step, worker_queues, 
                     wq.put(cpu_state_dict)
 
     return sac_training_step
+
+
+def _log_replay_sizes(model, writer, step):
+    writer.add_scalar("replay/sim_transitions", model.replay_buffer.sim.size, step)
+    writer.add_scalar("replay/real_transitions", model.replay_buffer.real.size, step)
 
 
 def _next_episode(episode_queue, workers, worker_check_seconds):
@@ -285,6 +295,7 @@ def _training_loop(
             episode = _next_episode(episode_queue, workers, cfg.training.worker_check_seconds)
 
             sac_training_step = _add_transition_and_train(episode, model, sac_training_step, worker_queues, writer)
+            _log_replay_sizes(model, writer, sac_training_step)
             # An episode arrives whole, so the step count steps over interval boundaries instead of
             # landing on them. Testing the distance since the last save is what makes this fire.
             if sac_training_step - last_checkpoint_step >= checkpoint_every_n_steps:
@@ -325,6 +336,7 @@ def run_distributed_training(cfg: DictConfig):
     Spawns worker processes to collect data using inference, while the main process
     updates a central target model and distributes updated weights.
     """
+    assert cfg.backend == "sim", "Online training workers must use simulation; real data is loaded from recordings"
     print_training_info(cfg)
 
     mp.set_start_method("spawn", force=True)
@@ -333,6 +345,7 @@ def run_distributed_training(cfg: DictConfig):
     model = create_central_sac_model(cfg)
 
     output_dir, writer = setup_run_outputs(cfg)
+    _log_replay_sizes(model, writer, 0)
 
     broadcast_initial_weights(model, worker_queues)
 

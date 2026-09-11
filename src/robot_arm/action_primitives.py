@@ -5,9 +5,9 @@ import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.backends.sim_arm import object_color
-from robot_arm.pose import Pose
+from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import TILE_BODY_NAME
-from robot_arm.waypoints import generate_oriented_waypoint, position_from_base_rotation, shoulder_pan_position
+from robot_arm.geometry.waypoints import generate_oriented_waypoint, position_from_base_rotation, shoulder_pan_position
 
 
 @dataclass
