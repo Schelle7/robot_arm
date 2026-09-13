@@ -3,7 +3,7 @@ import copy
 import numpy as np
 from typing import Dict, List, Any
 from PIL import Image
-from robot_arm.robot_schema import CAMERA_NAMES, MOTOR_ORDER
+from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
 
 class EpisodeRecorder:
@@ -52,6 +52,8 @@ class EpisodeRecorder:
         sensor_state: Dict[str, Any],
         reward: float,
         cartesian_action: np.ndarray,
+        teacher_cartesian_action: np.ndarray,
+        teacher_completes_active_primitive: bool,
         pose,
         sim_state: Dict[str, np.ndarray] | None,
         images: dict[str, np.ndarray] | None,
@@ -62,6 +64,7 @@ class EpisodeRecorder:
         completes_active_primitive: bool,
         grasp_confirmed: bool,
     ):
+        assert teacher_cartesian_action.shape == (len(CARTESIAN_ACTION_NAMES),)
         self.states.append(
             self._make_state(
                 state_idx=state_idx,
@@ -81,6 +84,8 @@ class EpisodeRecorder:
                 "vla_input_state": vla_input_state.copy(),
                 "reward": float(reward),
                 "cartesian_action": cartesian_action.copy(),
+                "teacher_cartesian_action": teacher_cartesian_action.copy(),
+                "teacher_completes_active_primitive": bool(teacher_completes_active_primitive),
                 "diagnostics": diagnostics.copy(),
                 "completes_active_primitive": bool(completes_active_primitive),
                 "dense_trajectory": self.dense_trajectory_buffer.copy(),
@@ -211,6 +216,8 @@ class EpisodeRecorder:
             "sensor_read_completed_ns": np.array([s["sensor_state"]["read_completed_ns"] for s in self.states], dtype=np.int64),
             "sensor_sample_time_ns": np.array([s["sensor_state"]["sample_time_ns"] for s in self.states], dtype=np.int64),
             "cartesian_action": np.array([t["cartesian_action"] for t in self.transitions], dtype=object),
+            "teacher_cartesian_action": np.asarray([t["teacher_cartesian_action"] for t in self.transitions], dtype=np.float32).reshape(-1, len(CARTESIAN_ACTION_NAMES)),
+            "teacher_completes_active_primitive": np.asarray([t["teacher_completes_active_primitive"] for t in self.transitions], dtype=bool),
             "cartesian_action_diagnostics": np.array([t["diagnostics"] for t in self.transitions], dtype=object),
             "completes_active_primitive": np.array([t["completes_active_primitive"] for t in self.transitions], dtype=bool),
             "reward": np.array([t["reward"] for t in self.transitions], dtype=np.float32),

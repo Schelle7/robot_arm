@@ -1,0 +1,57 @@
+defaults:
+  - control@collection.control: default
+  - safety@collection.safety: default
+  - runtime@collection.runtime: default
+  - _self_
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+environment:
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+
+seed: 42
+vla_rounds: 10
+initial_episodes: 100
+episodes_per_round: 10
+initial_training_steps: 5000
+training_steps_per_round: 1000
+keep_last_checkpoints: 2
+
+collection:
+  backend: sim
+  policy_name: latest
+  waypoint:
+    primitive_probabilities:
+      pick_and_place: 1.0
+      relative_move: 0.0
+      random_waypoint: 0.0
+    duty_completion_tolerance: 0.1
+    completion_tolerance:
+      position_meters: 0.01
+      primary_rotation_radians: 0.1
+      secondary_rotation_radians: 0.12
+      gripper_radians: 0.1
+
+dataset:
+  # Keep each primitive's video separate to avoid concatenation timestamp errors.
+  video_files_size_in_mb: 0.000001
+  data_files_size_in_mb: 100
+  chunk_size: 1000
+
+bc:
+  batch_size: 8
+  num_workers: 4
+  log_every_steps: 100
+  mixed_precision: "no"
+  job_name: robot_arm_smolvla_dagger
+  policy:
+    type: cartesian_smolvla
+    pretrained_path: lerobot/smolvla_base
+    device: cuda
+    chunk_size: 1
+    n_action_steps: 1
+    max_action_dim: 7
+    push_to_hub: false

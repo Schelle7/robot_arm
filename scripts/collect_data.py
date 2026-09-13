@@ -1,12 +1,10 @@
-import os
+from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
 
-from robot_arm.recording.recorder import EpisodeRecorder
+from robot_arm.data.collection import collect_episodes
 from robot_arm.policies.cartesian import ScriptedCartesianPolicy
-from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.rollout_config import setup_rollout_context
 
 
@@ -18,39 +16,7 @@ def main(collect_cfg: DictConfig):
     merged_cfg, env, low_level_policy = setup_rollout_context(collect_cfg, run_dir)
 
     cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
-    primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
-
-    recordings_dir = os.path.join(run_dir, "recordings")
-    num_episodes = int(collect_cfg.num_episodes)
-
-    print(f"Starting data collection for {num_episodes} episodes into {recordings_dir}...")
-
-    for ep_idx in range(num_episodes):
-        episode_name = f"episode_{ep_idx:04d}"
-        recorder = EpisodeRecorder(
-            output_dir=recordings_dir,
-            cfg=merged_cfg,
-            episode_name=episode_name,
-        )
-
-        runner = EpisodeRunner(
-            cfg=merged_cfg,
-            env=env,
-            low_level_policy=low_level_policy,
-            primitive_policy=primitive_policy,
-            cartesian_policy=cartesian_policy,
-            training=False,
-            recorder=recorder,
-            replay_buffer=None,
-            metrics_queue=None,
-            weights_queue=None,
-            progress=None,
-        )
-
-        runner.run_episode(generate_primitives=True)
-        print(f"Finished episode {ep_idx + 1}/{num_episodes} ({episode_name})")
-
-    print(f"Data collection complete! All {num_episodes} episodes saved.")
+    collect_episodes(merged_cfg, env, low_level_policy, cartesian_policy, Path(run_dir), int(collect_cfg.num_episodes))
 
 
 if __name__ == "__main__":

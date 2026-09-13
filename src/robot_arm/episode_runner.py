@@ -3,7 +3,7 @@ import queue
 from omegaconf import DictConfig
 from typing import Dict
 
-from robot_arm.policies.cartesian import CartesianAction, CartesianPolicy, waypoint_action_scale
+from robot_arm.policies.cartesian import CartesianAction, CartesianPolicy, ScriptedCartesianPolicy, waypoint_action_scale
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.action_primitives import ActionPrimitive
 from robot_arm.envs.env import EnvironmentState, RobotEnv
@@ -51,6 +51,7 @@ class EpisodeRunner:
         self.low_level_policy = low_level_policy
         self.primitive_policy = primitive_policy
         self.cartesian_policy = cartesian_policy
+        self.teacher_policy = ScriptedCartesianPolicy(cfg)
         self.training = training
         self.recorder = recorder
         self.replay_buffer = replay_buffer
@@ -127,11 +128,19 @@ class EpisodeRunner:
         reward: float,
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
-        primitive_prompt: str,
+        primitive: ActionPrimitive,
         primitive_index: int,
         cartesian_action: CartesianAction,
     ):
         if self.recorder:
+            teacher_action = self.teacher_policy.get_action(
+                current_pose=state.end_effector_pose,
+                images=images,
+                vla_input_state=vla_input_state,
+                gripper_duty=float(state.observation["gripper_duty"][0]),
+                grasp_confirmed=state.grasp_confirmed,
+                primitive=primitive,
+            )
             self.recorder.record_transition(
                 grasp_confirmed=state.grasp_confirmed,
                 state_idx=state_idx,
@@ -139,11 +148,13 @@ class EpisodeRunner:
                 sensor_state=state.sensor_state,
                 reward=reward,
                 cartesian_action=cartesian_action.cartesian_action,
+                teacher_cartesian_action=teacher_action.cartesian_action,
+                teacher_completes_active_primitive=teacher_action.completes_active_primitive,
                 pose=state.end_effector_pose,
                 sim_state=state.sim_state if self.cfg.runtime.record_sim_state else None,
                 images=images,
                 vla_input_state=vla_input_state,
-                primitive_prompt=primitive_prompt,
+                primitive_prompt=primitive.prompt,
                 primitive_index=primitive_index,
                 diagnostics=cartesian_action.diagnostics,
                 completes_active_primitive=cartesian_action.completes_active_primitive,
@@ -364,7 +375,7 @@ class EpisodeRunner:
                 reward,
                 images,
                 vla_input_state,
-                primitive.prompt,
+                primitive,
                 primitive_index,
                 cartesian_action,
             )

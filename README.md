@@ -123,6 +123,11 @@ python scripts/train_vla.py \
 	steps=30000
 ```
 
+Iterative teacher-labeled training uses `scripts/train_vla_dagger.py` and
+`conf/train_vla_dagger.yaml`: one scripted collection round followed by VLA-only
+rounds, each converted and merged before further BC updates. Checkpoints preserve
+optimizer state and the initial normalization; videos remain separate when merged.
+
 ## Linux Serial Permissions
 
 A user needs permission to open the serial device. A temporary workaround is:

@@ -125,37 +125,15 @@ def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
     return torch.from_numpy(state)
 
 
-def grip_filter_result(data, fps: int, min_gripped_seconds: float) -> dict:
-    prompts = data["primitive_prompt"]
-    closing = prompts == "close gripper"
-    lifting = prompts == "lift object"
-    transporting = np.char.startswith(prompts, "move ") & np.char.endswith(prompts, " tile")
-    lowering = np.char.startswith(prompts, "lower ") & np.char.endswith(prompts, " tile")
-    gripped = data["box_gripped"][:-1]
-    assert gripped.shape == prompts.shape, "Expected one gripped state per transition plus one final state."
-    holding = closing | lifting | transporting | lowering
-    gripped_seconds = float(np.count_nonzero(gripped & holding) / fps)
-    if not np.any(closing):
-        accepted, reason = True, "No close-gripper primitive; grip filter does not apply."
-    elif not np.any(lifting):
-        accepted, reason = False, "Closing occurred but no lift-object primitive was recorded."
-    elif gripped_seconds < min_gripped_seconds:
-        accepted, reason = False, "Confirmed grasp time during closing/lifting/transport/lowering is below the minimum."
-    else:
-        accepted, reason = True, "Confirmed grasp time meets the minimum."
-    return {
-        "accepted": accepted,
-        "reason": reason,
-        "confirmed_grasp_seconds": gripped_seconds,
-        "required_grasp_seconds": min_gripped_seconds,
-        "recorded_seconds": len(prompts) / fps,
-        "has_closing": bool(np.any(closing)),
-        "has_lifting": bool(np.any(lifting)),
-    }
-
-
-def filter_failed_grips(data, fps: int, min_gripped_seconds: float) -> bool:
-    return grip_filter_result(data, fps, min_gripped_seconds)["accepted"]
+def teacher_labels(data) -> tuple[np.ndarray, np.ndarray]:
+    num_transitions = len(data["step"]) - 1
+    actions = np.asarray(data["teacher_cartesian_action"], dtype=np.float32)
+    completions = np.asarray(data["teacher_completes_active_primitive"])
+    assert actions.shape == (num_transitions, len(CARTESIAN_ACTION_NAMES)), "Every transition requires a teacher action."
+    assert completions.shape == (num_transitions,), "Every transition requires a teacher completion label."
+    assert np.isfinite(actions).all(), "Teacher actions must be finite."
+    assert np.isin(completions, [0, 1]).all(), "Teacher completion labels must be binary."
+    return actions, completions.astype(np.float32)
 
 
 def write_conversion_report(path: str, report: dict) -> None:
@@ -168,7 +146,6 @@ def convert_to_lerobot(
     source_dir: str,
     target_dir: str,
     fps: int,
-    min_gripped_seconds: float,
     video_files_size_in_mb: float,
 ):
     """
@@ -187,36 +164,23 @@ def convert_to_lerobot(
     ref_cfg = _validate_and_load_configs(episodes, fps)
     features = _build_dataset_features(ref_cfg)
 
-    accepted_episodes = []
-    episode_results = {}
-    for ep_path in episodes:
-        with np.load(ep_path, allow_pickle=True) as data:
-            result = grip_filter_result(data, fps, min_gripped_seconds)
-            result["source_episode"] = os.path.abspath(ep_path)
-            result["conversion_status"] = "pending" if result["accepted"] else "not_selected"
-            episode_results[ep_path] = result
-            if result["accepted"]:
-                accepted_episodes.append(ep_path)
-            else:
-                print(f"Rejected {ep_path}: {result['reason']} ({result['confirmed_grasp_seconds']:.2f}s confirmed)")
+    episode_results = {
+        ep_path: {"source_episode": os.path.abspath(ep_path), "conversion_status": "pending"}
+        for ep_path in episodes
+    }
     report_path = os.path.abspath(target_dir) + ".conversion_report.json"
     report = {
         "source_dir": os.path.abspath(source_dir),
         "target_dir": os.path.abspath(target_dir),
         "fps": fps,
         "video_files_size_in_mb": video_files_size_in_mb,
-        "accepted_count": len(accepted_episodes),
-        "rejected_count": len(episodes) - len(accepted_episodes),
+        "episode_count": len(episodes),
         "conversion_complete": False,
         "episodes": list(episode_results.values()),
     }
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
     write_conversion_report(report_path, report)
     print(f"Conversion report: {report_path}")
-    print(f"Grip filter: accepted {len(accepted_episodes)}, rejected {len(episodes) - len(accepted_episodes)} recordings.")
-    if not accepted_episodes:
-        raise ValueError("All recordings were rejected by the failed-grip filter.")
-    episodes = accepted_episodes
 
     # Use the target_dir name as the repo_id (e.g. "robot_arm_vla_dataset")
     repo_id = os.path.basename(os.path.normpath(target_dir))
@@ -243,6 +207,7 @@ def convert_to_lerobot(
         # Load the numeric data
         data = np.load(ep_path, allow_pickle=True)
         num_frames = len(data["step"])
+        teacher_actions, teacher_completions = teacher_labels(data)
 
         for frame_idx in range(num_frames - 1):
             external_camera_image = Image.open(
@@ -254,16 +219,11 @@ def convert_to_lerobot(
 
             state = _reconstruct_vla_input_state(data, frame_idx)
 
-            # Action t is selected from state t.
-            action_raw = np.asarray(
-                data["cartesian_action"][frame_idx],
-                dtype=np.float32,
-            ).reshape(-1)
-            action = torch.from_numpy(action_raw)
+            action = torch.from_numpy(teacher_actions[frame_idx])
 
             task = str(data["primitive_prompt"][frame_idx])
             primitive_completion = np.asarray(
-                [data["completes_active_primitive"][frame_idx]],
+                [teacher_completions[frame_idx]],
                 dtype=np.float32,
             )
 

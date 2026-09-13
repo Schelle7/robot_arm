@@ -1,0 +1,56 @@
+<mujoco model="scene">
+  <include file="so101.xml"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="160" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <!-- Object colours are drawn from this pool at reset by swapping geom_matid. -->
+    <material name="matte_red" rgba="1 0.1 0.1 1" specular="0" shininess="0"/>
+    <material name="matte_green" rgba="0.1 0.65 0.2 1" specular="0" shininess="0"/>
+    <material name="matte_blue" rgba="0.15 0.3 0.9 1" specular="0" shininess="0"/>
+    <material name="matte_yellow" rgba="0.9 0.8 0.1 1" specular="0" shininess="0"/>
+    <material name="matte_purple" rgba="0.6 0.2 0.8 1" specular="0" shininess="0"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 3.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" pos="0 0 0" type="plane" material="groundplane"/>
+
+    <!-- Physical camera placeholder to verify placement -->
+    <body name="physical_camera" pos="1 0 0.5" xyaxes="0 1 0 -1 0 4">
+      <!-- Camera phone body -->
+      <geom type="box" size="0.08 0.04 0.01" rgba="0.1 0.1 0.1 1"/>
+      <!-- Lens pointing forward (local -z) -->
+      <geom type="cylinder" size="0.015 0.01" pos="0 0 -0.01" rgba="0.8 0.9 1 1"/>
+      <!-- Camera fixed to the object -->
+      <camera name="pixel_cam" pos="0 0 -0.02" mode="fixed" fovy="45"/>
+    </body>
+
+    <!-- Position and colour are reassigned every reset. -->
+    <body name="box_0" pos="0.35 0.10 0.02">
+      <freejoint/>
+      <geom name="box_0_geom" type="box" size="0.02 0.02 0.02" material="matte_red" mass="0.1"/>
+    </body>
+
+    <!-- Placement target. Fixed to the world, moved between episodes via model.body_pos. -->
+    <body name="tile" pos="0.40 0.0 0.0001">
+      <geom name="tile_geom" type="box" size="0.02 0.02 0.0001" material="matte_blue"/>
+      <geom name="tile_border_left" type="box" pos="-0.035 0 0" size="0.015 0.05 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="tile_border_right" type="box" pos="0.035 0 0" size="0.015 0.05 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="tile_border_front" type="box" pos="0 -0.035 0" size="0.02 0.015 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="tile_border_back" type="box" pos="0 0.035 0" size="0.02 0.015 0.0001"
+        rgba="1 0.4 0 1" contype="0" conaffinity="0" mass="0"/>
+    </body>
+  </worldbody>
+</mujoco>

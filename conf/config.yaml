@@ -20,7 +20,6 @@ model_path: "models/so101/scene.xml"
 backend: "sim" # "sim" or "real"
 seed: 0
 conversion:
-  min_gripped_seconds: 2.0
   # Force a separate file per primitive to avoid the video concatenation timestamp failure.
   video_files_size_in_mb: 0.000001
 

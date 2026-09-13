@@ -7,7 +7,7 @@ HZ ?= 50
 ITERATIONS ?= 500
 WARMUP ?= 20
 
-.PHONY: install find-port test move-mid bench train rollout_sim sanity_check_real sanity_check_sim rollout_real train_low_level
+.PHONY: install find-port test move-mid bench bench-loop verify lint train rollout_sim sanity_check_real sanity_check_sim rollout_real train_low_level
 
 install:
 	$(RUN) pip install -e .

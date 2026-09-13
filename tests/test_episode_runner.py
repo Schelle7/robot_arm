@@ -7,10 +7,48 @@ from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.envs.env import EnvironmentState
 from robot_arm.geometry.pose import Pose
 from robot_arm.policies.cartesian import CartesianAction
+from robot_arm.recording.recorder import EpisodeRecorder
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 
 HISTORY_STEPS = 10
+
+
+def test_recording_keeps_teacher_labels_separate_from_executed_actions():
+    runner = EpisodeRunner.__new__(EpisodeRunner)
+    runner.cfg = SimpleNamespace(runtime=SimpleNamespace(record_sim_state=False))
+    recorder = EpisodeRecorder.__new__(EpisodeRecorder)
+    recorder.states = []
+    recorder.transitions = []
+    recorder.dense_trajectory_buffer = []
+    recorder._make_state = lambda **kwargs: kwargs
+    runner.recorder = recorder
+    teacher = CartesianAction(np.full(7, 0.1, dtype=np.float32), {}, True)
+    teacher_inputs = []
+
+    def get_teacher_action(**kwargs):
+        teacher_inputs.append(kwargs)
+        return teacher
+
+    runner.teacher_policy = SimpleNamespace(get_action=get_teacher_action)
+    state = SimpleNamespace(
+        end_effector_pose=object(), observation={"gripper_duty": np.array([-0.35])},
+        grasp_confirmed=True, sensor_state={},
+    )
+    primitive = SimpleNamespace(prompt="close gripper")
+    executed = CartesianAction(np.full(7, -0.2), {}, False)
+    runner._record_transition(0, state, 0.0, {}, np.zeros(16), primitive, 0, executed)
+
+    assert teacher_inputs[0]["current_pose"] is state.end_effector_pose
+    assert teacher_inputs[0]["primitive"] is primitive
+    assert teacher_inputs[0]["grasp_confirmed"] is True
+    transition = recorder.transitions[0]
+    np.testing.assert_array_equal(transition["cartesian_action"], executed.cartesian_action)
+    assert transition["completes_active_primitive"] is False
+    np.testing.assert_array_equal(transition["teacher_cartesian_action"], teacher.cartesian_action)
+    assert transition["teacher_completes_active_primitive"] is True
+    teacher.cartesian_action[:] = 0
+    np.testing.assert_allclose(transition["teacher_cartesian_action"], 0.1)
 
 
 def raw_observation(joint_position_value):

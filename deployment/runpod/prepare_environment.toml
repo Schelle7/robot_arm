@@ -1,0 +1,44 @@
+api_url = "https://rest.runpod.io/v1"
+credentials_file = "~/.config/runpod/env"
+ssh_identity_file = "~/.ssh/id_ed25519"
+ssh_public_key_file = "~/.ssh/id_ed25519.pub"
+local_run_dir = "outputs/runpod/preparation"
+request_timeout_seconds = 30
+startup_timeout_seconds = 900
+installation_timeout_seconds = 7200
+poll_seconds = 10
+
+[pod]
+name = "robot-arm-prepare"
+computeType = "CPU"
+cloudType = "SECURE"
+imageName = "python:3.12-bookworm"
+cpuFlavorIds = ["cpu3g"]
+cpuFlavorPriority = "custom"
+vcpuCount = 8
+dataCenterIds = ["EU-RO-1"]
+dataCenterPriority = "custom"
+networkVolumeId = "xhg1amwfrs"
+volumeMountPath = "/workspace"
+volumeInGb = 0
+containerDiskInGb = 80
+ports = ["22/tcp"]
+
+[installation]
+upload_dir = "/tmp/robot-arm-preparation"
+repository_url = "https://github.com/Schelle7/robot_arm.git"
+local_root = "/opt/robot-arm-prepare"
+persistent_root = "/workspace/preparation"
+hf_home = "/workspace/.cache/huggingface"
+miniforge_url = "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+python_version = "3.12.13"
+conda_packages = ["pip", "ffmpeg", "tmux", "rsync", "setuptools=80.10.2", "packaging=25.0"]
+pack_package = "conda-pack==0.8.1"
+
+[[models]]
+repository = "lerobot/smolvla_base"
+files = ["config.json", "model.safetensors", "policy_preprocessor.json", "policy_postprocessor.json", "policy_preprocessor_step_5_normalizer_processor.safetensors", "policy_postprocessor_step_0_unnormalizer_processor.safetensors"]
+
+[[models]]
+repository = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+files = ["config.json", "model.safetensors", "generation_config.json", "processor_config.json", "preprocessor_config.json", "chat_template.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json", "added_tokens.json", "vocab.json", "merges.txt"]
