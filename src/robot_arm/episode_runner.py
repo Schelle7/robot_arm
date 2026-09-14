@@ -150,13 +150,18 @@ class EpisodeRunner:
                 cartesian_action=cartesian_action.cartesian_action,
                 teacher_cartesian_action=teacher_action.cartesian_action,
                 teacher_completes_active_primitive=teacher_action.completes_active_primitive,
+                teacher_completion_score=teacher_action.diagnostics["teacher_completion_score"],
                 pose=state.end_effector_pose,
                 sim_state=state.sim_state if self.cfg.runtime.record_sim_state else None,
                 images=images,
                 vla_input_state=vla_input_state,
                 primitive_prompt=primitive.prompt,
                 primitive_index=primitive_index,
-                diagnostics=cartesian_action.diagnostics,
+                diagnostics={
+                    **teacher_action.diagnostics,
+                    **cartesian_action.diagnostics,
+                    "teacher_completes_active_primitive": teacher_action.completes_active_primitive,
+                },
                 completes_active_primitive=cartesian_action.completes_active_primitive,
             )
 

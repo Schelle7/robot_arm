@@ -1,31 +1,16 @@
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 import time
 import tomllib
-import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-def print_time(message):
-    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] {message}", flush=True)
-
-
-def api_request(cfg, key, method, endpoint, body):
-    request = urllib.request.Request(
-        cfg["api_url"] + endpoint,
-        data=json.dumps(body).encode() if method == "POST" else None,
-        method=method,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "robot-arm-runpod/0.1"},
-    )
-    with urllib.request.urlopen(request, timeout=cfg["request_timeout_seconds"]) as response:
-        result = response.read()
-    if method == "DELETE":
-        return
-    return json.loads(result)
+from deployment.runpod.common import print_time, api_request, run_stage, create_local_run, load_api_key
 
 
 def bootstrap():
@@ -48,7 +33,7 @@ def wait_for_ssh(cfg, key, pod_id):
     while time.monotonic() < deadline:
         pod = api_request(cfg, key, "GET", f"/pods/{pod_id}", None)
         if pod["desiredStatus"] != "RUNNING":
-            raise RuntimeError(f"CPU Pod entered {pod['desiredStatus']} during startup")
+            raise RuntimeError(f"Pod entered {pod['desiredStatus']} during startup")
         # Runpod omits the address fields until network provisioning completes.
         if "publicIp" in pod and "portMappings" in pod and "22" in pod["portMappings"]:
             ssh = [
@@ -66,14 +51,7 @@ def wait_for_ssh(cfg, key, pod_id):
         else:
             print_time("Waiting for Pod network provisioning")
         time.sleep(cfg["poll_seconds"])
-    raise TimeoutError("CPU Pod did not become SSH-ready; inspect its Runpod bootstrap logs")
-
-
-def run_stage(name, command, env):
-    started = time.monotonic()
-    print_time(f"START {name}")
-    subprocess.run(command, env=env, check=True)
-    print_time(f"DONE {name}: elapsed {time.monotonic() - started:.1f}s")
+    raise TimeoutError("Pod did not become SSH-ready; inspect its Runpod bootstrap logs")
 
 
 def create_preparation_directories(cfg):
@@ -165,26 +143,6 @@ def prepare_environment(cfg):
     archive = pack_environment(root, env)
     save_archive(archive, destination, env)
     print_time(f"COMPLETE: {destination}; GPU compatibility has not been tested")
-
-
-def create_local_run(cfg):
-    repository = Path(__file__).resolve().parents[2]
-    status = subprocess.check_output(["git", "-C", str(repository), "status", "--porcelain", "--untracked-files=all"], text=True)
-    if status:
-        raise RuntimeError(f"Commit and push the deployment changes first:\n{status}")
-    cfg["commit"] = subprocess.check_output(["git", "-C", str(repository), "rev-parse", "HEAD"], text=True).strip()
-    cfg["run_id"] = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    run_dir = repository / cfg["local_run_dir"] / cfg["run_id"]
-    run_dir.mkdir(parents=True)
-    (run_dir / "config.json").write_text(json.dumps(cfg, indent=2))
-    return run_dir
-
-
-def load_api_key(cfg):
-    return subprocess.check_output([
-        "bash", "-c", 'set -e; set -a; source "$1"; printenv RUNPOD_API_KEY',
-        "bash", str(Path(cfg["credentials_file"]).expanduser()),
-    ], text=True).strip()
 
 
 def create_cpu_pod(cfg, key):

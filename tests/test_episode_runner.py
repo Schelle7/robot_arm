@@ -23,7 +23,7 @@ def test_recording_keeps_teacher_labels_separate_from_executed_actions():
     recorder.dense_trajectory_buffer = []
     recorder._make_state = lambda **kwargs: kwargs
     runner.recorder = recorder
-    teacher = CartesianAction(np.full(7, 0.1, dtype=np.float32), {}, True)
+    teacher = CartesianAction(np.full(7, 0.1, dtype=np.float32), {"teacher_completion_score": 0.75}, True)
     teacher_inputs = []
 
     def get_teacher_action(**kwargs):
@@ -47,6 +47,7 @@ def test_recording_keeps_teacher_labels_separate_from_executed_actions():
     assert transition["completes_active_primitive"] is False
     np.testing.assert_array_equal(transition["teacher_cartesian_action"], teacher.cartesian_action)
     assert transition["teacher_completes_active_primitive"] is True
+    assert transition["teacher_completion_score"] == 0.75
     teacher.cartesian_action[:] = 0
     np.testing.assert_allclose(transition["teacher_cartesian_action"], 0.1)
 

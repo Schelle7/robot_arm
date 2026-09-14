@@ -5,6 +5,7 @@ import logging
 import sys
 import tempfile
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import av
 import numpy as np
@@ -14,8 +15,16 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.video_utils import _get_codec_options
 from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
+
+
+# fix lerobot issue
+def _codec_options_without_b_frames(vcodec, g, crf, preset):
+    options = _get_codec_options(vcodec, g, crf, preset)
+    options["bf"] = "0"
+    return options
 
 
 @contextmanager
@@ -98,13 +107,8 @@ def _build_dataset_features(ref_cfg):
         },
         "action": {
             "dtype": "float32",
-            "shape": (cartesian_action_dim,),
-            "names": list(CARTESIAN_ACTION_NAMES),
-        },
-        PRIMITIVE_COMPLETION: {
-            "dtype": "float32",
-            "shape": (1,),
-            "names": [PRIMITIVE_COMPLETION],
+            "shape": (cartesian_action_dim + 1,),
+            "names": [*CARTESIAN_ACTION_NAMES, PRIMITIVE_COMPLETION],
         },
     }
     return features
@@ -128,11 +132,11 @@ def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
 def teacher_labels(data) -> tuple[np.ndarray, np.ndarray]:
     num_transitions = len(data["step"]) - 1
     actions = np.asarray(data["teacher_cartesian_action"], dtype=np.float32)
-    completions = np.asarray(data["teacher_completes_active_primitive"])
+    completions = np.asarray(data["teacher_completion_score"], dtype=np.float32)
     assert actions.shape == (num_transitions, len(CARTESIAN_ACTION_NAMES)), "Every transition requires a teacher action."
     assert completions.shape == (num_transitions,), "Every transition requires a teacher completion label."
     assert np.isfinite(actions).all(), "Teacher actions must be finite."
-    assert np.isin(completions, [0, 1]).all(), "Teacher completion labels must be binary."
+    assert np.isfinite(completions).all() and ((completions >= 0) & (completions <= 1)).all(), "Teacher completion scores must be between zero and one."
     return actions, completions.astype(np.float32)
 
 
@@ -219,13 +223,11 @@ def convert_to_lerobot(
 
             state = _reconstruct_vla_input_state(data, frame_idx)
 
-            action = torch.from_numpy(teacher_actions[frame_idx])
+            action = torch.from_numpy(np.concatenate([
+                teacher_actions[frame_idx], teacher_completions[frame_idx : frame_idx + 1],
+            ]))
 
             task = str(data["primitive_prompt"][frame_idx])
-            primitive_completion = np.asarray(
-                [teacher_completions[frame_idx]],
-                dtype=np.float32,
-            )
 
             # Add frame to the dataset
             frame = {
@@ -233,13 +235,13 @@ def convert_to_lerobot(
                 "observation.images.wrist_camera": wrist_camera_image,
                 "observation.state": state,
                 "action": action,
-                PRIMITIVE_COMPLETION: primitive_completion,
                 "task": task,
             }
             dataset.add_frame(frame)
 
             if frame_idx == num_frames - 2 or data["primitive_index"][frame_idx + 1] != data["primitive_index"][frame_idx]:
-                with _quiet_native_stderr():
+                # LeRobot does not expose B-frame options through dataset creation.
+                with patch("lerobot.datasets.video_utils._get_codec_options", _codec_options_without_b_frames), _quiet_native_stderr():
                     dataset.save_episode()
 
         episode_results[ep_path]["conversion_status"] = "converted"

@@ -152,13 +152,14 @@ class VLACartesianPolicy(CartesianPolicy):
         with torch.inference_mode():
             batch = {k: (torch.tensor(v).unsqueeze(0).to(self.device) if isinstance(v, np.ndarray) else [v]) for k, v in raw_obs.items()}
             processed_batch = self.preprocessor(batch)
-            out, completion_probability = self.policy.select_action_with_completion(processed_batch)
-            action = self.postprocessor(out)
+            out = self.policy.select_action(processed_batch)
+            action = self.postprocessor(out).squeeze(0).cpu().numpy()
+            completion_score = float(action[len(CARTESIAN_ACTION_NAMES)])
 
         return CartesianAction(
-            cartesian_action=action.squeeze(0).cpu().numpy().reshape(len(CARTESIAN_ACTION_NAMES)),
-            diagnostics={"completion_probability": float(completion_probability.item())},
-            completes_active_primitive=bool(completion_probability.item() >= 0.5)
+            cartesian_action=action[:len(CARTESIAN_ACTION_NAMES)],
+            diagnostics={"completion_score": completion_score},
+            completes_active_primitive=bool(completion_score >= 0.5)
             and (primitive.prompt != "close gripper" or grasp_confirmed),
         )
 
@@ -209,8 +210,17 @@ class ScriptedCartesianPolicy(CartesianPolicy):
 
         if primitive.desired_gripper_duty_active:
             gripper_channel_reached = gripper_duty_distance <= self.duty_completion_tolerance
+            gripper_error_ratio = gripper_duty_distance / self.duty_completion_tolerance
         else:
             gripper_channel_reached = gripper_distance <= self.gripper_tolerance
+            gripper_error_ratio = gripper_distance / self.gripper_tolerance
+
+        worst_error_ratio = max(
+            position_distance / self.position_tolerance,
+            primary_orientation_distance / self.primary_rotation_tolerance,
+            secondary_orientation_distance / self.secondary_rotation_tolerance,
+            gripper_error_ratio,
+        )
 
         completes_active_primitive = (
             position_distance <= self.position_tolerance
@@ -220,6 +230,7 @@ class ScriptedCartesianPolicy(CartesianPolicy):
         )
 
         diagnostics = {
+            "teacher_completion_score": max(0.0, 1.0 - worst_error_ratio / 2.0),
             "position_distance": position_distance,
             "position_threshold": float(self.position_tolerance),
             "primary_orientation_distance": primary_orientation_distance,
@@ -251,6 +262,8 @@ class ScriptedCartesianPolicy(CartesianPolicy):
         completes_active_primitive = completes_active_primitive and (
             primitive.prompt != "close gripper" or grasp_confirmed
         )
+        if primitive.prompt == "close gripper" and not grasp_confirmed:
+            diagnostics["teacher_completion_score"] = 0.0
 
         # The completion tolerances are set independently of the speeds, so a completing step can
         # still ask for more than one command may travel. Shortening is therefore unconditional.
