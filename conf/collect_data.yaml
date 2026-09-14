@@ -13,15 +13,16 @@ control:
   max_seconds: 45
   frequencies:
     cartesian: 5
-    joint: 5
+    joint: 20
     mujoco: 200
 
 safety:
   max_temperature_celsius: 45.0
-  duty_ema_seconds: 0.2
-  max_smoothed_duty: 0.6
+  duty_ema_seconds: 1
+  max_smoothed_duty: 1
 
 runtime:
+  capture_camera: true
   disable_box_collisions: false
   record_policy_debug: true
   record_sim_state: true

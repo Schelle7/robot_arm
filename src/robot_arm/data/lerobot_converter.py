@@ -5,6 +5,7 @@ import logging
 import sys
 import tempfile
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import av
 import numpy as np
@@ -14,8 +15,16 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.video_utils import _get_codec_options
 from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
+
+
+# fix lerobot issue
+def _codec_options_without_b_frames(vcodec, g, crf, preset):
+    options = _get_codec_options(vcodec, g, crf, preset)
+    options["bf"] = "0"
+    return options
 
 
 @contextmanager
@@ -239,7 +248,8 @@ def convert_to_lerobot(
             dataset.add_frame(frame)
 
             if frame_idx == num_frames - 2 or data["primitive_index"][frame_idx + 1] != data["primitive_index"][frame_idx]:
-                with _quiet_native_stderr():
+                # LeRobot does not expose B-frame options through dataset creation.
+                with patch("lerobot.datasets.video_utils._get_codec_options", _codec_options_without_b_frames), _quiet_native_stderr():
                     dataset.save_episode()
 
         episode_results[ep_path]["conversion_status"] = "converted"

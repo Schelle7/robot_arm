@@ -38,7 +38,7 @@ def collect_round(cfg) -> None:
 
 
 def prepare_dataset(cfg, round_datasets: list[Path]) -> Path:
-    round_dataset = Path(cfg.round_dir) / f"dataset_{cfg.round_index:03d}"
+    round_dataset = Path(cfg.data_dir) / f"dataset_{cfg.round_index:03d}"
     lerobot_converter.convert_to_lerobot(
         source_dir=str(Path(cfg.collection_dir) / "recordings"),
         target_dir=str(round_dataset),
@@ -48,7 +48,7 @@ def prepare_dataset(cfg, round_datasets: list[Path]) -> Path:
     round_datasets.append(round_dataset)
     if cfg.round_index == 0:
         return round_dataset
-    combined = Path(cfg.round_dir) / "combined_dataset"
+    combined = Path(cfg.data_dir) / "combined_dataset"
     aggregate.aggregate_datasets(
         repo_ids=[path.name for path in round_datasets],
         roots=round_datasets,
@@ -77,13 +77,15 @@ def validate_config(cfg) -> None:
 def build_round_config(cfg, run_dir: Path, round_index: int):
     initial = round_index == 0
     round_dir = run_dir / f"round_{round_index:03d}"
+    data_dir = Path(cfg.data_root).resolve() / f"round_{round_index:03d}"
     start_step = 0 if initial else cfg.initial_training_steps + (round_index - 1) * cfg.training_steps_per_round
     updates = cfg.initial_training_steps if initial else cfg.training_steps_per_round
     previous_checkpoint = "" if initial else str(run_dir / f"round_{round_index - 1:03d}/training/checkpoints/last")
     return OmegaConf.merge(OmegaConf.to_container(cfg, resolve=True), {
         "round_index": round_index,
         "round_dir": str(round_dir),
-        "collection_dir": str(round_dir / "collection"),
+        "data_dir": str(data_dir),
+        "collection_dir": str(data_dir / "collection"),
         "training_dir": str(round_dir / "training"),
         "previous_checkpoint": previous_checkpoint,
         "dataset_root": "",

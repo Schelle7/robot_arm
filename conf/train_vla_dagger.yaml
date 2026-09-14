@@ -19,6 +19,7 @@ episodes_per_round: 10
 initial_training_steps: 5000
 training_steps_per_round: 1000
 keep_last_checkpoints: 2
+data_root: ${hydra:runtime.output_dir}/data
 
 collection:
   backend: sim
@@ -36,8 +37,7 @@ collection:
       gripper_radians: 0.1
 
 dataset:
-  # Keep each primitive's video separate to avoid concatenation timestamp errors.
-  video_files_size_in_mb: 0.000001
+  video_files_size_in_mb: 100
   data_files_size_in_mb: 100
   chunk_size: 1000
 

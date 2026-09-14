@@ -18,6 +18,7 @@ def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path
         "initial_episodes": 3, "episodes_per_round": 2,
         "initial_training_steps": 5, "training_steps_per_round": 4,
         "keep_last_checkpoints": 2,
+        "data_root": str(tmp_path / "local-data"),
         "collection": {"backend": "sim", "policy_name": "latest"},
     })
     OmegaConf.set_struct(cfg, True)
@@ -35,7 +36,7 @@ def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path
     datasets_seen = []
 
     def prepare_dataset(config, datasets):
-        dataset = Path(config.round_dir) / "dataset"
+        dataset = Path(config.data_dir) / "dataset"
         datasets.append(dataset)
         datasets_seen.append(list(datasets))
         return dataset
@@ -50,6 +51,8 @@ def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path
     assert [item["start_step"] for item in collections] == [0, 5, 9]
     assert [item["end_step"] for item in collections] == [5, 9, 13]
     assert all(item["total_steps"] == 13 for item in collections)
+    assert collections[0]["collection_dir"] == str(tmp_path / "local-data/round_000/collection")
+    assert collections[0]["training_dir"] == str(tmp_path / "round_000/training")
     assert collections[1]["previous_checkpoint"] == str(tmp_path / "round_000/training/checkpoints/last")
     assert collections[2]["previous_checkpoint"] == str(tmp_path / "round_001/training/checkpoints/last")
     assert [len(datasets) for datasets in datasets_seen] == [1, 2, 3]
@@ -82,14 +85,15 @@ def test_merge_preserves_video_file_limit_and_uses_all_rounds(tmp_path, monkeypa
     monkeypatch.setattr(lerobot_converter, "convert_to_lerobot", lambda **kwargs: calls.append(("convert", kwargs)))
     monkeypatch.setattr(aggregate, "aggregate_datasets", lambda **kwargs: calls.append(("merge", kwargs)))
     cfg = OmegaConf.create({
-        "round_index": 1, "round_dir": str(tmp_path / "round_001"),
+        "round_index": 1, "data_dir": str(tmp_path / "local-data/round_001"),
         "collection_dir": str(tmp_path / "collection"),
         "collection": {"control": {"frequencies": {"cartesian": 5}}},
         "dataset": {"video_files_size_in_mb": 0.000001, "data_files_size_in_mb": 100, "chunk_size": 1000},
     })
     datasets = [tmp_path / "round_000/dataset_000"]
     result = dagger.prepare_dataset(cfg, datasets)
-    assert result == tmp_path / "round_001/combined_dataset"
+    assert result == tmp_path / "local-data/round_001/combined_dataset"
+    assert calls[0][1]["target_dir"] == str(tmp_path / "local-data/round_001/dataset_001")
     assert calls[1][1]["roots"] == datasets
     assert len(datasets) == 2
     assert calls[1][1]["video_files_size_in_mb"] == 0.000001
