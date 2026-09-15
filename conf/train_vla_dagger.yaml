@@ -44,6 +44,7 @@ dataset:
 bc:
   batch_size: 8
   num_workers: 4
+  dataloader_timeout_seconds: 300
   log_every_steps: 100
   mixed_precision: "no"
   job_name: robot_arm_smolvla_dagger

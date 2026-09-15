@@ -110,6 +110,8 @@ class RoundTrainer:
         loader = DataLoader(
             dataset, batch_size=train_cfg.batch_size, num_workers=train_cfg.num_workers,
             shuffle=True, pin_memory=train_cfg.policy.device == "cuda", drop_last=False,
+            # PyTorch requires zero timeout when loading in the main process.
+            timeout=cfg.bc.dataloader_timeout_seconds if train_cfg.num_workers > 0 else 0,
         )
         self.cartesian_policy, self.optimizer, self.loader = self.accelerator.prepare(cartesian_policy, optimizer, loader)
 
