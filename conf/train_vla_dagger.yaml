@@ -13,10 +13,10 @@ environment:
   TRANSFORMERS_OFFLINE: "1"
 
 seed: 42
-vla_rounds: 10
+vla_rounds: 8
 initial_episodes: 100
 episodes_per_round: 10
-initial_training_steps: 5000
+initial_training_steps: 2000
 training_steps_per_round: 1000
 keep_last_checkpoints: 2
 data_root: ${hydra:runtime.output_dir}/data
@@ -31,9 +31,9 @@ collection:
       random_waypoint: 0.0
     duty_completion_tolerance: 0.1
     completion_tolerance:
-      position_meters: 0.01
-      primary_rotation_radians: 0.1
-      secondary_rotation_radians: 0.12
+      position_meters: 0.015
+      primary_rotation_radians: 0.2
+      secondary_rotation_radians: 0.2
       gripper_radians: 0.1
 
 dataset:
@@ -51,6 +51,8 @@ bc:
   policy:
     type: cartesian_smolvla
     pretrained_path: lerobot/smolvla_base
+    optimizer_lr: 0.0001
+    scheduler_decay_lr: 0.000025
     device: cuda
     chunk_size: 1
     n_action_steps: 1
