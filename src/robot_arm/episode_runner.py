@@ -156,7 +156,11 @@ class EpisodeRunner:
                 vla_input_state=vla_input_state,
                 primitive_prompt=primitive.prompt,
                 primitive_index=primitive_index,
-                diagnostics=cartesian_action.diagnostics,
+                diagnostics={
+                    **teacher_action.diagnostics,
+                    **cartesian_action.diagnostics,
+                    "teacher_completes_active_primitive": teacher_action.completes_active_primitive,
+                },
                 completes_active_primitive=cartesian_action.completes_active_primitive,
             )
 

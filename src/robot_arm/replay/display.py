@@ -23,22 +23,24 @@ def section(title, columns, rows):
 
 def primitive_diagnostic_rows(action_diagnostics):
     diagnostic_pairs = (
-        ("Position", "position_distance", "position_threshold"),
-        ("Primary orientation", "primary_orientation_distance", "primary_orientation_threshold"),
-        ("Secondary orientation", "secondary_orientation_distance", "secondary_orientation_threshold"),
-        ("Gripper position", "gripper_distance", "gripper_threshold"),
-        ("Gripper duty", "gripper_duty_distance", "duty_threshold"),
+        ("Position (cm)", "position_distance", "position_threshold", 100),
+        ("Primary orientation (degrees)", "primary_orientation_distance", "primary_orientation_threshold", 180 / np.pi),
+        ("Secondary orientation (degrees)", "secondary_orientation_distance", "secondary_orientation_threshold", 180 / np.pi),
+        ("Gripper position (degrees)", "gripper_distance", "gripper_threshold", 180 / np.pi),
+        ("Gripper duty", "gripper_duty_distance", "duty_threshold", 1),
     )
     rows = [
         [
             label,
-            format_value(action_diagnostics[difference_key]) if difference_key in action_diagnostics else "Not available for this rollout",
-            format_value(action_diagnostics[threshold_key]) if threshold_key in action_diagnostics else "Not available for this rollout",
+            format_value(action_diagnostics[difference_key] * scale) if difference_key in action_diagnostics else "Not available for this rollout",
+            format_value(action_diagnostics[threshold_key] * scale) if threshold_key in action_diagnostics else "Not available for this rollout",
         ]
-        for label, difference_key, threshold_key in diagnostic_pairs
+        for label, difference_key, threshold_key, scale in diagnostic_pairs
     ]
     if "completion_probability" in action_diagnostics:
-        rows.append(["Completion probability", format_value(action_diagnostics["completion_probability"]), "N/A"])
+        rows.append(["VLA completion probability", f"{action_diagnostics['completion_probability']:.1%}", "50%"])
+    if "teacher_completes_active_primitive" in action_diagnostics:
+        rows.append(["Teacher considers primitive complete", str(action_diagnostics["teacher_completes_active_primitive"]), "N/A"])
     return rows
 
 
