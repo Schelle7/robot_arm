@@ -1,5 +1,4 @@
 import os
-import copy
 import numpy as np
 from typing import Dict, List, Any
 from PIL import Image
@@ -54,6 +53,7 @@ class EpisodeRecorder:
         cartesian_action: np.ndarray,
         teacher_cartesian_action: np.ndarray,
         teacher_completes_active_primitive: bool,
+        teacher_completion_score: float,
         pose,
         sim_state: Dict[str, np.ndarray] | None,
         images: dict[str, np.ndarray] | None,
@@ -86,6 +86,7 @@ class EpisodeRecorder:
                 "cartesian_action": cartesian_action.copy(),
                 "teacher_cartesian_action": teacher_cartesian_action.copy(),
                 "teacher_completes_active_primitive": bool(teacher_completes_active_primitive),
+                "teacher_completion_score": float(teacher_completion_score),
                 "diagnostics": diagnostics.copy(),
                 "completes_active_primitive": bool(completes_active_primitive),
                 "dense_trajectory": self.dense_trajectory_buffer.copy(),
@@ -218,6 +219,7 @@ class EpisodeRecorder:
             "cartesian_action": np.array([t["cartesian_action"] for t in self.transitions], dtype=object),
             "teacher_cartesian_action": np.asarray([t["teacher_cartesian_action"] for t in self.transitions], dtype=np.float32).reshape(-1, len(CARTESIAN_ACTION_NAMES)),
             "teacher_completes_active_primitive": np.asarray([t["teacher_completes_active_primitive"] for t in self.transitions], dtype=bool),
+            "teacher_completion_score": np.asarray([t["teacher_completion_score"] for t in self.transitions], dtype=np.float32),
             "cartesian_action_diagnostics": np.array([t["diagnostics"] for t in self.transitions], dtype=object),
             "completes_active_primitive": np.array([t["completes_active_primitive"] for t in self.transitions], dtype=bool),
             "reward": np.array([t["reward"] for t in self.transitions], dtype=np.float32),

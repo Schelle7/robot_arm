@@ -147,7 +147,7 @@ class RoundTrainer:
                 if self.step % self.cfg.bc.log_every_steps == 0 or self.step == self.cfg.end_step:
                     metrics.write(json.dumps(diagnostics) + "\n")
                     metrics.flush()
-                    progress.set_postfix(loss=diagnostics["loss"], completion_loss=diagnostics["completion_loss"])
+                    progress.set_postfix(loss=diagnostics["loss"])
 
     def save(self) -> None:
         checkpoint = self.train_cfg.output_dir / "checkpoints" / f"{self.step:08d}"

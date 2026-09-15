@@ -7,7 +7,6 @@ import torch
 from PIL import Image
 
 from robot_arm.data import lerobot_converter
-from robot_arm.robot_schema import PRIMITIVE_COMPLETION
 
 
 def test_conversion_uses_teacher_labels_even_when_learner_never_lifts(tmp_path, monkeypatch):
@@ -24,6 +23,7 @@ def test_conversion_uses_teacher_labels_even_when_learner_never_lifts(tmp_path, 
         completes_active_primitive=[False],
         teacher_cartesian_action=teacher_action,
         teacher_completes_active_primitive=[True],
+        teacher_completion_score=[0.75],
         external_camera_image_path=["camera.jpg", "camera.jpg"],
         wrist_camera_image_path=["camera.jpg", "camera.jpg"],
     )
@@ -44,8 +44,8 @@ def test_conversion_uses_teacher_labels_even_when_learner_never_lifts(tmp_path, 
     target = tmp_path / "converted"
     lerobot_converter.convert_to_lerobot(str(episode.parent), str(target), 5, 1.0)
 
-    np.testing.assert_array_equal(frames[0]["action"].numpy(), teacher_action[0])
-    np.testing.assert_array_equal(frames[0][PRIMITIVE_COMPLETION], [1.0])
+    np.testing.assert_array_equal(frames[0]["action"].numpy()[:7], teacher_action[0])
+    assert frames[0]["action"].numpy()[7] == 0.75
     assert saved_episodes == [True]
     assert finalized == [True]
     report = json.loads((tmp_path / "converted.conversion_report.json").read_text())
@@ -64,5 +64,5 @@ def test_conversion_rejects_incomplete_teacher_labels():
         lerobot_converter.teacher_labels({
             "step": [0, 1, 2],
             "teacher_cartesian_action": np.zeros((1, 7)),
-            "teacher_completes_active_primitive": [False],
+            "teacher_completion_score": [0.25],
         })

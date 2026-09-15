@@ -37,10 +37,12 @@ def primitive_diagnostic_rows(action_diagnostics):
         ]
         for label, difference_key, threshold_key, scale in diagnostic_pairs
     ]
-    if "completion_probability" in action_diagnostics:
-        rows.append(["VLA completion probability", f"{action_diagnostics['completion_probability']:.1%}", "50%"])
+    if "completion_score" in action_diagnostics:
+        rows.append(["VLA completion score", format_value(action_diagnostics["completion_score"]), "0.5"])
     if "teacher_completes_active_primitive" in action_diagnostics:
         rows.append(["Teacher considers primitive complete", str(action_diagnostics["teacher_completes_active_primitive"]), "N/A"])
+    if "teacher_completion_score" in action_diagnostics:
+        rows.append(["Teacher completion score", format_value(action_diagnostics["teacher_completion_score"]), "0.5"])
     return rows
 
 

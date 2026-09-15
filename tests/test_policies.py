@@ -60,6 +60,28 @@ def get_scripted_action(policy, current_pose: Pose, target_pose: Pose):
     )
 
 
+@pytest.mark.parametrize("distance,score", [(0.0, 1.0), (0.5, 0.75), (1.0, 0.5), (2.0, 0.0), (3.0, 0.0)])
+def test_completion_score_tracks_worst_error(distance, score):
+    policy = make_policy()
+    current = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    target = Pose.from_euler([distance, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    output = get_scripted_action(policy, current, target)
+    assert output.diagnostics["teacher_completion_score"] == pytest.approx(score)
+    assert output.completes_active_primitive == (score >= 0.5)
+
+
+@pytest.mark.parametrize("grasp_confirmed,score", [(False, 0.0), (True, 0.75)])
+def test_completion_score_uses_active_duty_and_requires_grasp(grasp_confirmed, score):
+    policy = make_policy()
+    current = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
+    target = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 3.0, "XYZ", False)
+    primitive = make_primitive(current, target, "close gripper", False)
+    primitive.desired_gripper_duty_active = True
+    output = policy.get_action(current, {}, np.zeros(16), 0.05, grasp_confirmed, primitive)
+    assert output.diagnostics["teacher_completion_score"] == pytest.approx(score)
+    assert output.completes_active_primitive == grasp_confirmed
+
+
 def test_waypoint_translation_is_limited_by_vector_length():
     policy = make_policy()
     current_pose = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
