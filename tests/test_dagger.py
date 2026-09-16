@@ -56,7 +56,6 @@ def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path
     assert collections[1]["previous_checkpoint"] == str(tmp_path / "round_000/training/checkpoints/last")
     assert collections[2]["previous_checkpoint"] == str(tmp_path / "round_001/training/checkpoints/last")
     assert [len(datasets) for datasets in datasets_seen] == [1, 2, 3]
-    assert (tmp_path / "outputs/train_vla/latest_run.txt").read_text() == str(tmp_path / "round_002/training")
     assert not (tmp_path / "round_000/training/checkpoints").exists()
     assert (tmp_path / "round_001/training/checkpoints/last/pretrained_model/model.safetensors").is_file()
     assert (tmp_path / "round_002/training/checkpoints/last/pretrained_model/model.safetensors").is_file()

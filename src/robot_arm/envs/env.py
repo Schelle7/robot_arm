@@ -7,9 +7,9 @@ from typing import Any, Dict, Tuple
 from omegaconf import DictConfig
 
 from robot_arm.geometry.pose import Pose, axis_angular_distance
-from robot_arm.backends.arm import Arm
+from robot_arm.arms.arm import Arm
 from robot_arm.robot_schema import BOX_BODY_NAMES, HISTORY_APPLIED_DUTY_SLICE, HISTORY_FEATURE_NAMES, MOTOR_ORDER
-from robot_arm.grasp_estimator import GraspEstimator
+from robot_arm.envs.grasp_estimator import GraspEstimator
 
 
 @dataclass

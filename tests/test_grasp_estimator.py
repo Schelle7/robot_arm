@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from robot_arm.grasp_estimator import GraspEstimator
+from robot_arm.envs.grasp_estimator import GraspEstimator
 
 
 @pytest.fixture

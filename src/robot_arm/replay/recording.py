@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
-from robot_arm.backends.sim_arm import build_desired_poses
+from robot_arm.arms.sim_arm import build_desired_poses
 from robot_arm.geometry.pose import Pose, axis_angular_distance
 
 

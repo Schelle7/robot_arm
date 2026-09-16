@@ -1,8 +1,8 @@
 import logging
 from omegaconf import DictConfig
 
-from robot_arm.backends.sim_arm import SimBackend
-from robot_arm.backends.real_arm import RealArm
+from robot_arm.arms.sim_arm import SimArm
+from robot_arm.arms.real_arm import RealArm
 from robot_arm.envs.env import RobotEnv
 from robot_arm.envs.safety import SafeArmWrapper
 
@@ -16,7 +16,7 @@ def make_env(cfg: DictConfig, output_dir: str):
     the learner and the workers.
     """
     if cfg.backend == "sim":
-        backend = SimBackend(
+        backend = SimArm(
             model_path=cfg.model_path,
             camera_configs=cfg.camera.cameras,
             initial_joint_mode=cfg.control.initial_joints.mode,

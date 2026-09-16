@@ -102,9 +102,6 @@ def record_completed_round(cfg, run_dir: Path, report: list[dict]) -> None:
     model_path = checkpoint / "pretrained_model" / "model.safetensors"
     if not model_path.is_file():
         raise FileNotFoundError(model_path)
-    latest = Path(__file__).resolve().parents[3] / "outputs" / "train_vla" / "latest_run.txt"
-    latest.parent.mkdir(parents=True, exist_ok=True)
-    latest.write_text(cfg.training_dir)
     report.append({
         "round": cfg.round_index,
         "episodes": cfg.num_episodes,

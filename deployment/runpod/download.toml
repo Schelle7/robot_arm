@@ -1,0 +1,7 @@
+local_run_dir = "outputs/runpod/training"
+local_policy_dir = "outputs/train_vla"
+aws_profile = "runpod"
+region = "EU-RO-1"
+endpoint_url = "https://s3api-eu-ro-1.runpod.io"
+connect_timeout_seconds = 10
+read_timeout_seconds = 120

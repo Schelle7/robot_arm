@@ -4,7 +4,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-from robot_arm.backends.sim_arm import (
+from robot_arm.arms.sim_arm import (
     update_desired_pose_debug_user_scene,
     update_tcp_debug_user_scene,
     update_waypoint_debug_user_scene,

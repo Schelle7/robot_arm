@@ -1,7 +1,7 @@
 # SO-101 follower arm
 
-Personal control code and experiments for an SO-101 **follower** arm using
-[LeRobot](https://huggingface.co/docs/lerobot).
+Pick-and-place with learned duty control and vision-language-action policies for
+an SO-101 follower arm, using [LeRobot](https://huggingface.co/docs/lerobot) and MuJoCo.
 
 ## Simulation example
 
@@ -9,184 +9,130 @@ Personal control code and experiments for an SO-101 **follower** arm using
 
 [![Watch: low-level duty control gripping and relocating a box](https://img.youtube.com/vi/o0uG7idjmQ8/hqdefault.jpg)](https://youtu.be/o0uG7idjmQ8)
 
-Scripted Cartesian targets executed by the learned low-level duty controller.
+The demo uses scripted Cartesian targets and a learned low-level duty controller
+to pick up and relocate a box. Pick-and-place works in simulation but remains
+imperfect. The demo does not demonstrate VLA-driven control.
 
-## Environment
+## How control works
 
-A conda env named `lerobot` (Python 3.12, with `ffmpeg`) has already been created.
-Activate it before doing anything:
+1. A scripted primitive generator divides a task into steps such as approach,
+   close the gripper, lift, transport, and release.
+2. Either a scripted Cartesian policy or a fine-tuned SmolVLA chooses Cartesian
+   motion and when to advance to the next primitive. SmolVLA receives camera
+   images, robot state, and the current primitive's text instruction. Its eight
+   outputs are three translation channels, three rotation channels, one gripper
+   position-delta channel, and a primitive-completion score. The scripted primitive
+   supplies the desired gripper duty and its enable flag separately; the VLA does
+   not predict those settings.
+3. A low-level policy trained with SAC tracks the Cartesian command using robot
+   state and recent history. It produces actions for the six motors, which are
+   converted to applied duties by the control pipeline.
+4. The arm implementation applies those duties to simulated motor dynamics in
+   MuJoCo or sends PWM commands to the physical arm.
 
-```bash
-conda activate lerobot
-```
+The low-level controller is trained for duty control, not joint-position commands
+or one-step inverse kinematics. The rollout defaults request Cartesian updates at
+5 Hz, motor-control updates at 20 Hz, and simulation steps at 200 Hz.
 
-## Install
+Physical-arm sensor reading and direct PWM output are implemented. Reliable
+sim-to-real transfer and real-arm communication remain ongoing work; see
+[LIMITATIONS.md](LIMITATIONS.md).
+
+## Setup
+
+Use a conda environment with Python 3.12.13 and `ffmpeg`, and activate it before
+running commands. The pinned dependencies include CUDA-enabled JAX and PyTorch.
+
+From the repository root:
 
 ```bash
 make install
 ```
 
-## Hardware checklist (before plugging in)
+Configuration lives in [conf/](conf/). Rollouts combine the low-level training
+run's saved configuration with [conf/rollout.yaml](conf/rollout.yaml).
 
-- USB-C cable -> controller board for logic/serial communication.
-- DC power supply -> controller board. This is required to power the servos.
-- On power-up the servos have torque disabled. The arm is limp until commands are sent.
+## Run and train
 
-## Useful Commands
+| Command | Purpose |
+| --- | --- |
+| `make train_low_level` | Train the low-level duty controller in simulation. |
+| `make train_runpod` | Launch VLA training on RunPod using `deployment/runpod/train.toml`. |
+| `make sanity_check_sim` | Roll out scripted Cartesian targets through the learned duty controller. |
+| `make rollout_sim` | Roll out the VLA through the learned duty controller. |
+| `make download_trained_vla` | Download the latest locally tracked RunPod run's log and, when available, final VLA checkpoint. |
+| `make download_pretrained` | Download the pretrained VLA and low-level controller checkpoints. |
+| `make test` | Run automated tests, excluding physical sensor tests. |
+| `make lint` | Check formatting and lint. |
+| `make format` | Apply formatting and automatic lint fixes. |
 
-Run commands with the `lerobot` environment active.
+RunPod training requires your credentials, SSH keys, network volume, and prepared
+environment archive configured in [deployment/runpod/train.toml](deployment/runpod/train.toml).
+The checked-in volume and archive settings refer to the author's setup.
 
-Find the USB port:
+Simulation rollouts require a trained low-level checkpoint, its saved Hydra
+configuration, and its model files. VLA rollouts additionally require a complete
+VLA inference checkpoint. Weights are not included in the repository.
+
+The VLA loader selects the newest complete checkpoint under
+`outputs/train_vla/` or `outputs/train_vla_dagger/`. If a newer run is incomplete,
+it prints that it is using an older checkpoint.
+
+For a downloaded RunPod model, preserve this layout:
+
+```text
+outputs/train_vla/runpod_YYYY-MM-DD_HH-MM-SS/
+└── checkpoints/last/pretrained_model/
+    ├── model.safetensors
+    ├── config.json
+    ├── policy_preprocessor.json
+    ├── policy_postprocessor.json
+    └── ...processor state files referenced by the JSON configs
+```
+
+See [development notes](DEVELOPMENT_NOTES.md) for VLA training, dataset conversion,
+recording replay, and technical details.
+
+## Physical arm
+
+Connect USB-C for serial communication and the DC supply for servo power.
+Configure and calibrate the motors before commanding movement.
+
+Find the serial port:
 
 ```bash
 make find-port
 ```
 
-Set motor IDs and baudrate, only if the motors are not already configured:
+Set motor IDs and baudrate only if they are not already configured, then calibrate:
 
 ```bash
 lerobot-setup-motors --robot.type=so101_follower --robot.port=/dev/ttyACM0
-```
-
-Calibrate the follower arm:
-
-```bash
 lerobot-calibrate --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=my_follower
 ```
 
-Check that the arm can be read:
+Compare block and individual sensor reads on the connected arm:
 
 ```bash
-make test PORT=/dev/ttyACM0
+make test-hardware PORT=/dev/ttyACM0 ID=my_follower
 ```
 
-Train the low-level policy:
+Serial permissions and hardware-specific implementation notes are in
+[DEVELOPMENT_NOTES.md](DEVELOPMENT_NOTES.md).
 
-```bash
-python scripts/train_low_level.py
-```
+## Project layout
 
-The default experiment first treats low-level control as one-step inverse
-kinematics: each terminal transition maps the current joint state and one desired
-Cartesian pose delta to one joint delta. This isolates the low-level mapping
-before introducing terminal multi-step action paths.
+| Directory | Contents |
+| --- | --- |
+| `conf/` | Hydra configuration |
+| `models/` | MuJoCo robot and scene models |
+| `scripts/` | Training, rollout, conversion, and replay entry points |
+| `src/robot_arm/` | Control, policies, environments, recording, and replay |
+| `deployment/runpod/` | Remote training and artifact downloads |
+| `tests/` | Automated and hardware tests |
 
-SAC training includes independent forward dynamics heads for the actor and both critics.
-Each predicts six joint and six TCP interval velocities from its own history and state encodings
-plus the recorded action, using the observation's existing velocity normalization. Predictions
-are auxiliary training outputs, not inputs to the Q-value or action outputs. Configure hidden
-layers with `policy.forward_head` and loss weights with `training.actor_forward_loss_weight`
-and `training.critic_forward_loss_weight` (initially 0.1 each; zero removes the respective gradient
-contribution). TensorBoard reports `actor_loss`, `actor_total_loss`, `forward_loss`,
-`forward_joint_loss`, and `forward_tcp_loss` under `train/`, plus `critic_loss`,
-`critic_total_loss`, `critic_forward_loss`, `critic_forward_joint_loss`, and
-`critic_forward_tcp_loss`. Critic forward metrics are averaged across the two critics.
-Auxiliary heads are omitted from actor inference exports. Older training checkpoints with
-missing heads or different head inputs cannot resume this architecture; their actor exports
-still work for rollout.
+## Further reading
 
-Continue training from a compatible configured SAC checkpoint with a fresh replay buffer:
-
-```bash
-python scripts/train_low_level.py experiment=continue_training
-```
-
-SAC can mix recorded real-robot transitions with simulation data. Configure recording paths
-and the real-data sampling fraction under `training.real_data` in
-[conf/training/default.yaml](conf/training/default.yaml). By default, training uses simulation only.
-
-Replay the latest simulation recording, seek to a frame, and export a fixed policy-action branch request:
-
-```bash
-python scripts/replay.py
-```
-
-After exporting the request in the browser, close replay and generate the branch through the normal
-episode hierarchy. Start replay again afterward to inspect the newly generated recording:
-
-```bash
-python scripts/rollout_fixed_duty.py
-python scripts/replay.py
-```
-
-Convert recorded Cartesian demonstrations to a LeRobot dataset:
-
-```bash
-python scripts/convert_dataset.py +source_dir=outputs/collect_data/YYYY-MM-DD/HH-MM-SS/recordings +target_name=smolvla_waypoints
-```
-
-Fine-tune the standard pretrained SmolVLA policy with LeRobot's trainer:
-
-```bash
-python scripts/train_vla.py \
-	dataset_root=datasets/smolvla_waypoints \
-	steps=30000
-```
-
-Iterative teacher-labeled training uses `scripts/train_vla_dagger.py` and
-`conf/train_vla_dagger.yaml`: one scripted collection round followed by VLA-only
-rounds, each converted and merged before further BC updates. Checkpoints preserve
-optimizer state and the initial normalization; videos remain separate when merged.
-
-## Linux Serial Permissions
-
-A user needs permission to open the serial device. A temporary workaround is:
-
-```bash
-sudo chmod 666 /dev/ttyACM0
-```
-
-The persistent option is to add the user to the `dialout` group, then log out and back in:
-
-```bash
-sudo usermod -aG dialout $USER
-```
-
-## One bus read per control step
-
-On the real backend every `read_state()` is a serial round trip, and it also advances the
-safety load EMA in `SafeArmWrapper`. The loop used to read three times per step, which both
-ate bus bandwidth and made `load_ema_alpha: 0.1` behave like 0.27. It now reads once and
-threads the result through:
-
-- `Arm.get_tcp_pose(state)` takes an already-read state rather than reading for itself.
-  `RealArm` runs forward kinematics on `state["Present_Position"]`; `SimBackend` ignores the
-  argument and reads MuJoCo directly.
-- `RobotEnv.step(action, joint_positions, ...)` takes the joint positions the caller already
-  observed, passed separately by `EpisodeRunner` from the current environment state.
-
-The trade is deliberate: the commanded target is built from a reading one control period old
-instead of a fresh one. At 200 Hz that is 5 ms of staleness against 1 to 3 ms of round trip
-latency plus a third of the bus. Do not add a bare `read_state()` back into anything that
-runs per control step.
-
-## Project Layout
-
-```text
-robot_arm/
-├── conf/                    # Hydra configuration
-├── models/                  # MuJoCo robot models
-├── scripts/                 # Training, rollout, and data scripts
-├── src/robot_arm/           # Main package
-├── tests/                   # Automated tests
-├── Makefile                 # Common commands
-└── DEVELOPMENT_NOTES.md     # Project background and technical notes
-```
-
-For project background and accumulated technical notes, read [DEVELOPMENT_NOTES.md](DEVELOPMENT_NOTES.md).
-
-
-
-
-# Current status
-I can setup the physical robot and can move its joints to the center.
-Data recording position, temperature and pwm readings work.
-
-The simulation can learn a inverse kinematics control from 3D position, 3D rotation, and 1D gripper state to joint control.
-I will later extend this to use pwm control on the real robot and hope to achieve smooth movement.
-
-
-I will focus next on smol vla and teaching it some tasks.
-smolvla is there to define the desired path in 3d space + 3d orientation + 1d gripper open/closed
-
-I also want to work on function calling and teaching llms that, so I will probably add a third level a general llm that can tell the vla what to do. Like grab box. move it to the right and so on. (as function calls).
+- [Development notes](DEVELOPMENT_NOTES.md): implementation decisions and detailed workflows.
+- [Limitations](LIMITATIONS.md): known limitations.
+- [TODO](TODO.md): planned work.

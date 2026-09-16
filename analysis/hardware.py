@@ -14,7 +14,7 @@ from pathlib import Path
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 
-from robot_arm.backends.read_sensors import read_block
+from robot_arm.arms.read_sensors import read_block
 
 
 def compare_position_modes(bus) -> dict:

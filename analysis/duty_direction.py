@@ -9,7 +9,7 @@ from pathlib import Path
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 
-from robot_arm.backends.real_arm import RealArm
+from robot_arm.arms.real_arm import RealArm
 
 JOINT = "wrist_roll"
 DUTY = 0.08

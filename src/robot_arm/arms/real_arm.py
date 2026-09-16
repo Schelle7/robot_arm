@@ -6,9 +6,9 @@ from typing import Dict
 import mujoco
 from lerobot.motors.feetech import OperatingMode
 
-from robot_arm.backends.arm import Arm
-from robot_arm.backends.read_sensors import read_block, read_configuration
-from robot_arm.backends.servo import CURRENT_AMPS_PER_TICK, FULL_SCALE_DUTY
+from robot_arm.arms.arm import Arm
+from robot_arm.arms.read_sensors import read_block, read_configuration
+from robot_arm.arms.servo import CURRENT_AMPS_PER_TICK, FULL_SCALE_DUTY
 from robot_arm.geometry.gripper_geometry import get_tcp_geometry
 from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import MOTOR_ORDER

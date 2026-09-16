@@ -3,7 +3,7 @@ import numpy as np
 import csv
 from pathlib import Path
 from typing import Dict
-from robot_arm.backends.arm import Arm
+from robot_arm.arms.arm import Arm
 
 
 class SafetyException(Exception):

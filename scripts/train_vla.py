@@ -9,7 +9,6 @@ from omegaconf import DictConfig
 
 @hydra.main(version_base=None, config_path="../conf", config_name="train_vla")
 def main(cfg: DictConfig) -> None:
-    project_root = Path(__file__).resolve().parent.parent
     dataset_root = Path(to_absolute_path(cfg.dataset_root))
     output_dir = Path(to_absolute_path(cfg.output_dir))
     subprocess.run(
@@ -33,8 +32,6 @@ def main(cfg: DictConfig) -> None:
         check=True,
         env={**os.environ, **dict(cfg.environment)},
     )
-    latest_run_file = project_root / "outputs" / "train_vla" / "latest_run.txt"
-    latest_run_file.write_text(str(output_dir))
 
 
 if __name__ == "__main__":

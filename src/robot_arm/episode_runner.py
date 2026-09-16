@@ -5,7 +5,7 @@ from typing import Dict
 
 from robot_arm.policies.cartesian import CartesianAction, CartesianPolicy, ScriptedCartesianPolicy, waypoint_action_scale
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.action_primitives import ActionPrimitive
+from robot_arm.policies.action_primitives import ActionPrimitive
 from robot_arm.envs.env import EnvironmentState, RobotEnv
 from robot_arm.recording.recorder import EpisodeRecorder
 from robot_arm.robot_schema import HISTORY_JOINT_VELOCITY_SLICE, HISTORY_TCP_VELOCITY_SLICE, policy_observation_sizes

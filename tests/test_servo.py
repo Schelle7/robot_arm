@@ -1,6 +1,6 @@
 import numpy as np
 
-from robot_arm.backends.servo import commanded_duty, duty_to_torque, encoder_tick_radians
+from robot_arm.arms.servo import commanded_duty, duty_to_torque, encoder_tick_radians
 
 # The values read off the arm in outputs/characterize_gripper/2026-08-31/17-47-08.
 TICKS_PER_REVOLUTION = 4096

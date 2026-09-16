@@ -1,7 +1,7 @@
 import mujoco
 import numpy as np
 
-from robot_arm.backends.sim_arm import build_desired_poses
+from robot_arm.arms.sim_arm import build_desired_poses
 from robot_arm.geometry.pose import Pose
 
 

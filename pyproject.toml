@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Personal control code and experiments for an SO-101 follower arm using LeRobot."
 requires-python = "==3.12.13"
 dependencies = [
+    "gdown==6.0.0",
     "lerobot[feetech, smolvla]==0.5.1",
     "pytest==9.1.1",
     "mujoco==3.10.0",
@@ -26,6 +27,9 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"robot_arm.replay" = ["index.html"]
 
 [tool.black]
 line-length = 175

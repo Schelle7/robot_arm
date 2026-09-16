@@ -3,7 +3,7 @@ from collections import deque
 from types import SimpleNamespace
 
 from robot_arm.envs.env import RobotEnv
-from robot_arm.grasp_estimator import GraspEstimator
+from robot_arm.envs.grasp_estimator import GraspEstimator
 from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, MOTOR_ORDER
 

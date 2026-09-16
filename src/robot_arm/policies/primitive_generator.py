@@ -4,7 +4,7 @@ import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.geometry.pose import Pose
-from robot_arm.action_primitives import ActionPrimitive, PickAndPlacePrimitives, relative_move_primitive, random_waypoint_primitive
+from robot_arm.policies.action_primitives import ActionPrimitive, PickAndPlacePrimitives, relative_move_primitive, random_waypoint_primitive
 from robot_arm.robot_schema import BOX_BODY_NAMES
 
 

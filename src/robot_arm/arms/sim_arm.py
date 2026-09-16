@@ -2,11 +2,11 @@ from typing import Dict
 import mujoco
 import numpy as np
 
-from robot_arm.backends.arm import Arm
+from robot_arm.arms.arm import Arm
 from robot_arm.geometry.waypoints import shoulder_pan_position
 from robot_arm.geometry.gripper_geometry import get_tcp_geometry
 from robot_arm.geometry.pose import Pose
-from robot_arm.backends.servo import duty_from_action, duty_to_torque
+from robot_arm.arms.servo import duty_from_action, duty_to_torque
 from robot_arm.robot_schema import BOX_BODY_NAMES, CAMERA_NAMES, OBJECT_COLORS, TILE_BODY_NAME
 
 
@@ -134,7 +134,7 @@ def update_desired_pose_debug_user_scene(scene, desired_poses):
             scene.ngeom += 1
 
 
-class SimBackend(Arm):
+class SimArm(Arm):
     """
     Simulation adapter for the SO-101 using MuJoCo.
     Operates in radians (unlike RealArm which uses raw steps/bits).

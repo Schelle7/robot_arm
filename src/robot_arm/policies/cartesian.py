@@ -1,20 +1,65 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
+import json
 from pathlib import Path
 from typing import Dict, Any
 import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.geometry.pose import Pose, axis_angular_distance
-from robot_arm.action_primitives import ActionPrimitive
+from robot_arm.policies.action_primitives import ActionPrimitive
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES
 
 
 def latest_vla_checkpoint_path() -> str:
-    latest_run_file = Path(__file__).resolve().parents[3] / "outputs" / "train_vla" / "latest_run.txt"
-    training_output_dir = Path(latest_run_file.read_text().strip())
-    checkpoint_path = training_output_dir / "checkpoints" / "last" / "pretrained_model"
-    return str(checkpoint_path)
+    outputs = Path(__file__).resolve().parents[3] / "outputs"
+    runs = []
+    for root_name in ("train_vla", "train_vla_dagger"):
+        for run in (outputs / root_name).glob("????-??-??/??-??-??"):
+            timestamp = datetime.strptime(f"{run.parent.name}/{run.name}", "%Y-%m-%d/%H-%M-%S")
+            training_dirs = [run / "training"] if root_name == "train_vla" else [
+                round_dir / "training" for round_dir in sorted(run.glob("round_*"), reverse=True)
+            ]
+            runs.append((timestamp, run, training_dirs))
+    for run in (outputs / "train_vla").glob("runpod_*"):
+        timestamp_text = run.name.removeprefix("runpod_")
+        timestamp_format = "%Y-%m-%d_%H-%M-%S" if "_" in timestamp_text else "%Y-%m-%d"
+        runs.append((datetime.strptime(timestamp_text, timestamp_format), run, [run]))
+
+    skipped = []
+    for _, run, training_dirs in sorted(runs, reverse=True):
+        for training_dir in training_dirs:
+            checkpoint = training_dir / "checkpoints" / "last" / "pretrained_model"
+            if not _vla_checkpoint_available(checkpoint):
+                skipped.append(training_dir)
+                continue
+            if skipped:
+                print(
+                    f"Using an older available VLA checkpoint: {checkpoint}. "
+                    f"Newer run or round {skipped[0]} has no complete inference checkpoint; "
+                    "it may still be training, downloading, or may have failed."
+                )
+            return str(checkpoint)
+        if not training_dirs:
+            skipped.append(run)
+    raise FileNotFoundError(f"No complete VLA inference checkpoint found under {outputs}.")
+
+
+def _vla_checkpoint_available(checkpoint: Path) -> bool:
+    required = [checkpoint / name for name in (
+        "model.safetensors", "config.json", "policy_preprocessor.json", "policy_postprocessor.json",
+    )]
+    if not all(path.is_file() and path.stat().st_size > 0 for path in required):
+        return False
+    for name in ("policy_preprocessor.json", "policy_postprocessor.json"):
+        processor = json.loads((checkpoint / name).read_text())
+        for step in processor["steps"]:
+            if "state_file" in step:
+                state_file = checkpoint / step["state_file"]
+                if not state_file.is_file() or state_file.stat().st_size == 0:
+                    return False
+    return True
 
 
 def waypoint_action_limits(

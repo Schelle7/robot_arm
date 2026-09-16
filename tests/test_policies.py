@@ -7,7 +7,7 @@ from robot_arm.geometry.waypoints import base_rotation_for_position, generate_or
 from robot_arm.policies.cartesian import ScriptedCartesianPolicy
 from robot_arm.geometry.pose import Pose
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy, generate_pick_and_place
-from robot_arm.action_primitives import ActionPrimitive, relative_move_primitive
+from robot_arm.policies.action_primitives import ActionPrimitive, relative_move_primitive
 
 
 def make_policy():
