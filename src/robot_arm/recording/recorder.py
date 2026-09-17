@@ -47,34 +47,26 @@ class EpisodeRecorder:
     def record_transition(
         self,
         state_idx: int,
-        obs: Dict[str, np.ndarray],
-        sensor_state: Dict[str, Any],
+        state,
         reward: float,
-        cartesian_action: np.ndarray,
-        teacher_cartesian_action: np.ndarray,
-        teacher_completes_active_primitive: bool,
-        teacher_completion_score: float,
-        pose,
-        sim_state: Dict[str, np.ndarray] | None,
+        cartesian_action,
+        teacher_action,
         images: dict[str, np.ndarray] | None,
         vla_input_state: np.ndarray,
         primitive_prompt: str,
         primitive_index: int,
-        diagnostics: Dict[str, Any],
-        completes_active_primitive: bool,
-        grasp_confirmed: bool,
     ):
-        assert teacher_cartesian_action.shape == (len(CARTESIAN_ACTION_NAMES),)
+        assert teacher_action.cartesian_action.shape == (len(CARTESIAN_ACTION_NAMES),)
         self.states.append(
             self._make_state(
                 state_idx=state_idx,
                 primitive_index=primitive_index,
-                obs=obs,
-                sensor_state=sensor_state,
-                pose=pose,
-                sim_state=sim_state,
+                obs=state.observation,
+                sensor_state=state.sensor_state,
+                pose=state.end_effector_pose,
+                sim_state=state.sim_state if self.record_sim_state else None,
                 images=images,
-                grasp_confirmed=grasp_confirmed,
+                grasp_confirmed=state.grasp_confirmed,
             )
         )
         self.transitions.append(
@@ -83,12 +75,16 @@ class EpisodeRecorder:
                 "primitive_prompt": primitive_prompt,
                 "vla_input_state": vla_input_state.copy(),
                 "reward": float(reward),
-                "cartesian_action": cartesian_action.copy(),
-                "teacher_cartesian_action": teacher_cartesian_action.copy(),
-                "teacher_completes_active_primitive": bool(teacher_completes_active_primitive),
-                "teacher_completion_score": float(teacher_completion_score),
-                "diagnostics": diagnostics.copy(),
-                "completes_active_primitive": bool(completes_active_primitive),
+                "cartesian_action": cartesian_action.cartesian_action.copy(),
+                "teacher_cartesian_action": teacher_action.cartesian_action.copy(),
+                "teacher_completes_active_primitive": bool(teacher_action.completes_active_primitive),
+                "teacher_completion_score": float(teacher_action.diagnostics["teacher_completion_score"]),
+                "diagnostics": {
+                    **teacher_action.diagnostics,
+                    **cartesian_action.diagnostics,
+                    "teacher_completes_active_primitive": teacher_action.completes_active_primitive,
+                },
+                "completes_active_primitive": bool(cartesian_action.completes_active_primitive),
                 "dense_trajectory": self.dense_trajectory_buffer.copy(),
             }
         )
@@ -96,25 +92,21 @@ class EpisodeRecorder:
 
     def record_final_state(
         self,
-        grasp_confirmed: bool,
+        state,
         state_idx: int,
         primitive_index: int,
-        obs: Dict[str, np.ndarray],
-        sensor_state: Dict[str, Any],
-        pose,
-        sim_state: Dict[str, np.ndarray] | None,
         images: dict[str, np.ndarray] | None,
     ):
         self.states.append(
             self._make_state(
                 state_idx=state_idx,
                 primitive_index=primitive_index,
-                obs=obs,
-                sensor_state=sensor_state,
-                pose=pose,
-                sim_state=sim_state,
+                obs=state.observation,
+                sensor_state=state.sensor_state,
+                pose=state.end_effector_pose,
+                sim_state=state.sim_state if self.record_sim_state else None,
                 images=images,
-                grasp_confirmed=grasp_confirmed,
+                grasp_confirmed=state.grasp_confirmed,
             )
         )
 
@@ -131,7 +123,7 @@ class EpisodeRecorder:
             "sim_state": sim_state,
         }
 
-    def append_low_level_transition(
+    def append_joint_transition(
         self,
         obs: Dict[str, np.ndarray],
         next_obs: Dict[str, np.ndarray],
@@ -144,7 +136,7 @@ class EpisodeRecorder:
         next_state,
     ):
         """
-        Record a single low-level RL transition step in the environment.
+        Record a single joint RL transition step in the environment.
         Currently, this method just caches dense steps on the most recently added frame
         so that when we save, we can view the whole micro-trajectory that occurred during the high-level step.
         """

@@ -8,6 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from robot_arm.arms.sim_arm import build_desired_poses
 from robot_arm.geometry.pose import Pose, axis_angular_distance
+from robot_arm.run_paths import run_timestamp
 
 
 def calculate_pose_delta(start_pose_10d, end_pose_10d):
@@ -34,7 +35,7 @@ def calculate_pose_delta(start_pose_10d, end_pose_10d):
 def rollout_timestamp(episode_path: str) -> datetime:
     """Every rollout script writes outputs/rollout/<script>/<date>/<time>/<recordings>/<episode>/episode.npz."""
     run_directory = Path(episode_path).resolve().parents[2]
-    return datetime.strptime(f"{run_directory.parent.name} {run_directory.name}", "%Y-%m-%d %H-%M-%S")
+    return run_timestamp(run_directory)
 
 
 def find_latest_episode():

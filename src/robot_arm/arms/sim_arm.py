@@ -7,7 +7,7 @@ from robot_arm.geometry.waypoints import shoulder_pan_position
 from robot_arm.geometry.gripper_geometry import get_tcp_geometry
 from robot_arm.geometry.pose import Pose
 from robot_arm.arms.servo import duty_from_action, duty_to_torque
-from robot_arm.robot_schema import BOX_BODY_NAMES, CAMERA_NAMES, OBJECT_COLORS, TILE_BODY_NAME
+from robot_arm.robot_schema import BOX_BODY_NAMES, CAMERA_NAMES, MOTOR_ORDER, OBJECT_COLORS, TILE_BODY_NAME
 
 
 def object_color(model, body_name: str) -> str:
@@ -142,24 +142,14 @@ class SimArm(Arm):
     Unit conversion is done higher up the stack.
     """
 
-    def __init__(
-        self,
-        model_path: str,
-        camera_configs,
-        initial_joint_mode: str,
-        initial_joint_range_percent: tuple[float, float],
-        initial_joint_positions,
-        disable_box_collisions: bool,
-        object_placement,
-        mujoco_steps_per_control_step: int,
-        servo,
-    ):
-        self.model = mujoco.MjModel.from_xml_path(model_path)
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.model = mujoco.MjModel.from_xml_path(cfg.model_path)
         self.added_weight_body_id = self.model.body("added_weight").id
         self.box_mass_kg = float(self.model.body(BOX_BODY_NAMES[0]).mass[0])
         added_weight_radius = float(self.model.geom("added_weight_geom").size[0])
         self.added_weight_inertia_per_kg = 2.0 / 5.0 * added_weight_radius**2
-        if disable_box_collisions:
+        if cfg.runtime.disable_box_collisions:
             for body_name in BOX_BODY_NAMES:
                 body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
                 assert body_id != -1, f"Body {body_name!r} not found in MuJoCo model."
@@ -168,18 +158,18 @@ class SimArm(Arm):
                 self.model.geom_contype[geom_start : geom_start + geom_count] = 0
                 self.model.geom_conaffinity[geom_start : geom_start + geom_count] = 0
         self.data = mujoco.MjData(self.model)
-        self.initial_joint_mode = initial_joint_mode
-        self.initial_joint_range_percent = initial_joint_range_percent
-        self.initial_joint_positions = initial_joint_positions
-        self.object_placement = object_placement
-        self.mujoco_steps_per_control_step = mujoco_steps_per_control_step
-        self.servo = servo
+        self.initial_joint_mode = cfg.control.initial_joints.mode
+        self.initial_joint_range_percent = cfg.control.initial_joints.range_percent
+        self.initial_joint_positions = cfg.control.initial_joints.positions_radians
+        self.object_placement = cfg.scene.object_placement
+        self.mujoco_steps_per_control_step = cfg.control.frequencies.mujoco // cfg.control.frequencies.joint
+        self.servo = cfg.servo
 
-        self.camera_configs = camera_configs
-        assert tuple(camera_configs) == CAMERA_NAMES
+        self.camera_configs = cfg.camera.cameras
+        assert tuple(cfg.camera.cameras) == CAMERA_NAMES
         self.renderers = {
             camera_name: mujoco.Renderer(self.model, height=config.height, width=config.width)
-            for camera_name, config in camera_configs.items()
+            for camera_name, config in cfg.camera.cameras.items()
         }
         self.waypoints = []
         self.active_waypoint_index = 0
@@ -191,11 +181,10 @@ class SimArm(Arm):
         self.actuator_indices = {mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i): i for i in range(self.model.nu)}
 
         self.joint_indices = {name: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in self.actuator_indices}
-
         # Indexed in actuator order so the servo law runs on all six joints as one vector operation.
         self.actuator_order = sorted(self.actuator_indices, key=self.actuator_indices.get)
         self.actuator_dof_indices = np.array([self.model.jnt_dofadr[self.joint_indices[name]] for name in self.actuator_order])
-        self.max_duty = np.array([float(servo.max_duty[name]) for name in self.actuator_order])
+        self.max_duty = np.array([float(cfg.servo.max_duty[name]) for name in self.actuator_order])
         self.commanded_duty = np.zeros(self.model.nu)
 
     @property
@@ -234,7 +223,7 @@ class SimArm(Arm):
 
         return Pose.from_matrix(pos, rot_mat, 1.0)  # pose with gripper info is a bit weird but ok for now
 
-    def read_state(self) -> Dict[str, Dict[str, float]]:
+    def _read_state(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel and the commanded duty to our expected dictionary format
         sample_time_ns = round(self.data.time * 1_000_000_000)
         state = {
@@ -273,13 +262,14 @@ class SimArm(Arm):
         }
 
     def restore_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> None:
+        self.smoothed_duties = dict.fromkeys(MOTOR_ORDER, 0.0)
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[:] = qpos
         self.data.qvel[:] = qvel
         self.commanded_duty[:] = 0.0
         mujoco.mj_forward(self.model, self.data)
 
-    def write_duty(self, duties: Dict[str, float]) -> None:
+    def _write_duty(self, duties: Dict[str, float]) -> None:
         requested = np.zeros(self.model.nu)
         for name, duty_fraction in duties.items():
             requested[self.actuator_indices[name]] = duty_fraction
@@ -411,6 +401,7 @@ class SimArm(Arm):
             raise ValueError(f"Unknown initial joint mode: {self.initial_joint_mode!r}")
 
     def reset_sim(self, enable_added_weight: bool):
+        self.smoothed_duties = dict.fromkeys(MOTOR_ORDER, 0.0)
         mujoco.mj_resetData(self.model, self.data)
         self.commanded_duty[:] = 0.0
         # Placement is measured from the shoulder anchor, which is only valid once kinematics have run.

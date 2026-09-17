@@ -111,7 +111,7 @@ def _print_dense_traces(rollout: Rollout) -> None:
     if not steps:
         return
 
-    _banner(f"per-dense-step traces, {len(steps)} low level joint steps")
+    _banner(f"per-dense-step traces, {len(steps)} joint joint steps")
 
     _trace("action, policy output before duty scaling", MOTOR_ORDER, stack_dense(steps, "action"))
     _trace("requested_duty, before safety processing", MOTOR_ORDER, stack_dense(steps, "requested_duty"))

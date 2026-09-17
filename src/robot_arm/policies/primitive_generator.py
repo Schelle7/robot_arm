@@ -3,8 +3,9 @@ from typing import Any, List
 import numpy as np
 from omegaconf import DictConfig
 
+from robot_arm.control_types import ActionPrimitive, EnvironmentState
 from robot_arm.geometry.pose import Pose
-from robot_arm.policies.action_primitives import ActionPrimitive, PickAndPlacePrimitives, relative_move_primitive, random_waypoint_primitive
+from robot_arm.policies.action_primitives import PickAndPlacePrimitives, relative_move_primitive, random_waypoint_primitive
 from robot_arm.robot_schema import BOX_BODY_NAMES
 
 
@@ -35,7 +36,9 @@ class ScriptedPrimitiveGeneratorPolicy:
         self.next_primitive_index += 1
         return primitive_index, primitive
 
-    def build_vla_input_state(self, primitive: ActionPrimitive, current_pose: Pose, gripper_duty: float) -> np.ndarray:
+    def build_vla_input_state(self, primitive: ActionPrimitive, state: EnvironmentState) -> np.ndarray:
+        current_pose = state.end_effector_pose
+        gripper_duty = float(state.observation["gripper_duty"][0])
         current_pose_7d = current_pose.as_7d()
         if primitive.include_target_offset:
             target_offset_7d = current_pose.delta_to(primitive.target_pose)

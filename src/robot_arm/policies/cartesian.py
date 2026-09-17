@@ -1,65 +1,12 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import datetime
-import json
-from pathlib import Path
 from typing import Dict, Any
 import numpy as np
 from omegaconf import DictConfig
 
+from robot_arm.control_types import ActionPrimitive, CartesianAction, EnvironmentState
 from robot_arm.geometry.pose import Pose, axis_angular_distance
-from robot_arm.policies.action_primitives import ActionPrimitive
 from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES
 
-
-def latest_vla_checkpoint_path() -> str:
-    outputs = Path(__file__).resolve().parents[3] / "outputs"
-    runs = []
-    for root_name in ("train_vla", "train_vla_dagger"):
-        for run in (outputs / root_name).glob("????-??-??/??-??-??"):
-            timestamp = datetime.strptime(f"{run.parent.name}/{run.name}", "%Y-%m-%d/%H-%M-%S")
-            training_dirs = [run / "training"] if root_name == "train_vla" else [
-                round_dir / "training" for round_dir in sorted(run.glob("round_*"), reverse=True)
-            ]
-            runs.append((timestamp, run, training_dirs))
-    for run in (outputs / "train_vla").glob("runpod_*"):
-        timestamp_text = run.name.removeprefix("runpod_")
-        timestamp_format = "%Y-%m-%d_%H-%M-%S" if "_" in timestamp_text else "%Y-%m-%d"
-        runs.append((datetime.strptime(timestamp_text, timestamp_format), run, [run]))
-
-    skipped = []
-    for _, run, training_dirs in sorted(runs, reverse=True):
-        for training_dir in training_dirs:
-            checkpoint = training_dir / "checkpoints" / "last" / "pretrained_model"
-            if not _vla_checkpoint_available(checkpoint):
-                skipped.append(training_dir)
-                continue
-            if skipped:
-                print(
-                    f"Using an older available VLA checkpoint: {checkpoint}. "
-                    f"Newer run or round {skipped[0]} has no complete inference checkpoint; "
-                    "it may still be training, downloading, or may have failed."
-                )
-            return str(checkpoint)
-        if not training_dirs:
-            skipped.append(run)
-    raise FileNotFoundError(f"No complete VLA inference checkpoint found under {outputs}.")
-
-
-def _vla_checkpoint_available(checkpoint: Path) -> bool:
-    required = [checkpoint / name for name in (
-        "model.safetensors", "config.json", "policy_preprocessor.json", "policy_postprocessor.json",
-    )]
-    if not all(path.is_file() and path.stat().st_size > 0 for path in required):
-        return False
-    for name in ("policy_preprocessor.json", "policy_postprocessor.json"):
-        processor = json.loads((checkpoint / name).read_text())
-        for step in processor["steps"]:
-            if "state_file" in step:
-                state_file = checkpoint / step["state_file"]
-                if not state_file.is_file() or state_file.stat().st_size == 0:
-                    return False
-    return True
 
 
 def waypoint_action_limits(
@@ -118,22 +65,13 @@ def make_waypoint_pose(
     )
 
 
-@dataclass
-class CartesianAction:
-    cartesian_action: np.ndarray
-    diagnostics: Dict[str, Any]
-    completes_active_primitive: bool
-
-
 class CartesianPolicy(ABC):
     @abstractmethod
     def get_action(
         self,
-        current_pose: Pose,
+        state: EnvironmentState,
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
-        gripper_duty: float,
-        grasp_confirmed: bool,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         raise NotImplementedError
@@ -183,11 +121,9 @@ class VLACartesianPolicy(CartesianPolicy):
 
     def get_action(
         self,
-        current_pose: Pose,
+        state: EnvironmentState,
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
-        gripper_duty: float,
-        grasp_confirmed: bool,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         import torch
@@ -205,7 +141,9 @@ class VLACartesianPolicy(CartesianPolicy):
             cartesian_action=action[:len(CARTESIAN_ACTION_NAMES)],
             diagnostics={"completion_score": completion_score},
             completes_active_primitive=bool(completion_score >= 0.5)
-            and (primitive.prompt != "close gripper" or grasp_confirmed),
+            and (primitive.prompt != "close gripper" or state.grasp_confirmed),
+            desired_gripper_duty=primitive.desired_gripper_duty,
+            desired_gripper_duty_active=primitive.desired_gripper_duty_active,
         )
 
 
@@ -291,23 +229,21 @@ class ScriptedCartesianPolicy(CartesianPolicy):
 
     def get_action(
         self,
-        current_pose: Pose,
+        state: EnvironmentState,
         images: dict[str, np.ndarray],
         vla_input_state: np.ndarray,
-        gripper_duty: float,
-        grasp_confirmed: bool,
         primitive: ActionPrimitive,
     ) -> CartesianAction:
         waypoint_delta, diagnostics, completes_active_primitive = self._evaluate_target(
-            current_pose,
+            state.end_effector_pose,
             primitive.target_pose,
-            gripper_duty,
+            float(state.observation["gripper_duty"][0]),
             primitive,
         )
         completes_active_primitive = completes_active_primitive and (
-            primitive.prompt != "close gripper" or grasp_confirmed
+            primitive.prompt != "close gripper" or state.grasp_confirmed
         )
-        if primitive.prompt == "close gripper" and not grasp_confirmed:
+        if primitive.prompt == "close gripper" and not state.grasp_confirmed:
             diagnostics["teacher_completion_score"] = 0.0
 
         # The completion tolerances are set independently of the speeds, so a completing step can
@@ -329,4 +265,6 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             cartesian_action=waypoint_delta,
             diagnostics=diagnostics,
             completes_active_primitive=completes_active_primitive,
+            desired_gripper_duty=primitive.desired_gripper_duty,
+            desired_gripper_duty_active=primitive.desired_gripper_duty_active,
         )

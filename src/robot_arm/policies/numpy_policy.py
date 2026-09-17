@@ -1,5 +1,4 @@
 import numpy as np
-from pathlib import Path
 
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES
 
@@ -66,8 +65,8 @@ def load_actor_layers(arrays, branch: str) -> tuple[dict[str, np.ndarray], ...]:
 
 
 def load_numpy_policy(checkpoint_path: str) -> NumpySACPolicy:
-    actor_path = Path(checkpoint_path).with_suffix(".actor.npz")
-    arrays = np.load(actor_path)
+    print(f"Loading joint policy from: {checkpoint_path}")
+    arrays = np.load(checkpoint_path)
     observation_sizes = {name: int(arrays[f"observation_size_{name}"]) for name in POLICY_OBSERVATION_NAMES}
     actor_params = {
         "history_encoder": load_actor_layers(arrays, "history_encoder"),

@@ -32,7 +32,7 @@ class FakeArm:
         assert names == ["wrist_roll"]
         self.torque = 0
 
-    def write_duty(self, duties):
+    def write_duty(self, duties, positions):
         self.duty = duties["wrist_roll"]
         self.commands.append(self.duty)
 
@@ -94,10 +94,10 @@ def test_failed_zero_duty_cleanup_still_disables_torque():
     arm = FakeArm()
     original = arm.write_duty
 
-    def write(duties):
+    def write(duties, positions):
         if duties["wrist_roll"] == 0 and arm.torque:
             raise ConnectionError("Zero duty failed")
-        original(duties)
+        original(duties, positions)
 
     arm.write_duty = write
     with pytest.raises(ConnectionError, match="Zero duty failed"):

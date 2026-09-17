@@ -154,7 +154,7 @@ def worker_process(
         int(cfg.waypoint.cartesian_action_dim),
         env.policy_history_steps,
     )
-    low_level_policy = NumpySACPolicy(initial_actor_params, observation_sizes, int(cfg.seed) + worker_id + 1)
+    joint_policy = NumpySACPolicy(initial_actor_params, observation_sizes, int(cfg.seed) + worker_id + 1)
 
     cartesian_policy = ScriptedCartesianPolicy(cfg)
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(cfg)
@@ -165,7 +165,7 @@ def worker_process(
     runner = EpisodeRunner(
         cfg=cfg,
         env=env,
-        low_level_policy=low_level_policy,
+        joint_policy=joint_policy,
         primitive_policy=primitive_policy,
         cartesian_policy=cartesian_policy,
         training=True,

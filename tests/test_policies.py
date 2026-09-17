@@ -2,12 +2,17 @@ import mujoco
 import numpy as np
 import pytest
 from omegaconf import OmegaConf
+from robot_arm.control_types import ActionPrimitive, EnvironmentState
 
 from robot_arm.geometry.waypoints import base_rotation_for_position, generate_oriented_waypoint
 from robot_arm.policies.cartesian import ScriptedCartesianPolicy
 from robot_arm.geometry.pose import Pose
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy, generate_pick_and_place
-from robot_arm.policies.action_primitives import ActionPrimitive, relative_move_primitive
+from robot_arm.policies.action_primitives import relative_move_primitive
+
+
+def make_state(pose, gripper_duty, grasp_confirmed):
+    return EnvironmentState({"gripper_duty": np.array([gripper_duty])}, {}, pose, None, grasp_confirmed)
 
 
 def make_policy():
@@ -48,14 +53,12 @@ def make_primitive(start_pose: Pose, target_pose: Pose, prompt: str = "follow wa
 
 def get_scripted_action(policy, current_pose: Pose, target_pose: Pose):
     return policy.get_action(
-        current_pose=current_pose,
+        state=make_state(current_pose, 0.0, False),
         images={
             "external_camera": np.zeros((1, 1, 3), dtype=np.uint8),
             "wrist_camera": np.zeros((1, 1, 3), dtype=np.uint8),
         },
         vla_input_state=np.zeros(16, dtype=np.float32),
-        gripper_duty=0.0,
-        grasp_confirmed=False,
         primitive=make_primitive(current_pose, target_pose),
     )
 
@@ -77,7 +80,7 @@ def test_completion_score_uses_active_duty_and_requires_grasp(grasp_confirmed, s
     target = Pose.from_euler([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 3.0, "XYZ", False)
     primitive = make_primitive(current, target, "close gripper", False)
     primitive.desired_gripper_duty_active = True
-    output = policy.get_action(current, {}, np.zeros(16), 0.05, grasp_confirmed, primitive)
+    output = policy.get_action(make_state(current, 0.05, grasp_confirmed), {}, np.zeros(16), primitive)
     assert output.diagnostics["teacher_completion_score"] == pytest.approx(score)
     assert output.completes_active_primitive == grasp_confirmed
 
@@ -131,7 +134,7 @@ def test_scripted_primitive_policy_builds_current_vla_context_and_advances_immed
     ]
 
     primitive_index, primitive = primitive_policy.get_next_primitive(start_pose)
-    vla_input_state = primitive_policy.build_vla_input_state(primitive, start_pose, 0.25)
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, make_state(start_pose, 0.25, False))
 
     np.testing.assert_allclose(vla_input_state[:7], start_pose.as_7d())
     np.testing.assert_allclose(vla_input_state[7:10], [0.1, 0.0, 0.0])
@@ -143,7 +146,7 @@ def test_scripted_primitive_policy_builds_current_vla_context_and_advances_immed
 
     actual_next_start_pose = Pose.from_euler([0.09, 0.0, 0.0], [0.0, 0.0, 0.0], 0.19, "XYZ", False)
     _, next_primitive = primitive_policy.get_next_primitive(actual_next_start_pose)
-    next_vla_input_state = primitive_policy.build_vla_input_state(next_primitive, actual_next_start_pose, 0.0)
+    next_vla_input_state = primitive_policy.build_vla_input_state(next_primitive, make_state(actual_next_start_pose, 0.0, False))
     np.testing.assert_allclose(next_vla_input_state[:7], actual_next_start_pose.as_7d())
 
 
@@ -154,7 +157,7 @@ def test_scripted_primitive_policy_updates_remaining_target_offset():
     target_pose = Pose.from_euler([0.1, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
     primitive = make_primitive(start_pose, target_pose, "move right")
 
-    vla_input_state = primitive_policy.build_vla_input_state(primitive, current_pose, 0.0)
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, make_state(current_pose, 0.0, False))
 
     np.testing.assert_allclose(vla_input_state[:7], current_pose.as_7d())
     np.testing.assert_allclose(vla_input_state[7:10], [0.06, 0.0, 0.0])
@@ -166,7 +169,7 @@ def test_scripted_primitive_policy_hides_privileged_target_offset():
     target_pose = Pose.from_euler([0.1, 0.2, 0.3], [0.0, 0.0, 0.0], 0.0, "XYZ", False)
     primitive = make_primitive(current_pose, target_pose, "move above the red tile", include_target_offset=False)
 
-    vla_input_state = primitive_policy.build_vla_input_state(primitive, current_pose, 0.25)
+    vla_input_state = primitive_policy.build_vla_input_state(primitive, make_state(current_pose, 0.25, False))
 
     np.testing.assert_array_equal(vla_input_state[7:14], np.zeros(7, dtype=np.float32))
     assert vla_input_state[14] == 0.0

@@ -7,7 +7,7 @@ from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPol
 from robot_arm.recording.recorder import EpisodeRecorder
 
 
-def collect_episodes(cfg, env, low_level_policy, cartesian_policy, run_dir: Path, num_episodes: int) -> Path:
+def collect_episodes(cfg, env, joint_policy, cartesian_policy, run_dir: Path, num_episodes: int) -> Path:
     primitive_generator_policy = ScriptedPrimitiveGeneratorPolicy(cfg)
     recordings_dir = run_dir / "recordings"
     for episode_index in range(num_episodes):
@@ -21,7 +21,7 @@ def collect_episodes(cfg, env, low_level_policy, cartesian_policy, run_dir: Path
             runner = EpisodeRunner(
                 cfg=cfg,
                 env=env,
-                low_level_policy=low_level_policy,
+                joint_policy=joint_policy,
                 primitive_policy=primitive_generator_policy,
                 cartesian_policy=cartesian_policy,
                 training=False,

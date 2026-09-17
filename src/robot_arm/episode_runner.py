@@ -3,18 +3,18 @@ import queue
 from omegaconf import DictConfig
 from typing import Dict
 
-from robot_arm.policies.cartesian import CartesianAction, CartesianPolicy, ScriptedCartesianPolicy, waypoint_action_scale
+from robot_arm.policies.cartesian import CartesianPolicy, ScriptedCartesianPolicy
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
-from robot_arm.policies.action_primitives import ActionPrimitive
-from robot_arm.envs.env import EnvironmentState, RobotEnv
+from robot_arm.envs.env import RobotEnv
+from robot_arm.control_types import ActionPrimitive, CartesianAction, EnvironmentState
 from robot_arm.recording.recorder import EpisodeRecorder
-from robot_arm.robot_schema import HISTORY_JOINT_VELOCITY_SLICE, HISTORY_TCP_VELOCITY_SLICE, policy_observation_sizes
+from robot_arm.policies.joint_observation import JointObservationBuilder
 
 
 class EpisodeRunner:
     """
     Orchestrates the entire episode.
-    Handles high/low level syncing, logging to recorder,
+    Handles Cartesian/joint synchronization, logging to recorder,
     and returns transitions for the training buffers.
     """
 
@@ -22,7 +22,7 @@ class EpisodeRunner:
         self,
         cfg: DictConfig,
         env: RobotEnv,
-        low_level_policy,
+        joint_policy,
         primitive_policy: ScriptedPrimitiveGeneratorPolicy,
         cartesian_policy: CartesianPolicy,
         training: bool,
@@ -48,7 +48,7 @@ class EpisodeRunner:
 
         self.env = env
         self.joint_steps_per_cartesian_action = joint_hz // cartesian_hz
-        self.low_level_policy = low_level_policy
+        self.joint_policy = joint_policy
         self.primitive_policy = primitive_policy
         self.cartesian_policy = cartesian_policy
         self.teacher_policy = ScriptedCartesianPolicy(cfg)
@@ -59,30 +59,14 @@ class EpisodeRunner:
         self.cfg = cfg
         self.weights_queue = weights_queue
         self.progress = progress
-        self.joint_velocity_scale = cfg.control.joint_velocity_scale_radians_per_second
         self.duty_limits = np.array(
             [float(cfg.servo.max_duty[motor] / cfg.servo.full_scale_duty) for motor in self.env.motor_order],
             dtype=np.float32,
         )
 
-        self.cartesian_action_scale = waypoint_action_scale(
-            cartesian_hz,
-            cfg.waypoint.position_speed_meters_per_second,
-            cfg.waypoint.rotation_speed_radians_per_second,
-            cfg.waypoint.gripper_speed_radians_per_second,
-        )
-
-        self.tcp_velocity_scale = np.array(
-            [cfg.waypoint.position_speed_meters_per_second] * 3 + [cfg.waypoint.rotation_speed_radians_per_second] * 3,
-            dtype=np.float32,
-        )
-        self.policy_observation_sizes = policy_observation_sizes(
-            int(cfg.waypoint.cartesian_action_dim),
-            self.env.policy_history_steps,
-        )
+        self.joint_observation = JointObservationBuilder(cfg, self.env.policy_history_steps)
 
         self.max_cartesian_steps = int(cfg.control.max_seconds * cartesian_hz)
-        self.episode_low_level_step = 0
         self.training_cartesian_action_count = 0
 
     def _prepare_primitives(self, generate_primitives: bool, start_pose):
@@ -106,13 +90,9 @@ class EpisodeRunner:
     def _record_final_state(self, state: EnvironmentState, state_idx: int, primitive_index: int):
         if self.recorder:
             self.recorder.record_final_state(
-                grasp_confirmed=state.grasp_confirmed,
+                state=state,
                 state_idx=state_idx,
                 primitive_index=primitive_index,
-                obs=state.observation,
-                sensor_state=state.sensor_state,
-                pose=state.end_effector_pose,
-                sim_state=state.sim_state if self.cfg.runtime.record_sim_state else None,
                 images=self.env.read_cameras() if self.cfg.runtime.capture_camera else None,
             )
 
@@ -134,35 +114,21 @@ class EpisodeRunner:
     ):
         if self.recorder:
             teacher_action = self.teacher_policy.get_action(
-                current_pose=state.end_effector_pose,
+                state=state,
                 images=images,
                 vla_input_state=vla_input_state,
-                gripper_duty=float(state.observation["gripper_duty"][0]),
-                grasp_confirmed=state.grasp_confirmed,
                 primitive=primitive,
             )
             self.recorder.record_transition(
-                grasp_confirmed=state.grasp_confirmed,
                 state_idx=state_idx,
-                obs=state.observation,
-                sensor_state=state.sensor_state,
+                state=state,
                 reward=reward,
-                cartesian_action=cartesian_action.cartesian_action,
-                teacher_cartesian_action=teacher_action.cartesian_action,
-                teacher_completes_active_primitive=teacher_action.completes_active_primitive,
-                teacher_completion_score=teacher_action.diagnostics["teacher_completion_score"],
-                pose=state.end_effector_pose,
-                sim_state=state.sim_state if self.cfg.runtime.record_sim_state else None,
+                cartesian_action=cartesian_action,
+                teacher_action=teacher_action,
                 images=images,
                 vla_input_state=vla_input_state,
                 primitive_prompt=primitive.prompt,
                 primitive_index=primitive_index,
-                diagnostics={
-                    **teacher_action.diagnostics,
-                    **cartesian_action.diagnostics,
-                    "teacher_completes_active_primitive": teacher_action.completes_active_primitive,
-                },
-                completes_active_primitive=cartesian_action.completes_active_primitive,
             )
 
     def _publish_cartesian_action_metrics(self, total_reward, cartesian_action_reward_metrics):
@@ -175,52 +141,11 @@ class EpisodeRunner:
 
             self.metrics_queue.add(detailed_metrics)
 
-    def _build_policy_observation(
-        self,
-        observation: Dict[str, np.ndarray],
-        remaining_delta: np.ndarray,
-        joint_step: int,
-        desired_gripper_duty: float,
-        desired_gripper_duty_active: bool,
-    ) -> Dict[str, np.ndarray]:
-        history_steps = observation["policy_history"].copy()
-        history_steps[:, HISTORY_JOINT_VELOCITY_SLICE] /= self.joint_velocity_scale
-        history_steps[:, HISTORY_TCP_VELOCITY_SLICE] /= self.tcp_velocity_scale
-        history = np.concatenate((observation["joint_positions"], history_steps.reshape(-1))).astype(np.float32)
-
-        state = np.concatenate(
-            (
-                observation["joint_positions"],
-                observation["joint_velocities"] / self.joint_velocity_scale,
-                observation["tcp_position"],
-                observation["tcp_velocity"] / self.tcp_velocity_scale,
-                observation["gripper_duty"],
-            )
-        ).astype(np.float32)
-        goal = np.concatenate(
-            (
-                remaining_delta / self.cartesian_action_scale,
-                np.array(
-                    [
-                        (self.joint_steps_per_cartesian_action - joint_step) / self.joint_steps_per_cartesian_action,
-                        desired_gripper_duty,
-                        float(desired_gripper_duty_active),
-                        desired_gripper_duty - float(observation["gripper_duty"][0]),
-                    ],
-                    dtype=np.float32,
-                ),
-            )
-        )
-        policy_observation = {"history": history, "state": state, "goal": goal}
-        for name, values in policy_observation.items():
-            assert values.shape == (self.policy_observation_sizes[name],)
-        return policy_observation
-
-    def _record_low_level_transition(
+    def _record_joint_transition(
         self,
         policy_observation: Dict[str, np.ndarray],
         next_policy_observation: Dict[str, np.ndarray],
-        low_level_action: np.ndarray,
+        joint_action: np.ndarray,
         reward: float,
         reward_breakdown: Dict[str, float],
         cartesian_action_terminated: bool,
@@ -229,10 +154,10 @@ class EpisodeRunner:
         next_state: EnvironmentState,
     ):
         if self.recorder and self.cfg.runtime.record_policy_debug:
-            self.recorder.append_low_level_transition(
+            self.recorder.append_joint_transition(
                 policy_observation,
                 next_policy_observation,
-                low_level_action,
+                joint_action,
                 reward,
                 reward_breakdown,
                 cartesian_action_terminated,
@@ -245,7 +170,7 @@ class EpisodeRunner:
         self,
         policy_observation: Dict[str, np.ndarray],
         next_policy_observation: Dict[str, np.ndarray],
-        low_level_action: np.ndarray,
+        joint_action: np.ndarray,
         reward: float,
         cartesian_action_terminated: bool,
     ):
@@ -253,39 +178,34 @@ class EpisodeRunner:
             self.replay_buffer.add(
                 policy_observation,
                 next_policy_observation,
-                low_level_action,
+                joint_action,
                 reward,
                 cartesian_action_terminated,
             )
 
-    def _step_low_level(
+    def _step_joint(
         self,
         policy_observation: Dict[str, np.ndarray],
         joint_positions: np.ndarray,
-        cartesian_action: np.ndarray,
+        joint_step_idx: int,
+        cartesian_action: CartesianAction,
         cartesian_action_start_pose: object,
-        cartesian_action_ends: bool,
-        desired_gripper_duty: float,
-        desired_gripper_duty_active: bool,
     ):
-        low_level_action, _ = self.low_level_policy.predict(policy_observation, deterministic=not self.training)
-        duty_action = low_level_action * self.duty_limits
+        joint_action, _ = self.joint_policy.predict(policy_observation, deterministic=not self.training)
+        duty_action = joint_action * self.duty_limits
         next_state, reward, reward_breakdown = self.env.step(
             duty_action,
             joint_positions,
-            low_level_action,
-            float(policy_observation["goal"][len(cartesian_action)]),
+            joint_action,
+            joint_step_idx,
             cartesian_action,
             cartesian_action_start_pose,
-            cartesian_action_ends,
-            desired_gripper_duty,
-            desired_gripper_duty_active,
         )
 
         if self.cfg.runtime.draw_tcp:
             self.env.arm.draw_tcp()
 
-        return low_level_action, duty_action, next_state, reward, reward_breakdown
+        return joint_action, duty_action, next_state, reward, reward_breakdown
 
     def _update_cartesian_action_reward_metrics(self, cartesian_action_reward_metrics, reward_breakdown):
         if self.cfg.training.detailed_metrics:
@@ -348,31 +268,27 @@ class EpisodeRunner:
     ) -> tuple[EnvironmentState, int, bool]:
         if self.progress is not None:
             self.progress.set_description(primitive.prompt)
+
         while completed_steps < self.max_cartesian_steps:
-            current_pose = state.end_effector_pose
-            gripper_duty = float(state.observation["gripper_duty"][0])
-            vla_input_state = self.primitive_policy.build_vla_input_state(primitive, current_pose, gripper_duty)
+            vla_input_state = self.primitive_policy.build_vla_input_state(primitive, state)
             images = self.env.read_cameras() if self.cfg.runtime.capture_camera else None
+
             cartesian_action = self.cartesian_policy.get_action(
-                current_pose=current_pose,
+                state=state,
                 images=images,
                 vla_input_state=vla_input_state,
-                gripper_duty=gripper_duty,
-                grasp_confirmed=state.grasp_confirmed,
                 primitive=primitive,
             )
 
             self._draw_desired_path(
-                current_pose,
+                state.end_effector_pose,
                 cartesian_action.cartesian_action,
                 primitive_index,
             )
 
             next_state, reward = self.execute_cartesian_action(
                 state,
-                cartesian_action.cartesian_action,
-                primitive.desired_gripper_duty,
-                primitive.desired_gripper_duty_active,
+                cartesian_action,
             )
             self._record_transition(
                 completed_steps,
@@ -424,62 +340,59 @@ class EpisodeRunner:
             pass
 
         if policy_weights is not None:
-            self.low_level_policy.set_actor_params(policy_weights)
+            self.joint_policy.set_actor_params(policy_weights)
 
     def execute_cartesian_action(
         self,
         state: EnvironmentState,
-        cartesian_action: np.ndarray,
-        desired_gripper_duty: float,
-        desired_gripper_duty_active: bool,
+        cartesian_action: CartesianAction,
     ) -> tuple[EnvironmentState, float]:
         """
         Executes the joint steps of one cartesian action, all chasing the pose that action asks for.
         """
         cartesian_action_start_pose_obj = state.end_effector_pose
-        desired_pose = cartesian_action_start_pose_obj.apply_delta(cartesian_action)
-        self.env.reset_cartesian_action_reward_tracking(cartesian_action_start_pose_obj, cartesian_action)
-        policy_observation = self._build_policy_observation(
+        desired_pose = cartesian_action_start_pose_obj.apply_delta(cartesian_action.cartesian_action)
+        self.env.reset_cartesian_action_reward_tracking(cartesian_action_start_pose_obj, cartesian_action.cartesian_action)
+        cartesian_action_progress = 0.0
+        policy_observation = self.joint_observation.build(
             state.observation,
             cartesian_action_start_pose_obj.delta_to(desired_pose),
-            0,
-            desired_gripper_duty,
-            desired_gripper_duty_active,
+            cartesian_action_progress,
+            cartesian_action.desired_gripper_duty,
+            cartesian_action.desired_gripper_duty_active,
         )
 
         total_reward = 0.0
 
         cartesian_action_reward_metrics = {}
-        current_joint_positions = state.observation["joint_positions"]
 
-        for joint_step in range(1, self.joint_steps_per_cartesian_action + 1):
-            cartesian_action_ends = joint_step == self.joint_steps_per_cartesian_action
+        for joint_step_idx in range(1, self.joint_steps_per_cartesian_action + 1):
+            cartesian_action_ends = joint_step_idx == self.joint_steps_per_cartesian_action
             cartesian_action_terminated = self.cfg.training.terminate_at_cartesian_action_end and cartesian_action_ends
-            low_level_action, duty_action, next_state, reward, reward_breakdown = self._step_low_level(
+            joint_action, duty_action, next_state, reward, reward_breakdown = self._step_joint(
                 policy_observation,
-                current_joint_positions,
+                state.observation["joint_positions"],
+                joint_step_idx,
                 cartesian_action,
                 cartesian_action_start_pose_obj,
-                cartesian_action_ends,
-                desired_gripper_duty,
-                desired_gripper_duty_active,
             )
 
             total_reward += reward
             self._update_cartesian_action_reward_metrics(cartesian_action_reward_metrics, reward_breakdown)
 
-            next_policy_observation = self._build_policy_observation(
+            cartesian_action_progress = joint_step_idx / self.joint_steps_per_cartesian_action
+            next_policy_observation = self.joint_observation.build(
                 next_state.observation,
                 next_state.end_effector_pose.delta_to(desired_pose),
-                joint_step,
-                desired_gripper_duty,
-                desired_gripper_duty_active,
+                cartesian_action_progress,
+                cartesian_action.desired_gripper_duty,
+                cartesian_action.desired_gripper_duty_active,
             )
 
-            self._record_low_level_transition(
+            self._record_joint_transition(
                 policy_observation,
                 next_policy_observation,
-                low_level_action,
+                joint_action,
                 reward,
                 reward_breakdown,
                 cartesian_action_terminated,
@@ -487,11 +400,10 @@ class EpisodeRunner:
                 state,
                 next_state,
             )
-            self._add_to_replay_buffer(policy_observation, next_policy_observation, low_level_action, reward, cartesian_action_terminated)
+            self._add_to_replay_buffer(policy_observation, next_policy_observation, joint_action, reward, cartesian_action_terminated)
 
-            self.episode_low_level_step += 1
             policy_observation = next_policy_observation
-            current_joint_positions = next_state.observation["joint_positions"]
+            state = next_state
 
         self._publish_cartesian_action_metrics(total_reward, cartesian_action_reward_metrics)
 

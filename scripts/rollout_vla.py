@@ -5,7 +5,8 @@ from hydra.core.hydra_config import HydraConfig
 from tqdm import tqdm
 
 from robot_arm.recording.recorder import EpisodeRecorder
-from robot_arm.policies.cartesian import VLACartesianPolicy, latest_vla_checkpoint_path
+from robot_arm.policies.cartesian import VLACartesianPolicy
+from robot_arm.policies.checkpoints import latest_vla_checkpoint_path
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.rollout_config import setup_rollout_context
@@ -16,7 +17,7 @@ def main(rollout_cfg: DictConfig):
     hydra_cfg = HydraConfig.get()
     run_dir = hydra_cfg.runtime.output_dir
 
-    merged_cfg, env, low_level_policy = setup_rollout_context(rollout_cfg, run_dir)
+    merged_cfg, env, joint_policy = setup_rollout_context(rollout_cfg, run_dir)
 
     vla_checkpoint_path = latest_vla_checkpoint_path()
     print(f"Loading VLA policy from: {vla_checkpoint_path}")
@@ -38,7 +39,7 @@ def main(rollout_cfg: DictConfig):
         runner = EpisodeRunner(
             cfg=merged_cfg,
             env=env,
-            low_level_policy=low_level_policy,
+            joint_policy=joint_policy,
             primitive_policy=primitive_policy,
             cartesian_policy=cartesian_policy,
             training=False,

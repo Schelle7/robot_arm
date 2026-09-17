@@ -2,7 +2,7 @@
 
 Desired gripper duty and its enable flag are supplied by scripted primitives,
 not predicted by the VLA. The VLA predicts a gripper position delta, while the
-low-level controller receives the duty target and mode separately. Choosing grip
+joint controller receives the duty target and mode separately. Choosing grip
 effort and when to use duty control therefore still depends on the scripted task.
 
 The seven-dimensional Cartesian action projections are trained from scratch; their rollout performance still needs evaluation.

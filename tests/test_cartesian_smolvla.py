@@ -69,8 +69,11 @@ def test_rollout_splits_completion_after_denormalizing(score, monkeypatch):
     policy.postprocessor = lambda action: action + 1.0
     monkeypatch.setattr(cartesian, "build_vla_observation", lambda images, state, prompt: {})
 
-    action = policy.get_action(None, {}, np.zeros(16), 0.0, False, SimpleNamespace(prompt="open gripper"))
+    primitive = SimpleNamespace(prompt="open gripper", desired_gripper_duty=0.0, desired_gripper_duty_active=False)
+    action = policy.get_action(SimpleNamespace(grasp_confirmed=False), {}, np.zeros(16), primitive)
 
     np.testing.assert_array_equal(action.cartesian_action, np.ones(7))
     assert action.diagnostics["completion_score"] == pytest.approx(score)
     assert action.completes_active_primitive == (score >= 0.5)
+    assert action.desired_gripper_duty == primitive.desired_gripper_duty
+    assert action.desired_gripper_duty_active is primitive.desired_gripper_duty_active

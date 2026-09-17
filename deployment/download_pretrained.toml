@@ -5,6 +5,7 @@ name = "VLA"
 url = "https://drive.google.com/file/d/1rqgv66dYJfVdd4bUdPDVtRuYHcr_t3Xq/view?usp=drive_link"
 sha256 = "05ca00d4bec3fa97e406fc81ba60b7432d18ddc5a0b9d09bcdbe71b5de6d258b"
 archive = "vla_2026-09-15_16-06-33.zip"
+archive_root = "outputs/train_vla/runpod_2026-09-15_16-06-33"
 destination = "outputs/train_vla/runpod_2026-09-15_16-06-33"
 required_files = [
     "checkpoints/last/pretrained_model/model.safetensors",
@@ -16,11 +17,12 @@ required_files = [
 ]
 
 [[policies]]
-name = "Low-level controller"
-url = "https://drive.google.com/file/d/1gnRDPPYhVBGOEWaeJoa_l9i9Cx-3Zc7e/view?usp=sharing"
-sha256 = "02be040ead4b6f13b455abe459f3433acc3e564c7dafbdce2bd34747e62f6411"
-archive = "low_level_2026-09-09_19-51-55.zip"
-destination = "outputs/train_low_level/2026-09-09/19-51-55"
+name = "Joint controller"
+url = "https://drive.google.com/file/d/1f-SPtYkqjtqvYYzvLIm7FaVeEhDJsr_6/view?usp=drive_link"
+sha256 = "9e80725e54079aab7291e55311110936d737c8971436d6e4799db6edda7349fe"
+archive = "joint_policy.zip"
+archive_root = "2026-09-09/19-51-55"
+destination = "outputs/train_joint_policy/2026-09-09/19-51-55"
 required_files = [
     "checkpoints/jax_sac_final_1000208.pkl",
     "checkpoints/jax_sac_final_1000208.actor.npz",

@@ -41,7 +41,7 @@ still work for rollout.
 Continue training from a compatible configured SAC checkpoint with a fresh replay buffer:
 
 ```bash
-python scripts/train_low_level.py experiment=continue_training
+python scripts/train_joint_policy.py experiment=continue_training
 ```
 
 SAC can mix recorded real-robot transitions with simulation data. Configure recording paths
@@ -98,7 +98,7 @@ sudo usermod -aG dialout $USER
 ## One bus read per control step
 
 On the real backend every `read_state()` is a serial round trip, and it also advances the
-safety load EMA in `SafeArmWrapper`. The loop used to read three times per step, which both
+safety load EMA in `Arm`. The loop used to read three times per step, which both
 ate bus bandwidth and made `load_ema_alpha: 0.1` behave like 0.27. It now reads once and
 threads the result through:
 

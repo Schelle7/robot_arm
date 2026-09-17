@@ -5,7 +5,8 @@ from omegaconf import DictConfig, OmegaConf
 from robot_arm.envs.factory import make_env
 from robot_arm.recording.git_snapshot import snapshot_git_state
 from robot_arm.recording.model_snapshot import snapshot_model_files
-from robot_arm.policies.joint import load_low_level_policy, resolve_low_level_checkpoint
+from robot_arm.policies.checkpoints import resolve_joint_checkpoint
+from robot_arm.policies.numpy_policy import load_numpy_policy
 
 
 def assert_matching_policy_constraints(
@@ -43,7 +44,7 @@ def policy_model_path(checkpoint_path: str, policy_cfg: DictConfig) -> str:
 
 
 def setup_rollout_context(cfg: DictConfig, run_dir: str):
-    checkpoint_path = resolve_low_level_checkpoint(cfg.policy_name)
+    checkpoint_path = resolve_joint_checkpoint(cfg.policy_name)
     policy_cfg = load_policy_config(checkpoint_path)
     assert_matching_policy_constraints(cfg, policy_cfg)
 
@@ -58,8 +59,8 @@ def setup_rollout_context(cfg: DictConfig, run_dir: str):
     snapshot_model_files(merged_cfg.model_path, run_dir)
     snapshot_git_state(run_dir)
 
-    low_level_policy = load_low_level_policy(checkpoint_path)
+    joint_policy = load_numpy_policy(checkpoint_path)
     env = make_env(merged_cfg, run_dir)
     mujoco.mj_forward(env.arm.model, env.arm.data)
 
-    return merged_cfg, env, low_level_policy
+    return merged_cfg, env, joint_policy

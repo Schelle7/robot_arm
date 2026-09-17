@@ -23,8 +23,8 @@ class ReplayServer:
             "sections": [],
             "warnings": [],
             "current_frame": 0,
-            "current_low_level_step": 0,
-            "low_level_step_count": 0,
+            "current_joint_step": 0,
+            "joint_step_count": 0,
             "frame_count": frame_count,
             "frame_period": 1.0 / cartesian_hz,
             "motor_names": MOTOR_ORDER,
@@ -53,8 +53,8 @@ class ReplayServer:
         sections,
         warnings,
         current_frame,
-        current_low_level_step,
-        low_level_step_count,
+        current_joint_step,
+        joint_step_count,
         policy_history,
         history_end_time,
         active_primitive,
@@ -65,8 +65,8 @@ class ReplayServer:
             "sections": sections,
             "warnings": list(warnings),
             "current_frame": current_frame,
-            "current_low_level_step": current_low_level_step,
-            "low_level_step_count": low_level_step_count,
+            "current_joint_step": current_joint_step,
+            "joint_step_count": joint_step_count,
             "frame_count": self.state["frame_count"],
             "frame_period": self.state["frame_period"],
             "motor_names": self.state["motor_names"],
@@ -119,13 +119,13 @@ class ReplayServer:
                         self.send_error(400, "Frame index out of range")
                         return
                     state_of.command_queue.put(("frame", frame_index))
-                elif self.path == "/low-level-step":
+                elif self.path == "/joint-step":
                     content_length = int(self.headers["Content-Length"])
-                    low_level_step = int(self.rfile.read(content_length))
-                    if low_level_step < 0 or low_level_step >= state_of.state["low_level_step_count"]:
-                        self.send_error(400, "Low-level step out of range")
+                    joint_step = int(self.rfile.read(content_length))
+                    if joint_step < 0 or joint_step >= state_of.state["joint_step_count"]:
+                        self.send_error(400, "Joint step out of range")
                         return
-                    state_of.command_queue.put(("low_level_step", low_level_step))
+                    state_of.command_queue.put(("joint_step", joint_step))
                 elif self.path == "/play":
                     state_of.command_queue.put(("toggle_play", None))
                 elif self.path == "/generate":

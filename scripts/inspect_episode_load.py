@@ -6,7 +6,7 @@ import numpy as np
 def load_trace(data, frames) -> np.ndarray:
     """
     Per-step gripper load for one commanded delta. Older recordings wrote one diagnostics entry per
-    low-level step; newer ones write one per mid-level chunk and keep the fine trace in the dense
+    joint step; newer ones write one per mid-level chunk and keep the fine trace in the dense
     trajectory, so the longer of the two is the one worth reading.
     """
     coarse = np.array([abs(data["cartesian_action_diagnostics"][frame]["duty_fraction"]) for frame in frames])

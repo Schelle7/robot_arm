@@ -5,6 +5,7 @@ import json
 import math
 import time
 from pathlib import Path
+from omegaconf import OmegaConf
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
@@ -36,12 +37,12 @@ def pulse_wrist_roll(arm, result):
     started = time.perf_counter()
     try:
         # Clear any old PWM command BEFORE enabling this motor alone.
-        arm.write_duty({JOINT: 0.0})
+        arm.write_duty({JOINT: 0.0}, initial["Present_Position"])
         if bus.read("Goal_Time", JOINT, normalize=False) != 0:
             raise RuntimeError("Old PWM command did not clear. Refusing to enable torque.")
         bus.enable_torque([JOINT])
         started = time.perf_counter()
-        arm.write_duty({JOINT: DUTY})
+        arm.write_duty({JOINT: DUTY}, initial["Present_Position"])
         while time.perf_counter() - started < DURATION:
             time.sleep(min(0.02, max(0, DURATION - (time.perf_counter() - started))))
             state = arm.read_state()
@@ -58,7 +59,7 @@ def pulse_wrist_roll(arm, result):
     finally:
         # Always attempt torque-off even if writing zero duty fails.
         try:
-            arm.write_duty({JOINT: 0.0})
+            arm.write_duty({JOINT: 0.0}, initial["Present_Position"])
         finally:
             bus.disable_torque([JOINT], num_retry=2)
         result["pulse_elapsed_seconds"] = time.perf_counter() - started
@@ -83,11 +84,16 @@ def main():
         calibration={name: MotorCalibration(**cal) for name, cal in calibration.items()},
     )
     result = {}
+    cfg = OmegaConf.create({
+        "model_path": str(ROOT / "models/so101/scene.xml"),
+        "control": {"frequencies": {"joint": 50}},
+        "safety": OmegaConf.load(ROOT / "conf/safety/default.yaml"),
+    })
     # Check the output path before touching hardware; retain partial data on errors.
     with args.out.open("w") as output:
         bus.connect(handshake=False)
         try:
-            arm = RealArm(bus, str(ROOT / "models/so101/scene.xml"), 0.02)
+            arm = RealArm(bus, cfg)
             pulse_wrist_roll(arm, result)
         except (Exception, KeyboardInterrupt) as exc:
             result["error"] = f"{type(exc).__name__}: {exc}"

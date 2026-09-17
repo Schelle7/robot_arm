@@ -33,7 +33,7 @@ def _config_value(cfg: DictConfig, field: str):
 
 def validate_real_recording_config(recorded_cfg: DictConfig, training_cfg: DictConfig) -> None:
     assert recorded_cfg.backend == "real", "Real replay data must come from a real backend"
-    assert recorded_cfg.runtime.record_policy_debug, "Real recordings must include low-level debug transitions"
+    assert recorded_cfg.runtime.record_policy_debug, "Real recordings must include joint debug transitions"
     for field in COMPATIBILITY_FIELDS:
         recorded = _config_value(recorded_cfg, field)
         current = _config_value(training_cfg, field)
@@ -68,7 +68,7 @@ def load_real_transitions(episode_paths: list[str], cfg: DictConfig, buffer) -> 
         validate_real_recording_config(recorded_cfg, cfg)
         with np.load(path, allow_pickle=True) as recording:
             steps = [step for trajectory in recording["dense_trajectory"] for step in trajectory]
-        assert len(steps) > 0, f"No low-level transitions in {path}"
+        assert len(steps) > 0, f"No joint transitions in {path}"
         if buffer.size + len(steps) > buffer.capacity:
             raise ValueError(f"Real replay capacity {buffer.capacity} is too small to retain the recordings including {path}")
         for step in steps:

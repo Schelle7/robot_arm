@@ -66,7 +66,7 @@ def load_latest(index: int = 0) -> Rollout:
 
 def dense_steps(data: dict[str, np.ndarray]) -> list[dict]:
     """
-    Every low-level joint step in the episode, flattened out of the per-cartesian-action chunks the
+    Every joint joint step in the episode, flattened out of the per-cartesian-action chunks the
     recorder nests them in.
     """
     return [step for chunk in data["dense_trajectory"] for step in chunk]

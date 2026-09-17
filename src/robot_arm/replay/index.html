@@ -12,7 +12,7 @@
     #status { color: #b9c8c2; font-size: 13px; }
     main { width: min(1180px, 100%); margin: 0 auto; padding: 20px clamp(12px, 3vw, 32px) 48px; }
     .controls { display: grid; grid-template-columns: auto minmax(180px, 1fr) 84px auto; align-items: center; gap: 10px; padding: 14px 0 20px; border-bottom: 2px solid var(--ink); }
-    .low-level-controls { grid-template-columns: auto minmax(180px, 1fr) 84px; }
+    .joint-controls { grid-template-columns: auto minmax(180px, 1fr) 84px; }
     .controls label { font-weight: 600; }
     .branch-controls { padding: 20px 0; border-bottom: 2px solid var(--ink); overflow-x: auto; }
     .active-primitive { display: flex; gap: 12px; padding: 16px 0; border-bottom: 2px solid var(--ink); font-size: 18px; font-weight: 700; }
@@ -57,10 +57,10 @@
     <input id="frameNumber" type="number" min="0" max="0" value="0" aria-label="Frame number">
     <button id="playButton" type="button">Play</button>
 </div>
-<div class="controls low-level-controls">
-    <label for="lowLevelRange">Low-level step <span id="lowLevelLabel">N/A</span></label>
-    <input id="lowLevelRange" type="range" min="0" max="0" value="0" disabled>
-    <input id="lowLevelNumber" type="number" min="0" max="0" value="0" aria-label="Low-level step number" disabled>
+<div class="controls joint-controls">
+    <label for="jointRange">Joint step <span id="jointLabel">N/A</span></label>
+    <input id="jointRange" type="range" min="0" max="0" value="0" disabled>
+    <input id="jointNumber" type="number" min="0" max="0" value="0" aria-label="Joint step number" disabled>
 </div>
 <div class="active-primitive">
     <span class="active-primitive-label">Active primitive</span>
@@ -92,9 +92,9 @@
     const frameNumber = document.getElementById("frameNumber");
     const frameLabel = document.getElementById("frameLabel");
     const playButton = document.getElementById("playButton");
-    const lowLevelRange = document.getElementById("lowLevelRange");
-    const lowLevelNumber = document.getElementById("lowLevelNumber");
-    const lowLevelLabel = document.getElementById("lowLevelLabel");
+    const jointRange = document.getElementById("jointRange");
+    const jointNumber = document.getElementById("jointNumber");
+    const jointLabel = document.getElementById("jointLabel");
     const activePrimitive = document.getElementById("activePrimitive");
     const dutyGrid = document.getElementById("dutyGrid");
     const durationSeconds = document.getElementById("durationSeconds");
@@ -131,10 +131,10 @@
         fetch("/play", {method: "POST", headers: {"X-Episode-ID": episodeId}});
     }
 
-    function requestLowLevelStep(value) {
-        lowLevelRange.value = value;
-        lowLevelNumber.value = value;
-        fetch("/low-level-step", {method: "POST", headers: {"X-Episode-ID": episodeId}, body: value});
+    function requestJointStep(value) {
+        jointRange.value = value;
+        jointNumber.value = value;
+        fetch("/joint-step", {method: "POST", headers: {"X-Episode-ID": episodeId}, body: value});
     }
 
     function updateDutyWarning() {
@@ -406,8 +406,8 @@
 
     frameRange.addEventListener("input", () => requestFrame(frameRange.value));
     frameNumber.addEventListener("change", () => requestFrame(frameNumber.value));
-    lowLevelRange.addEventListener("input", () => requestLowLevelStep(lowLevelRange.value));
-    lowLevelNumber.addEventListener("change", () => requestLowLevelStep(lowLevelNumber.value));
+    jointRange.addEventListener("input", () => requestJointStep(jointRange.value));
+    jointNumber.addEventListener("change", () => requestJointStep(jointNumber.value));
     playButton.addEventListener("click", togglePlay);
     generateButton.addEventListener("click", exportBranchRequest);
     document.addEventListener("keydown", event => {
@@ -428,7 +428,7 @@
         dutyWarning.hidden = true;
         historySection.hidden = true;
         durationSeconds.value = state.frame_period;
-        for (const input of [frameRange, frameNumber, lowLevelRange, lowLevelNumber]) {
+        for (const input of [frameRange, frameNumber, jointRange, jointNumber]) {
             input.blur();
             input.value = 0;
         }
@@ -451,16 +451,16 @@
             frameNumber.value = state.current_frame;
         }
         frameLabel.textContent = `${state.current_frame} / ${maxFrame}`;
-        const maxLowLevelStep = Math.max(state.low_level_step_count - 1, 0);
-        lowLevelRange.max = maxLowLevelStep;
-        lowLevelNumber.max = maxLowLevelStep;
-        lowLevelRange.disabled = state.low_level_step_count === 0;
-        lowLevelNumber.disabled = state.low_level_step_count === 0;
-        if (document.activeElement !== lowLevelRange && document.activeElement !== lowLevelNumber) {
-            lowLevelRange.value = state.current_low_level_step;
-            lowLevelNumber.value = state.current_low_level_step;
+        const maxJointStep = Math.max(state.joint_step_count - 1, 0);
+        jointRange.max = maxJointStep;
+        jointNumber.max = maxJointStep;
+        jointRange.disabled = state.joint_step_count === 0;
+        jointNumber.disabled = state.joint_step_count === 0;
+        if (document.activeElement !== jointRange && document.activeElement !== jointNumber) {
+            jointRange.value = state.current_joint_step;
+            jointNumber.value = state.current_joint_step;
         }
-        lowLevelLabel.textContent = state.low_level_step_count === 0 ? "N/A" : `${state.current_low_level_step + 1} / ${state.low_level_step_count}`;
+        jointLabel.textContent = state.joint_step_count === 0 ? "N/A" : `${state.current_joint_step + 1} / ${state.joint_step_count}`;
         activePrimitive.textContent = state.active_primitive;
         renderHistoryPlots(state.policy_history, state.history_feature_names, state.history_end_time, state.joint_hz);
         playButton.textContent = state.auto_play ? "Pause" : "Play";

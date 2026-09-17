@@ -3,7 +3,7 @@ ID ?= my_follower
 ITERATIONS ?= 500
 WARMUP ?= 20
 
-.PHONY: install find-port test test-hardware bench bench-loop lint format rollout_sim sanity_check_real sanity_check_sim rollout_real train_low_level train_runpod download_trained_vla download_pretrained
+.PHONY: install find-port test test-hardware bench bench-loop lint format rollout_sim sanity_check_real sanity_check_sim rollout_real train_joint_policy train_runpod download_trained_vla download_pretrained
 
 install:
 	pip install -e .
@@ -43,8 +43,8 @@ format:
 	black src/ tests/ scripts/ benchmarks/ deployment/
 	ruff check --fix src/ tests/ scripts/ benchmarks/ deployment/
 
-train_low_level:
-	python scripts/train_low_level.py
+train_joint_policy:
+	python scripts/train_joint_policy.py
 
 train_runpod:
 	python deployment/runpod/train.py create --config deployment/runpod/train.toml

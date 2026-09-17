@@ -1,23 +1,12 @@
-from dataclasses import dataclass
-
 import mujoco
 import numpy as np
 from omegaconf import DictConfig
 
 from robot_arm.arms.sim_arm import object_color
+from robot_arm.control_types import ActionPrimitive
 from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import TILE_BODY_NAME
 from robot_arm.geometry.waypoints import generate_oriented_waypoint, position_from_base_rotation, shoulder_pan_position
-
-
-@dataclass
-class ActionPrimitive:
-    start_pose: Pose
-    target_pose: Pose
-    prompt: str
-    include_target_offset: bool
-    desired_gripper_duty: float
-    desired_gripper_duty_active: bool
 
 
 def _find_body_position(model, data, body_name: str) -> np.ndarray:

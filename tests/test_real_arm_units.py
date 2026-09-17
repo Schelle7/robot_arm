@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from omegaconf import OmegaConf
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 
@@ -15,6 +16,11 @@ from robot_arm.arms.real_arm import RealArm
 from robot_arm.robot_schema import MOTOR_ORDER
 
 ROOT = Path(__file__).resolve().parents[1]
+CFG = OmegaConf.create({
+    "model_path": str(ROOT / "models/so101/scene.xml"),
+    "control": {"frequencies": {"joint": 20}},
+    "safety": OmegaConf.load(ROOT / "conf/safety/default.yaml"),
+})
 
 
 def test_feedback_retry_returns_fresh_read_and_warns(monkeypatch, caplog):
@@ -92,7 +98,7 @@ def test_block_read_matches_lerobot_signed_register_decoding(offline_bus, monkey
 def test_real_arm_converts_units_once_and_roundtrips_goals(offline_bus, monkeypatch):
     monkeypatch.setattr("robot_arm.arms.real_arm.read_configuration", lambda bus: {})
     monkeypatch.setattr(offline_bus, "read", lambda *args, **kwargs: 0)
-    arm = RealArm(offline_bus, str(ROOT / "models/so101/scene.xml"), 0.05)
+    arm = RealArm(offline_bus, CFG)
     ticks = {name: 2200 for name in MOTOR_ORDER}
     ticks["shoulder_pan"] = 3723  # observed in the failed run: signed decoding must leave this alone
     raw_state = {
@@ -101,6 +107,7 @@ def test_real_arm_converts_units_once_and_roundtrips_goals(offline_bus, monkeypa
         "Present_Velocity": dict.fromkeys(MOTOR_ORDER, -64),
         "Present_Current": dict.fromkeys(MOTOR_ORDER, 20),
         "Present_Voltage": dict.fromkeys(MOTOR_ORDER, 53),
+        "Present_Temperature": dict.fromkeys(MOTOR_ORDER, 25),
     }
     monkeypatch.setattr("robot_arm.arms.real_arm.read_block", lambda bus: raw_state)
     state = arm.read_state()
@@ -125,7 +132,7 @@ def test_real_arm_converts_units_once_and_roundtrips_goals(offline_bus, monkeypa
 def test_real_arm_duty_sign_matches_model_joint_direction(offline_bus, monkeypatch):
     monkeypatch.setattr("robot_arm.arms.real_arm.read_configuration", lambda bus: {})
     monkeypatch.setattr(offline_bus, "read", lambda *args, **kwargs: 0)
-    arm = RealArm(offline_bus, str(ROOT / "models/so101/scene.xml"), 0.05)
+    arm = RealArm(offline_bus, CFG)
     written = {}
 
     def capture_duty(register, values, normalize):
@@ -133,7 +140,10 @@ def test_real_arm_duty_sign_matches_model_joint_direction(offline_bus, monkeypat
         written.update(values)
 
     monkeypatch.setattr(offline_bus, "sync_write", capture_duty)
-    arm.write_duty({"shoulder_pan": 0.25, "shoulder_lift": -0.25, "elbow_flex": 0.0})
+    arm.write_duty(
+        {"shoulder_pan": 0.25, "shoulder_lift": -0.25, "elbow_flex": 0.0},
+        {motor: (lower + upper) / 2 for motor, (lower, upper) in arm.joint_limits.items()},
+    )
     assert written == {"shoulder_pan": 1024 + 250, "shoulder_lift": 250, "elbow_flex": 0}
 
 
@@ -145,10 +155,10 @@ def test_same_hardware_pose_has_same_radians_in_position_and_pwm_modes(offline_b
     position_ticks = dict(zip(MOTOR_ORDER, [1512, 2753, 2285, 1039, 2740, 1642]))
     monkeypatch.setattr("robot_arm.arms.real_arm.read_configuration", lambda bus: {})
     monkeypatch.setattr(offline_bus, "read", lambda *args, **kwargs: mode)
-    arm = RealArm(offline_bus, str(ROOT / "models/so101/scene.xml"), 0.05)
+    arm = RealArm(offline_bus, CFG)
     monkeypatch.setattr("robot_arm.arms.real_arm.read_block", lambda bus: {
         "Present_Position": (pwm_ticks if mode == 2 else position_ticks).copy(),
-        **{register: dict.fromkeys(MOTOR_ORDER, 0) for register in ("Present_Load", "Present_Velocity", "Present_Current", "Present_Voltage")},
+        **{register: dict.fromkeys(MOTOR_ORDER, 0) for register in ("Present_Load", "Present_Velocity", "Present_Current", "Present_Voltage", "Present_Temperature")},
     })
     positions = arm.read_state()["Present_Position"]
     expected_degrees = offline_bus._normalize({offline_bus.motors[name].id: tick for name, tick in position_ticks.items()})
@@ -163,12 +173,12 @@ def test_same_hardware_pose_has_same_radians_in_position_and_pwm_modes(offline_b
 def test_pwm_encoder_wrap_is_continuous_in_calibrated_joint_frame(offline_bus, monkeypatch):
     monkeypatch.setattr("robot_arm.arms.real_arm.read_configuration", lambda bus: {})
     monkeypatch.setattr(offline_bus, "read", lambda *args, **kwargs: 2)
-    arm = RealArm(offline_bus, str(ROOT / "models/so101/scene.xml"), 0.05)
+    arm = RealArm(offline_bus, CFG)
     angles = []
     for tick in [4080, 79]:
         monkeypatch.setattr("robot_arm.arms.real_arm.read_block", lambda bus: {
             "Present_Position": {"shoulder_pan": tick},
-            **{register: {} for register in ("Present_Load", "Present_Velocity", "Present_Current", "Present_Voltage")},
+            **{register: {} for register in ("Present_Load", "Present_Velocity", "Present_Current", "Present_Voltage", "Present_Temperature")},
         })
         angles.append(arm.read_state()["Present_Position"]["shoulder_pan"])
     assert angles[1] - angles[0] == pytest.approx(95 * 2 * np.pi / 4095)
@@ -178,7 +188,7 @@ def test_setting_pwm_mode_updates_cached_feedback_frame(offline_bus, monkeypatch
     monkeypatch.setattr("robot_arm.arms.real_arm.read_configuration", lambda bus: {})
     modes = dict.fromkeys(MOTOR_ORDER, 0)
     monkeypatch.setattr(offline_bus, "read", lambda register, name, **kwargs: modes[name])
-    arm = RealArm(offline_bus, str(ROOT / "models/so101/scene.xml"), 0.05)
+    arm = RealArm(offline_bus, CFG)
     monkeypatch.setattr(offline_bus, "disable_torque", lambda: None)
     monkeypatch.setattr(offline_bus, "enable_torque", lambda: None)
     monkeypatch.setattr(offline_bus, "write", lambda register, name, value: modes.update({name: value}))

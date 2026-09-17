@@ -15,4 +15,11 @@ potentially certain movements for sysid
 Decide how the VLA should choose desired gripper duty and whether duty control is
 enabled, instead of taking both from scripted primitives.
 
+implement action chunks? of cartesian actions.
+
 # eventually proper rl for vla
+
+
+
+I started moving the arm safety code into arm instead.
+I suppose there might be some duplicated methods in the separate arms, check at some point.

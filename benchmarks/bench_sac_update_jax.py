@@ -50,8 +50,8 @@ def parameter_count(params):
 @hydra.main(version_base=None, config_path="../conf", config_name="benchmark_sac_jax")
 def benchmark(cfg: DictConfig):
     configured_history_steps = cfg.control.frequencies.joint * cfg.control.policy_history_seconds
-    assert configured_history_steps >= 2, "policy_history_seconds must span at least two low-level control intervals"
-    assert float(configured_history_steps).is_integer(), "policy_history_seconds must contain an integer number of low-level control intervals"
+    assert configured_history_steps >= 2, "policy_history_seconds must span at least two joint control intervals"
+    assert float(configured_history_steps).is_integer(), "policy_history_seconds must contain an integer number of joint control intervals"
     history_steps = int(configured_history_steps)
     observation_sizes = policy_observation_sizes(int(cfg.waypoint.cartesian_action_dim), history_steps)
     architecture = {

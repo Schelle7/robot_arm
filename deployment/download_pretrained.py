@@ -10,7 +10,8 @@ import gdown
 def download_policy(policy, repository, temporary_dir):
     destination = repository / policy["destination"]
     if destination.exists():
-        raise FileExistsError(f"Policy destination already exists: {destination}")
+        print(f"\033[38;5;208mSkipping {policy['name']}: destination already exists: {destination}\033[0m", flush=True)
+        return
 
     archive_path = temporary_dir / policy["archive"]
     print(f"Downloading {policy['name']} to {archive_path}", flush=True)
@@ -24,14 +25,14 @@ def download_policy(policy, repository, temporary_dir):
     with tempfile.TemporaryDirectory(dir=temporary_dir) as staging:
         staging_root = Path(staging)
         with ZipFile(archive_path) as archive:
-            # Archives retain repository-relative paths; restrict extraction to this run.
+            # Restrict extraction to the configured run, independently of its destination.
             for member in archive.infolist():
                 path = PurePosixPath(member.filename)
-                if ".." in path.parts or not path.is_relative_to(PurePosixPath(policy["destination"])):
+                if path.is_absolute() or ".." in path.parts or not path.is_relative_to(PurePosixPath(policy["archive_root"])):
                     raise ValueError(f"Unexpected archive path: {member.filename}")
             archive.extractall(staging_root)
 
-        extracted = staging_root / policy["destination"]
+        extracted = staging_root / policy["archive_root"]
         for name in policy["required_files"]:
             if (extracted / name).stat().st_size == 0:
                 raise ValueError(f"Empty policy file: {name}")

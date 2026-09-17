@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from robot_arm.envs.env import RobotEnv
 from robot_arm.envs.grasp_estimator import GraspEstimator
 from robot_arm.geometry.pose import Pose
+from robot_arm.control_types import CartesianAction
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, MOTOR_ORDER
 
 
@@ -174,14 +175,12 @@ def test_compute_reward_filters_disabled_components_and_sums_breakdown():
         requested_action=requested_action,
         safe_action=safe_action,
         policy_action=np.zeros(6, dtype=np.float32),
-        time_left=1.0,
-        cartesian_action=cartesian_action,
+        cartesian_action_progress=0.0,
+        cartesian_action=CartesianAction(cartesian_action, {}, False, 0.0, False),
         current_pose=cartesian_action_start_pose,
         cartesian_action_start_pose=cartesian_action_start_pose,
         cartesian_action_ends=False,
         gripper_duty=0.0,
-        desired_gripper_duty=0.0,
-        desired_gripper_duty_active=False,
     )
 
     assert set(breakdown) == {"joint_limit_penalty"}
@@ -199,14 +198,12 @@ def test_compute_reward_updates_tracking_state_after_calculation():
         requested_action={},
         safe_action={},
         policy_action=np.zeros(6, dtype=np.float32),
-        time_left=1.0,
-        cartesian_action=cartesian_action,
+        cartesian_action_progress=0.0,
+        cartesian_action=CartesianAction(cartesian_action, {}, False, 0.0, False),
         current_pose=current_pose,
         cartesian_action_start_pose=cartesian_action_start_pose,
         cartesian_action_ends=False,
         gripper_duty=0.0,
-        desired_gripper_duty=0.0,
-        desired_gripper_duty_active=False,
     )
 
     np.testing.assert_allclose(env.previous_position_distance, np.sqrt(0.5), atol=1e-6)
@@ -227,14 +224,12 @@ def test_first_step_progress_reward_uses_cartesian_action_start_distance():
         requested_action={},
         safe_action={},
         policy_action=np.zeros(6, dtype=np.float32),
-        time_left=1.0,
-        cartesian_action=cartesian_action,
+        cartesian_action_progress=0.0,
+        cartesian_action=CartesianAction(cartesian_action, {}, False, 0.0, False),
         current_pose=improved_pose,
         cartesian_action_start_pose=cartesian_action_start_pose,
         cartesian_action_ends=False,
         gripper_duty=0.0,
-        desired_gripper_duty=0.0,
-        desired_gripper_duty_active=False,
     )
 
     initial_distance = cartesian_action_start_pose.positional_distance(desired_pose)
@@ -266,14 +261,12 @@ def test_reward_is_zero_when_every_component_is_disabled():
         requested_action={},
         safe_action={},
         policy_action=np.zeros(6, dtype=np.float32),
-        time_left=1.0,
-        cartesian_action=np.zeros(7, dtype=np.float32),
+        cartesian_action_progress=0.0,
+        cartesian_action=CartesianAction(np.zeros(7, dtype=np.float32), {}, False, 0.0, False),
         current_pose=current_pose,
         cartesian_action_start_pose=make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
         cartesian_action_ends=False,
         gripper_duty=0.0,
-        desired_gripper_duty=0.0,
-        desired_gripper_duty_active=False,
     )
 
     assert reward == 0.0
@@ -306,14 +299,12 @@ def test_action_change_penalty_uses_actor_action_before_duty_scaling():
         {},
         {},
         policy_action,
-        1.0,
-        np.zeros(7, dtype=np.float32),
+        0.0,
+        CartesianAction(np.zeros(7, dtype=np.float32), {}, False, 0.0, False),
         pose,
         pose,
         False,
         0.0,
-        0.0,
-        False,
     )
 
     expected = -np.mean(np.square(policy_action - env.previous_action))

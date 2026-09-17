@@ -6,13 +6,12 @@ import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
+from robot_arm.policies import checkpoints
 from robot_arm.training import dagger
 from robot_arm.training import vla_bc
 
 
 def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path, monkeypatch):
-    from robot_arm.policies import joint
-
     cfg = OmegaConf.create({
         "environment": {}, "seed": 42, "vla_rounds": 2,
         "initial_episodes": 3, "episodes_per_round": 2,
@@ -22,7 +21,7 @@ def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path
         "collection": {"backend": "sim", "policy_name": "latest"},
     })
     OmegaConf.set_struct(cfg, True)
-    monkeypatch.setattr(joint, "resolve_low_level_checkpoint", lambda name: str(tmp_path / "low.pkl"))
+    monkeypatch.setattr(checkpoints, "resolve_joint_checkpoint", lambda name: str(tmp_path / "joint.actor.npz"))
     monkeypatch.setattr(dagger, "__file__", str(tmp_path / "src" / "robot_arm" / "training" / "dagger.py"))
     events = []
 
@@ -143,6 +142,6 @@ def test_dagger_config_exposes_teacher_accuracy():
         cfg = compose(config_name="train_vla_dagger")
     assert cfg.collection.backend == "sim"
     assert cfg.collection.waypoint.primitive_probabilities.pick_and_place == 1.0
-    assert cfg.collection.waypoint.completion_tolerance.position_meters == 0.01
-    assert cfg.collection.waypoint.completion_tolerance.primary_rotation_radians == 0.1
+    assert cfg.collection.waypoint.completion_tolerance.position_meters == 0.015
+    assert cfg.collection.waypoint.completion_tolerance.primary_rotation_radians == 0.2
     assert cfg.collection.waypoint.duty_completion_tolerance == 0.1

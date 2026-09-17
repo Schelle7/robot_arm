@@ -137,7 +137,7 @@ def test_forward_checkpoint_roundtrip_and_inference_export(forward_case, tmp_pat
     model.random_seed = 42
     model.device = jax.devices()[0]
     checkpoint_path = model.save(str(tmp_path / "policy"))
-    policy = load_numpy_policy(str(checkpoint_path))
+    policy = load_numpy_policy(str(checkpoint_path.with_suffix(".actor.npz")))
     assert "forward_head" not in policy.actor_params
     with jax.default_matmul_precision("highest"):
         expected = jax_actor_distribution(state.actor_params, batch.observations)

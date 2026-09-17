@@ -15,7 +15,7 @@ def main(rollout_cfg: DictConfig):
     hydra_cfg = HydraConfig.get()
     run_dir = hydra_cfg.runtime.output_dir
 
-    merged_cfg, env, low_level_policy = setup_rollout_context(rollout_cfg, run_dir)
+    merged_cfg, env, joint_policy = setup_rollout_context(rollout_cfg, run_dir)
 
     cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
     primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
@@ -33,7 +33,7 @@ def main(rollout_cfg: DictConfig):
     runner = EpisodeRunner(
         cfg=merged_cfg,
         env=env,
-        low_level_policy=low_level_policy,
+        joint_policy=joint_policy,
         primitive_policy=primitive_policy,
         cartesian_policy=cartesian_policy,
         training=False,

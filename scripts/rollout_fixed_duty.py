@@ -13,11 +13,18 @@ from robot_arm.episode_runner import EpisodeRunner
 from robot_arm.recording.git_snapshot import snapshot_git_state
 from robot_arm.recording.model_snapshot import snapshot_model_files
 from robot_arm.policies.cartesian import ScriptedCartesianPolicy
-from robot_arm.policies.joint import FixedDutyPolicy
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.recording.recorder import EpisodeRecorder
 from robot_arm.replay.recording import load_recorded_timing, recorded_model_path
 from robot_arm.robot_schema import MOTOR_ORDER
+
+
+class FixedDutyPolicy:
+    def __init__(self, duties: np.ndarray):
+        self.duties = np.asarray(duties, dtype=np.float32)
+
+    def predict(self, observation, deterministic):
+        return self.duties.copy(), None
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="rollout_fixed_duty")
@@ -53,7 +60,7 @@ def main(cfg: DictConfig):
     runner = EpisodeRunner(
         cfg=branch_cfg,
         env=env,
-        low_level_policy=FixedDutyPolicy(duties),
+        joint_policy=FixedDutyPolicy(duties),
         primitive_policy=ScriptedPrimitiveGeneratorPolicy(branch_cfg),
         cartesian_policy=ScriptedCartesianPolicy(branch_cfg),
         training=False,

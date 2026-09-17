@@ -6,7 +6,7 @@ hydra:
     dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 policy_name: latest
-# policy_name: outputs/train_low_level/YYYY-MM-DD/HH-MM-SS/checkpoints/jax_sac_final_STEPS.pkl
+# policy_name: outputs/train_joint_policy/YYYY-MM-DD/HH-MM-SS/checkpoints/jax_sac_final_STEPS.actor.npz
 num_episodes: 10
 
 control:

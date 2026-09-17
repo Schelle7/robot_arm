@@ -23,12 +23,12 @@ class RealArm(Arm):
     Uses a headless MuJoCo model to compute Forward Kinematics (FK) for the TCP pose.
     """
 
-    def __init__(self, bus, model_path: str, control_step_seconds: float):
+    def __init__(self, bus, cfg):
+        super().__init__(cfg)
         if not bus.calibration:
             raise RuntimeError("Bus has no calibration registered. Cannot convert units.")
 
         self.bus = bus
-        self.control_step_seconds = control_step_seconds
         self.last_control_step_end = time.perf_counter()
         self.control_step_overruns = 0
         self.max_res = 4096  # STS3215 specific (12-bit encoder)
@@ -39,7 +39,7 @@ class RealArm(Arm):
         self.operating_modes = {name: self.bus.read("Operating_Mode", name, normalize=False) for name in MOTOR_ORDER}
 
         # Initialize Headless MuJoCo for Forward Kinematics (FK)
-        self.model = mujoco.MjModel.from_xml_path(model_path)
+        self.model = mujoco.MjModel.from_xml_path(cfg.model_path)
         self.data = mujoco.MjData(self.model)
 
         self.joint_indices = {
@@ -48,7 +48,6 @@ class RealArm(Arm):
             for name in MOTOR_ORDER
         }
         self.qpos_indices = self.model.jnt_qposadr[np.array([self.joint_indices[name] for name in MOTOR_ORDER])]
-
         # Read once: these decide what a commanded position delta actually does, and lerobot rewrites
         # several of them on every connect, so a run is not interpretable without them.
         self.configuration = read_configuration(self.bus)
@@ -88,7 +87,7 @@ class RealArm(Arm):
             self.disconnect()
             raise
 
-    def read_state(self) -> Dict[str, Dict[str, float]]:
+    def _read_state(self) -> Dict[str, Dict[str, float]]:
         raw_state = self._read_feedback()
         raw_state["python_recording_time"] = time.time()
 
@@ -161,10 +160,10 @@ class RealArm(Arm):
 
         # Goal_Time still holds whatever position mode left there, which becomes a duty the moment
         # torque comes back.
-        self.write_duty({motor: 0.0 for motor in MOTOR_ORDER})
+        self._write_duty({motor: 0.0 for motor in MOTOR_ORDER})
         self.bus.enable_torque()
 
-    def write_duty(self, duties: Dict[str, float]) -> None:
+    def _write_duty(self, duties: Dict[str, float]) -> None:
         """
         In PWM mode Goal_Time carries the duty instead of a travel time, sign-magnitude encoded with
         bit 10, the same direction bit the servo uses for Present_Load. LeRobot's encoding table does

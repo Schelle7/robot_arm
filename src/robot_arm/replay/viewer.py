@@ -54,20 +54,20 @@ class ReplayViewer:
         if self.num_actions == 0:
             raise ValueError("Replay recording must contain at least one Cartesian action path.")
         self.current_frame = 0
-        self.current_low_level_step = 0
+        self.current_joint_step = 0
         self.auto_play = False
 
-    def _clamp_low_level_step(self):
+    def _clamp_joint_step(self):
         dense_step_count = len(self.dense_trajectory[self.current_frame]) if self.current_frame < self.num_actions else 0
-        self.current_low_level_step = min(self.current_low_level_step, max(dense_step_count - 1, 0))
+        self.current_joint_step = min(self.current_joint_step, max(dense_step_count - 1, 0))
 
     def handle_key(self, keycode):
         if keycode == 262:
             self.current_frame = (self.current_frame + 1) % self.num_states
-            self._clamp_low_level_step()
+            self._clamp_joint_step()
         elif keycode == 263:
             self.current_frame = (self.current_frame - 1) % self.num_states
-            self._clamp_low_level_step()
+            self._clamp_joint_step()
         elif keycode == 32:
             self.auto_play = not self.auto_play
 
@@ -76,10 +76,10 @@ class ReplayViewer:
         for command, value in take_commands():
             if command == "frame":
                 self.current_frame = value
-                self._clamp_low_level_step()
+                self._clamp_joint_step()
                 frame_requested = True
-            elif command == "low_level_step":
-                self.current_low_level_step = value
+            elif command == "joint_step":
+                self.current_joint_step = value
             elif command == "toggle_play":
                 self.auto_play = not self.auto_play
         return frame_requested
@@ -87,7 +87,7 @@ class ReplayViewer:
     def update_frame(self, advance):
         if advance:
             self.current_frame = (self.current_frame + 1) % self.num_states
-            self._clamp_low_level_step()
+            self._clamp_joint_step()
 
         self.mdata.qpos[:] = self.qpos_recording[self.current_frame]
         self.mdata.qvel[:] = self.qvel_recording[self.current_frame]
@@ -131,7 +131,7 @@ class ReplayViewer:
         if self.current_frame < self.num_actions:
             primitive_number = int(self.primitive_indices[self.current_frame]) + 1
             active_primitive_label = f"{primitive_number}: {self.primitive_prompts[self.current_frame]}"
-            flat_policy_history = self.dense_trajectory[self.current_frame][self.current_low_level_step]["obs"]["history"]
+            flat_policy_history = self.dense_trajectory[self.current_frame][self.current_joint_step]["obs"]["history"]
             policy_history = flat_policy_history[len(HISTORY_CONTEXT_FEATURE_NAMES) :].reshape(-1, len(HISTORY_FEATURE_NAMES))
         else:
             active_primitive_label = "N/A"
@@ -148,18 +148,18 @@ class ReplayViewer:
             action_diagnostics,
             self.completes_active_primitives[self.current_frame] if self.current_frame < self.num_actions else False,
             self.current_frame,
-            self.current_low_level_step,
+            self.current_joint_step,
             self.recorded_cfg,
         )
         dense_step_count = len(self.dense_trajectory[self.current_frame]) if self.current_frame < self.num_actions else 0
         history_end_time = (
-            sum(len(trajectory) for trajectory in self.dense_trajectory[: self.current_frame]) + self.current_low_level_step
+            sum(len(trajectory) for trajectory in self.dense_trajectory[: self.current_frame]) + self.current_joint_step
         ) / self.recorded_cfg.control.frequencies.joint
         display(
             display_lines,
             warnings,
             self.current_frame,
-            self.current_low_level_step,
+            self.current_joint_step,
             dense_step_count,
             np.asarray(policy_history).tolist(),
             history_end_time,

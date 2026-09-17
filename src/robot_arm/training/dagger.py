@@ -12,7 +12,7 @@ from lerobot.datasets import aggregate
 
 from robot_arm import rollout_config
 from robot_arm.data import collection, lerobot_converter
-from robot_arm.policies import joint
+from robot_arm.policies import checkpoints
 from robot_arm.policies.cartesian import ScriptedCartesianPolicy, VLACartesianPolicy
 from robot_arm.training.vla_bc import train_round
 
@@ -29,12 +29,12 @@ def run_stage(stage: str, cfg, config_path: Path) -> None:
 def collect_round(cfg) -> None:
     np.random.seed(cfg.seed)
     run_dir = Path(cfg.collection_dir)
-    merged, env, low_level = rollout_config.setup_rollout_context(cfg.collection, str(run_dir))
+    merged, env, joint_policy = rollout_config.setup_rollout_context(cfg.collection, str(run_dir))
     if cfg.round_index == 0:
         policy = ScriptedCartesianPolicy(merged)
     else:
         policy = VLACartesianPolicy(str(Path(cfg.previous_checkpoint) / "pretrained_model"))
-    collection.collect_episodes(merged, env, low_level, policy, run_dir, cfg.num_episodes)
+    collection.collect_episodes(merged, env, joint_policy, policy, run_dir, cfg.num_episodes)
 
 
 def prepare_dataset(cfg, round_datasets: list[Path]) -> Path:
@@ -120,7 +120,7 @@ def record_completed_round(cfg, run_dir: Path, report: list[dict]) -> None:
 
 def run_dagger(cfg, run_dir: Path) -> None:
     validate_config(cfg)
-    cfg.collection.policy_name = str(Path(joint.resolve_low_level_checkpoint(cfg.collection.policy_name)).resolve())
+    cfg.collection.policy_name = str(Path(checkpoints.resolve_joint_checkpoint(cfg.collection.policy_name)).resolve())
     run_dir = run_dir.resolve()
     round_datasets = []
     report = []

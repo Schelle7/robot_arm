@@ -1,7 +1,6 @@
 import json
 import numpy as np
 from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple
 from omegaconf import DictConfig
@@ -10,15 +9,7 @@ from robot_arm.geometry.pose import Pose, axis_angular_distance
 from robot_arm.arms.arm import Arm
 from robot_arm.robot_schema import BOX_BODY_NAMES, HISTORY_APPLIED_DUTY_SLICE, HISTORY_FEATURE_NAMES, MOTOR_ORDER
 from robot_arm.envs.grasp_estimator import GraspEstimator
-
-
-@dataclass
-class EnvironmentState:
-    observation: Dict[str, np.ndarray]
-    sensor_state: Dict[str, Any]
-    end_effector_pose: Pose
-    sim_state: Dict[str, np.ndarray] | None
-    grasp_confirmed: bool
+from robot_arm.control_types import CartesianAction, EnvironmentState
 
 
 class RobotEnv:
@@ -38,8 +29,8 @@ class RobotEnv:
         policy_history_steps = joint_hz * cfg.control.policy_history_seconds
 
         assert mujoco_hz % joint_hz == 0, f"mujoco_hz ({mujoco_hz}) must be divisible by joint_hz ({joint_hz})"
-        assert policy_history_steps >= 2, "policy_history_seconds must span at least two low-level control intervals"
-        assert float(policy_history_steps).is_integer(), "policy_history_seconds must contain an integer number of low-level control intervals"
+        assert policy_history_steps >= 2, "policy_history_seconds must span at least two joint control intervals"
+        assert float(policy_history_steps).is_integer(), "policy_history_seconds must contain an integer number of joint control intervals"
 
         self.arm = arm
         self.grasp_estimator = GraspEstimator(cfg.control.grasp_estimation)
@@ -272,11 +263,11 @@ class RobotEnv:
         excess = np.maximum(mean_absolute_duty - self.sustained_duty_allowance, 0.0)
         return -self.sustained_duty_penalty_factor * float(excess.sum())
 
-    def _compute_idle_action_penalty(self, policy_action: np.ndarray, time_left: float) -> float:
+    def _compute_idle_action_penalty(self, policy_action: np.ndarray, cartesian_action_progress: float) -> float:
         # The shortfall is charged rather than a flat penalty below the threshold, so that a policy
         # sitting at zero action still sees a gradient out of it.
         shortfall = max(self.idle_action_threshold - float(np.abs(policy_action).sum()), 0.0)
-        return -self.idle_action_penalty_factor * shortfall * time_left
+        return -self.idle_action_penalty_factor * shortfall * (1.0 - cartesian_action_progress)
 
     def _compute_gripper_duty_distance(self, gripper_duty: float, desired_gripper_duty: float) -> float:
         return abs(float(desired_gripper_duty) - float(gripper_duty))
@@ -353,17 +344,15 @@ class RobotEnv:
         requested_action: Dict[str, float],
         safe_action: Dict[str, float],
         policy_action: np.ndarray,
-        time_left: float,
-        cartesian_action: np.ndarray,
+        cartesian_action_progress: float,
+        cartesian_action: CartesianAction,
         current_pose: Pose,
         cartesian_action_start_pose: Pose,
         cartesian_action_ends: bool,
         gripper_duty: float,
-        desired_gripper_duty: float,
-        desired_gripper_duty_active: bool,
     ) -> Tuple[float, Dict[str, float]]:
-        desired_pose = self._compute_desired_pose(cartesian_action_start_pose, cartesian_action)
-        gripper_duty_distance = self._compute_gripper_duty_distance(gripper_duty, desired_gripper_duty)
+        desired_pose = self._compute_desired_pose(cartesian_action_start_pose, cartesian_action.cartesian_action)
+        gripper_duty_distance = self._compute_gripper_duty_distance(gripper_duty, cartesian_action.desired_gripper_duty)
         (
             position_distance,
             primary_orientation_distance,
@@ -393,14 +382,14 @@ class RobotEnv:
             current_pose,
             desired_pose,
             gripper_duty_distance,
-            desired_gripper_duty_active,
+            cartesian_action.desired_gripper_duty_active,
         )
 
         if self.pose_delta_diagnostics_enabled:
             self.pose_delta_diagnostics = self._compute_pose_delta_diagnostics(
                 current_pose,
                 desired_pose,
-                cartesian_action,
+                cartesian_action.cartesian_action,
             )
 
         reward_breakdown = {}
@@ -408,16 +397,16 @@ class RobotEnv:
             reward_breakdown["position_reward"] = position_reward
             reward_breakdown["primary_orientation_reward"] = primary_orientation_reward
             reward_breakdown["secondary_orientation_reward"] = secondary_orientation_reward
-            if not desired_gripper_duty_active:
+            if not cartesian_action.desired_gripper_duty_active:
                 reward_breakdown["gripper_reward"] = gripper_reward
-        if desired_gripper_duty_active:
+        if cartesian_action.desired_gripper_duty_active:
             reward_breakdown["gripper_duty_penalty"] = -self.gripper_duty_weight * gripper_duty_distance
         if self.joint_limit_penalty_enabled:
             reward_breakdown["joint_limit_penalty"] = joint_limit_penalty
         if self.sustained_duty_penalty_enabled:
             reward_breakdown["sustained_duty_penalty"] = self._compute_sustained_duty_penalty()
         if self.idle_action_penalty_enabled:
-            reward_breakdown["idle_action_penalty"] = self._compute_idle_action_penalty(policy_action, time_left)
+            reward_breakdown["idle_action_penalty"] = self._compute_idle_action_penalty(policy_action, cartesian_action_progress)
         if self.action_change_penalty_enabled:
             # This fights chattering and may reduce long-term wear, but is primarily an attempted
             # workaround for the current oscillation. It can reduce responsiveness.
@@ -435,14 +424,14 @@ class RobotEnv:
         action: np.ndarray,
         joint_positions: np.ndarray,
         policy_action: np.ndarray,
-        time_left: float,
-        cartesian_action: np.ndarray,
+        joint_step_idx: int,
+        cartesian_action: CartesianAction,
         cartesian_action_start_pose: Pose,
-        cartesian_action_ends: bool,
-        desired_gripper_duty: float,
-        desired_gripper_duty_active: bool,
     ) -> Tuple[EnvironmentState, float, Dict[str, float]]:
-        
+        joint_steps_per_cartesian_action = self.joint_hz // self.cartesian_hz
+        cartesian_action_progress = (joint_step_idx - 1) / joint_steps_per_cartesian_action
+        cartesian_action_ends = joint_step_idx == joint_steps_per_cartesian_action
+
         action_dict = {motor: float(duty) for motor, duty in zip(self.motor_order, action)}
         position_dict = {motor: float(pos) for motor, pos in zip(self.motor_order, joint_positions)}
 
@@ -472,14 +461,12 @@ class RobotEnv:
             requested_action=action_dict,
             safe_action=safe_action_dict,
             policy_action=policy_action,
-            time_left=time_left,
+            cartesian_action_progress=cartesian_action_progress,
             cartesian_action=cartesian_action,
             current_pose=state.end_effector_pose,
             cartesian_action_start_pose=cartesian_action_start_pose,
             cartesian_action_ends=cartesian_action_ends,
             gripper_duty=float(state.observation["gripper_duty"][0]),
-            desired_gripper_duty=desired_gripper_duty,
-            desired_gripper_duty_active=desired_gripper_duty_active,
         )
         self.previous_action[:] = policy_action
 

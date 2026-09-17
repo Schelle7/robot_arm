@@ -31,7 +31,7 @@ local_root = "/opt/robot-arm-training"
 data_root = "/opt/robot-arm-training/data"
 persistent_root = "/workspace/training"
 repository_url = "https://github.com/Schelle7/robot_arm.git"
-joint_policy = "artifacts/joint_policy/checkpoints/jax_sac_final_1000208.pkl"
+joint_policy = "artifacts/joint_policy/checkpoints/jax_sac_final_1000208.actor.npz"
 overrides = []
 
 [environment]

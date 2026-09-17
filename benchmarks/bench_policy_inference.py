@@ -8,8 +8,8 @@ from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark exported NumPy low-level policy inference.")
-    parser.add_argument("--checkpoint", required=True, help="SAC checkpoint path; its .actor.npz export is loaded.")
+    parser = argparse.ArgumentParser(description="Benchmark exported NumPy joint policy inference.")
+    parser.add_argument("--checkpoint", required=True, help="Path to the .actor.npz inference export.")
     parser.add_argument("--iterations", required=True, type=int)
     parser.add_argument("--warmup", required=True, type=int)
     args = parser.parse_args()

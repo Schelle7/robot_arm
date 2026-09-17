@@ -17,7 +17,7 @@ def warn_if_not_performance_mode():
             "\n========================================================================\n"
             "WARNING: POWER PROFILE IS NOT SET TO PERFORMANCE\n"
             f"Current profile: {profile}\n"
-            "Please enable Performance mode for low-level training.\n"
+            "Please enable Performance mode for joint training.\n"
             "========================================================================\n"
         )
         print(f"\033[1;31m{warning}\033[0m", flush=True)
@@ -52,7 +52,7 @@ def save_run_config(cfg: DictConfig):
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
-def train_low_level(cfg: DictConfig):
+def train_joint_policy(cfg: DictConfig):
     cfg = load_continuation_config(cfg)
     save_run_config(cfg)
     output_dir = HydraConfig.get().runtime.output_dir
@@ -65,4 +65,4 @@ def train_low_level(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-    train_low_level()
+    train_joint_policy()

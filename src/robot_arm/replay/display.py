@@ -58,21 +58,21 @@ def build_replay_display(
     action_diagnostics,
     completes_active_primitive,
     frame_index,
-    low_level_step,
+    joint_step,
     recorded_cfg,
 ):
     live_pose, _, _ = get_tcp_geometry(model, mdata)
-    dense_sample = dense_trajectory[low_level_step] if len(dense_trajectory) else {}
-    low_level_action = dense_sample["action"] if dense_sample else None
+    dense_sample = dense_trajectory[joint_step] if len(dense_trajectory) else {}
+    joint_action = dense_sample["action"] if dense_sample else None
     requested_duty = dense_sample["requested_duty"] if dense_sample else None
-    low_level_observation = dense_sample["obs"] if dense_sample else {}
+    joint_observation = dense_sample["obs"] if dense_sample else {}
     episode_time = frame_index / recorded_cfg.control.frequencies.cartesian
     primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
     primitive_rows.extend(primitive_diagnostic_rows(action_diagnostics))
 
     observation_rows = [
         [key, "  ".join(format_vector(value))]
-        for key, value in low_level_observation.items()
+        for key, value in joint_observation.items()
         if key != "history"
     ]
     if not observation_rows:
@@ -108,7 +108,7 @@ def build_replay_display(
             [
                 vector_row("Position", joint_positions, len(MOTOR_ORDER)),
                 vector_row("Velocity", joint_velocities, len(MOTOR_ORDER)),
-                vector_row("Policy action", low_level_action, len(MOTOR_ORDER)),
+                vector_row("Policy action", joint_action, len(MOTOR_ORDER)),
                 vector_row("Requested duty", requested_duty, len(MOTOR_ORDER)),
             ],
         ),
@@ -130,7 +130,7 @@ def build_replay_display(
             ["Metric", "Value / difference", "Threshold"],
             primitive_rows,
         ),
-        section("Low-level observation", ["Input", "Values"], observation_rows),
-        section("Last low-level reward", ["Component", "Value"], reward_rows),
+        section("Joint observation", ["Input", "Values"], observation_rows),
+        section("Last joint reward", ["Component", "Value"], reward_rows),
     ]
     return sections, []

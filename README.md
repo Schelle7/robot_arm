@@ -7,9 +7,9 @@ an SO-101 follower arm, using [LeRobot](https://huggingface.co/docs/lerobot) and
 
 [Watch on YouTube ↗](https://youtu.be/o0uG7idjmQ8)
 
-[![Watch: low-level duty control gripping and relocating a box](https://img.youtube.com/vi/o0uG7idjmQ8/hqdefault.jpg)](https://youtu.be/o0uG7idjmQ8)
+[![Watch: joint duty control gripping and relocating a box](https://img.youtube.com/vi/o0uG7idjmQ8/hqdefault.jpg)](https://youtu.be/o0uG7idjmQ8)
 
-The demo uses scripted Cartesian targets and a learned low-level duty controller
+The demo uses scripted Cartesian targets and a learned joint duty controller
 to pick up and relocate a box. Pick-and-place works in simulation but remains
 imperfect. The demo does not demonstrate VLA-driven control.
 
@@ -24,13 +24,13 @@ imperfect. The demo does not demonstrate VLA-driven control.
    position-delta channel, and a primitive-completion score. The scripted primitive
    supplies the desired gripper duty and its enable flag separately; the VLA does
    not predict those settings.
-3. A low-level policy trained with SAC tracks the Cartesian command using robot
+3. A joint policy trained with SAC tracks the Cartesian command using robot
    state and recent history. It produces actions for the six motors, which are
    converted to applied duties by the control pipeline.
 4. The arm implementation applies those duties to simulated motor dynamics in
    MuJoCo or sends PWM commands to the physical arm.
 
-The low-level controller is trained for duty control, not joint-position commands
+The joint controller is trained for duty control, not joint-position commands
 or one-step inverse kinematics. The rollout defaults request Cartesian updates at
 5 Hz, motor-control updates at 20 Hz, and simulation steps at 200 Hz.
 
@@ -49,19 +49,19 @@ From the repository root:
 make install
 ```
 
-Configuration lives in [conf/](conf/). Rollouts combine the low-level training
+Configuration lives in [conf/](conf/). Rollouts combine the joint training
 run's saved configuration with [conf/rollout.yaml](conf/rollout.yaml).
 
 ## Run and train
 
 | Command | Purpose |
 | --- | --- |
-| `make train_low_level` | Train the low-level duty controller in simulation. |
+| `make train_joint_policy` | Train the joint duty controller in simulation. |
 | `make train_runpod` | Launch VLA training on RunPod using `deployment/runpod/train.toml`. |
 | `make sanity_check_sim` | Roll out scripted Cartesian targets through the learned duty controller. |
 | `make rollout_sim` | Roll out the VLA through the learned duty controller. |
 | `make download_trained_vla` | Download the latest locally tracked RunPod run's log and, when available, final VLA checkpoint. |
-| `make download_pretrained` | Download the pretrained VLA and low-level controller checkpoints. |
+| `make download_pretrained` | Download the pretrained VLA and joint controller checkpoints. |
 | `make test` | Run automated tests, excluding physical sensor tests. |
 | `make lint` | Check formatting and lint. |
 | `make format` | Apply formatting and automatic lint fixes. |
@@ -70,7 +70,7 @@ RunPod training requires your credentials, SSH keys, network volume, and prepare
 environment archive configured in [deployment/runpod/train.toml](deployment/runpod/train.toml).
 The checked-in volume and archive settings refer to the author's setup.
 
-Simulation rollouts require a trained low-level checkpoint, its saved Hydra
+Simulation rollouts require a trained joint checkpoint, its saved Hydra
 configuration, and its model files. VLA rollouts additionally require a complete
 VLA inference checkpoint. Weights are not included in the repository.
 

@@ -344,8 +344,8 @@ def initialize_state(
 class JaxSAC:
     def __init__(self, cfg: DictConfig):
         configured_history_steps = cfg.control.frequencies.joint * cfg.control.policy_history_seconds
-        assert configured_history_steps >= 2, "policy_history_seconds must span at least two low-level control intervals"
-        assert float(configured_history_steps).is_integer(), "policy_history_seconds must contain an integer number of low-level control intervals"
+        assert configured_history_steps >= 2, "policy_history_seconds must span at least two joint control intervals"
+        assert float(configured_history_steps).is_integer(), "policy_history_seconds must contain an integer number of joint control intervals"
         history_steps = int(configured_history_steps)
         self.observation_sizes = policy_observation_sizes(int(cfg.waypoint.cartesian_action_dim), history_steps)
         self.action_dim = 6
