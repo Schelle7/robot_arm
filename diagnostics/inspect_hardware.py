@@ -65,9 +65,17 @@ def compare_position_modes(bus) -> dict:
 
 def inspect_bus(bus) -> dict:
     registers = (
-        "Operating_Mode", "Torque_Enable", "Phase", "Homing_Offset",
-        "Min_Position_Limit", "Max_Position_Limit", "Min_Voltage_Limit",
-        "Present_Position", "Present_Velocity", "Present_Load", "Present_Voltage",
+        "Operating_Mode",
+        "Torque_Enable",
+        "Phase",
+        "Homing_Offset",
+        "Min_Position_Limit",
+        "Max_Position_Limit",
+        "Min_Voltage_Limit",
+        "Present_Position",
+        "Present_Velocity",
+        "Present_Load",
+        "Present_Voltage",
     )
     values = {register: {} for register in registers}
     errors = {}
@@ -118,7 +126,11 @@ def main() -> None:
     parser.add_argument("--port", required=True)
     parser.add_argument("--calibration", type=Path, required=True)
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--compare-modes", action="store_true", help="With torque already off, temporarily switch each motor between position and PWM modes and restore it. Writes Operating_Mode only.")
+    parser.add_argument(
+        "--compare-modes",
+        action="store_true",
+        help="With torque already off, temporarily switch each motor between position and PWM modes and restore it. Writes Operating_Mode only.",
+    )
     args = parser.parse_args()
     calibration = json.loads(args.calibration.read_text())
     bus = FeetechMotorsBus(

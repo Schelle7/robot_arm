@@ -1,7 +1,7 @@
 import numpy as np
 from omegaconf import OmegaConf
 
-from analysis.rollouts import Rollout, dense_steps, stack_dense
+from diagnostics.rollouts import Rollout, dense_steps, stack_dense
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
 COLUMN = 15
@@ -18,13 +18,14 @@ def print_rollout(rollout: Rollout) -> None:
     _print_servo_configuration(rollout)
     _print_git(rollout)
 
-    if rollout.data is None:
-        print("\nNo episode.npz under this run, it never reached save().")
-    else:
-        _print_state_traces(rollout)
-        _print_cartesian_traces(rollout)
-        _print_dense_traces(rollout)
-        _print_waypoints(rollout)
+    if not rollout.episodes:
+        print("\nNo episode.npz found under this run.")
+    for episode_path, data in rollout.episodes.items():
+        _banner(f"episode: {episode_path.relative_to(rollout.run_dir)}")
+        _print_state_traces(data)
+        _print_cartesian_traces(data)
+        _print_dense_traces(data)
+        _print_waypoints(data)
 
     _print_log(rollout)
 
@@ -32,7 +33,7 @@ def print_rollout(rollout: Rollout) -> None:
 def _print_run(rollout: Rollout) -> None:
     _banner(f"{rollout.job}  {rollout.started}")
     print(f"run_dir        {rollout.run_dir}")
-    print(f"episode        {rollout.episode_path}")
+    print(f"episodes       {len(rollout.episodes)}")
 
 
 def _print_config(rollout: Rollout) -> None:
@@ -58,13 +59,12 @@ def _print_git(rollout: Rollout) -> None:
     print(rollout.git_status)
 
 
-def _print_state_traces(rollout: Rollout) -> None:
-    data = rollout.data
+def _print_state_traces(data: dict[str, np.ndarray]) -> None:
     seconds = _seconds(data)
 
     _banner(f"per-state traces, {len(data['step'])} states at the cartesian rate")
 
-    print(f"\nstep / primitive_index / image_path")
+    print("\nstep / primitive_index / image_path")
     print(f"{'i':>{INDEX}}{'t s':>10}{'step':>8}{'primitive':>12}   image_path")
     for index, second in enumerate(seconds):
         print(f"{index:>{INDEX}}{second:>10.3f}{data['step'][index]:>8}{data['primitive_index'][index]:>12}   {data['image_path'][index]}")
@@ -85,8 +85,7 @@ def _print_state_traces(rollout: Rollout) -> None:
         _trace("qvel", _numbered("v", data["qvel"].shape[1]), data["qvel"], seconds)
 
 
-def _print_cartesian_traces(rollout: Rollout) -> None:
-    data = rollout.data
+def _print_cartesian_traces(data: dict[str, np.ndarray]) -> None:
     seconds = _seconds(data)[: len(data["reward"])]
 
     _banner(f"per-transition traces, {len(data['reward'])} cartesian actions")
@@ -105,13 +104,12 @@ def _print_cartesian_traces(rollout: Rollout) -> None:
         print(f"{index:>{INDEX}}   " + "  ".join(f"{key}={_format(value)}" for key, value in diagnostics.items()))
 
 
-def _print_dense_traces(rollout: Rollout) -> None:
-    data = rollout.data
+def _print_dense_traces(data: dict[str, np.ndarray]) -> None:
     steps = dense_steps(data)
     if not steps:
         return
 
-    _banner(f"per-dense-step traces, {len(steps)} joint joint steps")
+    _banner(f"per-dense-step traces, {len(steps)} joint steps")
 
     _trace("action, policy output before duty scaling", MOTOR_ORDER, stack_dense(steps, "action"))
     _trace("requested_duty, before safety processing", MOTOR_ORDER, stack_dense(steps, "requested_duty"))
@@ -119,7 +117,7 @@ def _print_dense_traces(rollout: Rollout) -> None:
     _trace("next_end_effector_pose", _numbered("p", 10), stack_dense(steps, "next_end_effector_pose"))
 
     breakdown_keys = sorted({key for step in steps for key in step["reward_breakdown"]})
-    rows = np.array([[step["reward"]] + [step["reward_breakdown"].get(key, np.nan) for key in breakdown_keys] for step in steps])
+    rows = np.array([[step["reward"]] + [step["reward_breakdown"][key] for key in breakdown_keys] for step in steps])
     _trace("reward and its breakdown", ("reward", *breakdown_keys), rows)
 
     terminated = np.flatnonzero([step["terminated"] for step in steps])
@@ -129,8 +127,7 @@ def _print_dense_traces(rollout: Rollout) -> None:
         _trace(f"obs.{name}", _numbered(name[:6], np.atleast_1d(steps[0]["obs"][name]).size), np.array([np.atleast_1d(step["obs"][name]) for step in steps]))
 
 
-def _print_waypoints(rollout: Rollout) -> None:
-    data = rollout.data
+def _print_waypoints(data: dict[str, np.ndarray]) -> None:
     if "waypoints" not in data:
         return
 

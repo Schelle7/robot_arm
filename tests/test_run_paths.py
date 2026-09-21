@@ -6,11 +6,14 @@ import pytest
 from robot_arm.run_paths import find_runs, run_timestamp
 
 
-@pytest.mark.parametrize("path, expected", [
-    ("outputs/train_joint_policy/2026-09-16/12-34-56", datetime(2026, 9, 16, 12, 34, 56)),
-    ("outputs/train_vla/runpod_2026-09-16_12-34-56", datetime(2026, 9, 16, 12, 34, 56)),
-    ("outputs/train_vla/runpod_2026-09-16", datetime(2026, 9, 16)),
-])
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("outputs/train_joint_policy/2026-09-16/12-34-56", datetime(2026, 9, 16, 12, 34, 56)),
+        ("outputs/train_vla/runpod_2026-09-16_12-34-56", datetime(2026, 9, 16, 12, 34, 56)),
+        ("outputs/train_vla/runpod_2026-09-16", datetime(2026, 9, 16)),
+    ],
+)
 def test_run_timestamp(path, expected):
     assert run_timestamp(Path(path)) == expected
 

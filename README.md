@@ -19,11 +19,10 @@ imperfect. The demo does not demonstrate VLA-driven control.
    close the gripper, lift, transport, and release.
 2. Either a scripted Cartesian policy or a fine-tuned SmolVLA chooses Cartesian
    motion and when to advance to the next primitive. SmolVLA receives camera
-   images, robot state, and the current primitive's text instruction. Its eight
+   images, robot state, and the current primitive's text instruction. Its ten
    outputs are three translation channels, three rotation channels, one gripper
-   position-delta channel, and a primitive-completion score. The scripted primitive
-   supplies the desired gripper duty and its enable flag separately; the VLA does
-   not predict those settings.
+   position-delta channel, a primitive-completion score, desired gripper duty,
+   and a duty-enable score.
 3. A joint policy trained with SAC tracks the Cartesian command using robot
    state and recent history. It produces actions for the six motors, which are
    converted to applied duties by the control pipeline.

@@ -1,11 +1,7 @@
 # Limitations
 
-Desired gripper duty and its enable flag are supplied by scripted primitives,
-not predicted by the VLA. The VLA predicts a gripper position delta, while the
-joint controller receives the duty target and mode separately. Choosing grip
-effort and when to use duty control therefore still depends on the scripted task.
-
-The seven-dimensional Cartesian action projections are trained from scratch; their rollout performance still needs evaluation.
+The ten-dimensional VLA action projections are trained from scratch; their rollout performance still needs evaluation.
+Gripper-duty supervision comes from scripted primitives, so learning object-dependent grip effort requires demonstrations with varying duty targets.
 
 Random waypoint targets are sampled in Cartesian space with no reachability or collision check, so some ask for a position and orientation the 5-DOF arm cannot hold at once, and some can only be approached by moving through the floor.
 (the sampling is designed to avoid it but it isnt 100% guaranteed)

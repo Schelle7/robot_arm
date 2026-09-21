@@ -9,10 +9,12 @@ from robot_arm.training.replay_buffer import NumpyReplayBuffer
 
 @pytest.fixture
 def recording_case(tmp_path):
-    cfg = OmegaConf.create({
-        name: OmegaConf.to_container(OmegaConf.load(f"conf/{name}/default.yaml"), resolve=True)
-        for name in ("control", "waypoint", "servo", "safety", "reward", "training", "runtime")
-    })
+    cfg = OmegaConf.create(
+        {
+            name: OmegaConf.to_container(OmegaConf.load(f"conf/{name}/default.yaml"), resolve=True)
+            for name in ("control", "waypoint", "servo", "safety", "reward", "training", "runtime")
+        }
+    )
     cfg.backend = "sim"
     recorded_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
     recorded_cfg.backend = "real"

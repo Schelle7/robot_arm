@@ -3,8 +3,8 @@ import contextlib
 import sys
 from pathlib import Path
 
-from analysis.report import print_rollout
-from analysis.rollouts import find_rollouts, load_rollout
+from diagnostics.report import print_rollout
+from diagnostics.rollouts import ROLLOUT_ROOT, find_rollouts, load_rollout
 
 
 def main() -> None:
@@ -14,12 +14,12 @@ def main() -> None:
     parser.add_argument("--out", type=Path, help="Write the dump here instead of stdout. A full run is thousands of lines.")
     args = parser.parse_args()
 
-    runs = find_rollouts(limit=args.limit)
+    runs = find_rollouts(limit=args.limit, root=ROLLOUT_ROOT)
 
     if args.run is None:
         for index, run in enumerate(runs):
-            episode = next(run.glob("**/episode.npz"), None)
-            print(f"{index:>3}  {run}  {'episode' if episode else 'no episode'}")
+            episode_count = sum(1 for _ in run.glob("**/episode.npz"))
+            print(f"{index:>3}  {run}  {episode_count} episodes")
         return
 
     run_dir = runs[int(args.run)] if args.run.isdigit() else Path(args.run)

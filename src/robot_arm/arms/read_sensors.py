@@ -1,6 +1,5 @@
 import time
 
-
 FEEDBACK_REGISTERS = (
     "Present_Position",
     "Present_Velocity",

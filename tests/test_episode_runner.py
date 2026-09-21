@@ -10,7 +10,6 @@ from robot_arm.policies.joint_observation import JointObservationBuilder
 from robot_arm.recording.recorder import EpisodeRecorder
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
-
 HISTORY_STEPS = 10
 
 
@@ -33,11 +32,13 @@ def test_recording_keeps_teacher_labels_separate_from_executed_actions():
 
     runner.teacher_policy = SimpleNamespace(get_action=get_teacher_action)
     state = SimpleNamespace(
-        end_effector_pose=object(), observation={"gripper_duty": np.array([-0.35])},
-        grasp_confirmed=True, sensor_state={},
+        end_effector_pose=object(),
+        observation={"gripper_duty": np.array([-0.35])},
+        grasp_confirmed=True,
+        sensor_state={},
     )
     primitive = SimpleNamespace(prompt="close gripper")
-    executed = CartesianAction(np.full(7, -0.2), {}, False, -0.35, True)
+    executed = CartesianAction(np.full(7, -0.2), {}, False, 0.1, False)
     runner._record_transition(0, state, 0.0, {}, np.zeros(16), primitive, 0, executed)
 
     assert teacher_inputs[0]["state"] is state
@@ -48,6 +49,10 @@ def test_recording_keeps_teacher_labels_separate_from_executed_actions():
     np.testing.assert_array_equal(transition["teacher_cartesian_action"], teacher.cartesian_action)
     assert transition["teacher_completes_active_primitive"] is True
     assert transition["teacher_completion_score"] == 0.75
+    assert transition["desired_gripper_duty"] == 0.1
+    assert transition["desired_gripper_duty_active"] is False
+    assert transition["teacher_desired_gripper_duty"] == -0.35
+    assert transition["teacher_desired_gripper_duty_active"] is True
     teacher.cartesian_action[:] = 0
     np.testing.assert_allclose(transition["teacher_cartesian_action"], 0.1)
 
@@ -96,7 +101,7 @@ class EnvironmentStub:
     def step(
         self,
         action,
-        joint_positions,
+        state,
         policy_action,
         joint_step_idx,
         cartesian_action,
@@ -238,11 +243,10 @@ def test_latest_joint_positions_anchor_history_and_remain_in_current_state():
     observation = raw_observation(0.25)
 
     policy_observation = runner.joint_observation.build(
-        observation,
-        np.zeros(7, dtype=np.float32),
+        EnvironmentState(observation, {}, runner.env.pose, None, False),
+        CartesianAction(np.zeros(7, dtype=np.float32), {}, False, 0.0, False),
+        runner.env.pose,
         0.0,
-        0.0,
-        False,
     )
 
     np.testing.assert_array_equal(policy_observation["history"][:6], observation["joint_positions"])
@@ -309,31 +313,39 @@ def test_weights_sync_at_configured_cartesian_action_interval():
     assert sync_calls == [2, 4]
 
 
-@pytest.mark.parametrize("angle,holding,too_far,failed", [
-    (0.299, True, False, True),
-    (0.3, True, False, False),
-    (0.3415, True, False, False),
-    (0.3415, True, True, True),
-    (0.0, False, True, False),
-])
+@pytest.mark.parametrize(
+    "angle,holding,too_far,failed",
+    [
+        (0.299, True, False, True),
+        (0.3, True, False, False),
+        (0.3415, True, False, False),
+        (0.3415, True, True, True),
+        (0.0, False, True, False),
+    ],
+)
 def test_grip_abort_checks_angle_and_box_distance_only_while_holding(angle, holding, too_far, failed):
     runner = EpisodeRunner.__new__(EpisodeRunner)
     runner.env = SimpleNamespace(box_too_far=lambda pose: too_far)
-    runner.cfg = SimpleNamespace(waypoint=SimpleNamespace(
-        pick_and_place=SimpleNamespace(gripper_abort_below_radians=0.3),
-    ))
+    runner.cfg = SimpleNamespace(
+        waypoint=SimpleNamespace(
+            pick_and_place=SimpleNamespace(gripper_abort_below_radians=0.3),
+        )
+    )
     state = SimpleNamespace(end_effector_pose=SimpleNamespace(gripper=angle))
     primitive = SimpleNamespace(desired_gripper_duty_active=holding)
 
     assert runner.grip_failed(state, primitive) == failed
 
 
-@pytest.mark.parametrize("flags,angles,too_far,expected_steps,aborted", [
-    ([False, False], [0.4, 0.4], False, 1, False),
-    ([False, False], [0.4, 0.299], False, 1, True),
-    ([True, False], [0.4, 0.4], False, 1, False),
-    ([True, False], [0.4, 0.4], True, 1, True),
-])
+@pytest.mark.parametrize(
+    "flags,angles,too_far,expected_steps,aborted",
+    [
+        ([False, False], [0.4, 0.4], False, 1, False),
+        ([False, False], [0.4, 0.299], False, 1, True),
+        ([True, False], [0.4, 0.4], False, 1, False),
+        ([True, False], [0.4, 0.4], True, 1, True),
+    ],
+)
 def test_runner_preserves_policy_completion_and_aborts_failed_grips(flags, angles, too_far, expected_steps, aborted):
     runner = EpisodeRunner.__new__(EpisodeRunner)
     runner.progress = None
@@ -351,15 +363,20 @@ def test_runner_preserves_policy_completion_and_aborts_failed_grips(flags, angle
     runner._draw_desired_path = lambda *args: None
     recorded_actions = []
     runner._record_transition = lambda *args: recorded_actions.append(args[-1])
-    states = [SimpleNamespace(
-        end_effector_pose=SimpleNamespace(gripper=angle),
-        observation={"gripper_duty": np.array([-0.35])},
-        grasp_confirmed=flag,
-    ) for angle, flag in zip(angles, flags)]
+    states = [
+        SimpleNamespace(
+            end_effector_pose=SimpleNamespace(gripper=angle),
+            observation={"gripper_duty": np.array([-0.35])},
+            grasp_confirmed=flag,
+        )
+        for angle, flag in zip(angles, flags)
+    ]
     remaining_states = iter(states[1:])
     runner.execute_cartesian_action = lambda *args: (next(remaining_states), 0.0)
     primitive = SimpleNamespace(
-        prompt="close gripper", desired_gripper_duty=-0.35, desired_gripper_duty_active=True,
+        prompt="close gripper",
+        desired_gripper_duty=-0.35,
+        desired_gripper_duty_active=True,
     )
 
     final_state, completed_steps, truncated = runner.execute_primitive(states[0], primitive, 0, 0)

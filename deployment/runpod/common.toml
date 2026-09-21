@@ -1,0 +1,54 @@
+[common]
+local_run_dir = "outputs/runpod/training"
+api_url = "https://rest.runpod.io/v1"
+credentials_file = "~/.config/runpod/env"
+ssh_identity_file = "~/.ssh/id_ed25519"
+ssh_public_key_file = "~/.ssh/id_ed25519.pub"
+request_timeout_seconds = 30
+startup_timeout_seconds = 900
+poll_seconds = 10
+region = "EU-RO-1"
+endpoint_url = "https://s3api-eu-ro-1.runpod.io"
+aws_profile = "runpod"
+connect_timeout_seconds = 10
+read_timeout_seconds = 120
+
+[common.pod]
+cloudType = "SECURE"
+dataCenterPriority = "custom"
+networkVolumeId = "xhg1amwfrs"
+volumeMountPath = "/workspace"
+volumeInGb = 0
+containerDiskInGb = 80
+ports = ["22/tcp"]
+
+[train]
+
+[train.pod]
+computeType = "GPU"
+imageName = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
+gpuTypeIds = ["NVIDIA GeForce RTX 4090", "NVIDIA L40", "NVIDIA GeForce RTX 5090", "NVIDIA L40S"]
+gpuTypePriority = "custom"
+gpuCount = 1
+interruptible = false
+supportPublicIp = true
+
+[train.training]
+archive = "/workspace/preparation/20260914T150904313326Z/environment.tar.gz"
+local_root = "/opt/robot-arm-training"
+persistent_root = "/workspace/training"
+repository_url = "https://github.com/Schelle7/robot_arm.git"
+
+[train.environment]
+HF_HOME = "/workspace/.cache/huggingface"
+HF_HUB_CACHE = "/workspace/.cache/huggingface/hub"
+HF_HUB_OFFLINE = "1"
+TRANSFORMERS_OFFLINE = "1"
+MUJOCO_GL = "egl"
+PYOPENGL_PLATFORM = "egl"
+NVIDIA_DRIVER_CAPABILITIES = "compute,utility,graphics"
+PYTHONUNBUFFERED = "1"
+
+[download]
+
+[prepare]

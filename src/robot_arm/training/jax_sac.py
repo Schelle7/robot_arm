@@ -243,7 +243,11 @@ def build_update_step(
         log_ent_coef = optax.apply_updates(state.log_ent_coef, ent_coef_updates)
         target_critic_params = polyak_update(state.target_critic_params, critic_params, tau)
         finite = jnp.logical_and(
-            jnp.all(jnp.isfinite(jnp.array((actor_loss, actor_total_loss, forward_loss, critic_loss, critic_total_loss, critic_forward_loss, ent_coef_loss, entropy_coefficient, mean_q)))),
+            jnp.all(
+                jnp.isfinite(
+                    jnp.array((actor_loss, actor_total_loss, forward_loss, critic_loss, critic_total_loss, critic_forward_loss, ent_coef_loss, entropy_coefficient, mean_q))
+                )
+            ),
             jax.tree.reduce(
                 lambda result, value: jnp.logical_and(result, jnp.all(jnp.isfinite(value))),
                 (actor_params, critic_params, target_critic_params, log_ent_coef),
@@ -450,11 +454,7 @@ class JaxSAC:
 
     def load(self, path: str) -> None:
         checkpoint = pickle.loads(Path(path).read_bytes())
-        if (
-            checkpoint["observation_sizes"] != self.observation_sizes
-            or checkpoint["action_dim"] != self.action_dim
-            or checkpoint["architecture"] != self.architecture
-        ):
+        if checkpoint["observation_sizes"] != self.observation_sizes or checkpoint["action_dim"] != self.action_dim or checkpoint["architecture"] != self.architecture:
             raise ValueError("Checkpoint architecture does not match the configured JAX SAC architecture")
         saved_leaves, saved_structure = jax.tree.flatten(checkpoint["state"])
         current_leaves, current_structure = jax.tree.flatten(self.state)

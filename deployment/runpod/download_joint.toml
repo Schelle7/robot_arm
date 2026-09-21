@@ -1,0 +1,2 @@
+training_type = "joint"
+local_policy_dir = "outputs/train_joint_policy"

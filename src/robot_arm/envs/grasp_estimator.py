@@ -11,11 +11,7 @@ class GraspEstimator:
         self.candidate_started_ns = 0
 
     def update(self, position, velocity, duty, sample_time_ns) -> bool:
-        candidate = (
-            self.min_position <= position <= self.max_position
-            and duty <= -self.min_closing_duty
-            and abs(velocity) <= self.max_velocity
-        )
+        candidate = self.min_position <= position <= self.max_position and duty <= -self.min_closing_duty and abs(velocity) <= self.max_velocity
         if not candidate:
             self.reset()
             return False

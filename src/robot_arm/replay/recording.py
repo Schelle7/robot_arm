@@ -61,11 +61,6 @@ def recorded_model_path(episode_path: str, recorded_cfg: DictConfig) -> str:
     return str(rollout_directory / "model" / model_filename)
 
 
-def load_recorded_timing(episode_path: str):
-    recorded_cfg = load_recorded_config(episode_path)
-    return recorded_cfg
-
-
 def load_replay_recording(cfg: DictConfig):
     episode_path = cfg.episode_path
     if episode_path is None:
@@ -73,7 +68,7 @@ def load_replay_recording(cfg: DictConfig):
         if episode_path is None:
             raise FileNotFoundError("Could not find any episode.npz files under outputs/rollout.")
 
-    recorded_cfg = load_recorded_timing(episode_path)
+    recorded_cfg = load_recorded_config(episode_path)
     data = np.load(episode_path, allow_pickle=True)
     num_actions = len(data["cartesian_action"])
     if recorded_cfg.backend == "sim":

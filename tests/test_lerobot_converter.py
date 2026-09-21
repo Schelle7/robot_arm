@@ -24,6 +24,10 @@ def test_conversion_uses_teacher_labels_even_when_learner_never_lifts(tmp_path, 
         teacher_cartesian_action=teacher_action,
         teacher_completes_active_primitive=[True],
         teacher_completion_score=[0.75],
+        teacher_desired_gripper_duty=[-0.35],
+        teacher_desired_gripper_duty_active=[True],
+        desired_gripper_duty=[0.1],
+        desired_gripper_duty_active=[False],
         external_camera_image_path=["camera.jpg", "camera.jpg"],
         wrist_camera_image_path=["camera.jpg", "camera.jpg"],
     )
@@ -46,6 +50,8 @@ def test_conversion_uses_teacher_labels_even_when_learner_never_lifts(tmp_path, 
 
     np.testing.assert_array_equal(frames[0]["action"].numpy()[:7], teacher_action[0])
     assert frames[0]["action"].numpy()[7] == 0.75
+    assert frames[0]["action"].shape == (10,)
+    np.testing.assert_allclose(frames[0]["action"].numpy()[8:], [-0.35, 1.0])
     assert saved_episodes == [True]
     assert finalized == [True]
     report = json.loads((tmp_path / "converted.conversion_report.json").read_text())
@@ -59,10 +65,37 @@ def test_conversion_requires_teacher_labels():
         lerobot_converter.teacher_labels({"step": [0, 1], "cartesian_action": np.zeros((1, 7))})
 
 
+def test_conversion_requires_teacher_duty_labels():
+    with pytest.raises(KeyError, match="teacher_desired_gripper_duty"):
+        lerobot_converter.teacher_labels(
+            {
+                "step": [0, 1],
+                "teacher_cartesian_action": np.zeros((1, 7)),
+                "teacher_completion_score": [0.5],
+            }
+        )
+
+
+@pytest.mark.parametrize("duty,enabled", [(1.1, 1), (float("nan"), 0), (-0.35, 0.5)])
+def test_conversion_rejects_invalid_teacher_duty_labels(duty, enabled):
+    with pytest.raises(AssertionError):
+        lerobot_converter.teacher_labels(
+            {
+                "step": [0, 1],
+                "teacher_cartesian_action": np.zeros((1, 7)),
+                "teacher_completion_score": [0.5],
+                "teacher_desired_gripper_duty": [duty],
+                "teacher_desired_gripper_duty_active": [enabled],
+            }
+        )
+
+
 def test_conversion_rejects_incomplete_teacher_labels():
     with pytest.raises(AssertionError, match="Every transition requires a teacher action"):
-        lerobot_converter.teacher_labels({
-            "step": [0, 1, 2],
-            "teacher_cartesian_action": np.zeros((1, 7)),
-            "teacher_completion_score": [0.25],
-        })
+        lerobot_converter.teacher_labels(
+            {
+                "step": [0, 1, 2],
+                "teacher_cartesian_action": np.zeros((1, 7)),
+                "teacher_completion_score": [0.25],
+            }
+        )

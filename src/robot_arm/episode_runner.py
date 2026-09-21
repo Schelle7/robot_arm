@@ -41,10 +41,7 @@ class EpisodeRunner:
         abort_angle = float(cfg.waypoint.pick_and_place.gripper_abort_below_radians)
         closed_angle = float(cfg.waypoint.pick_and_place.gripper_closed_radians)
         if abort_angle < closed_angle:
-            raise ValueError(
-                f"Gripper abort threshold ({abort_angle} rad) must not be below "
-                f"the requested closed angle ({closed_angle} rad)."
-            )
+            raise ValueError(f"Gripper abort threshold ({abort_angle} rad) must not be below the requested closed angle ({closed_angle} rad).")
 
         self.env = env
         self.joint_steps_per_cartesian_action = joint_hz // cartesian_hz
@@ -186,7 +183,7 @@ class EpisodeRunner:
     def _step_joint(
         self,
         policy_observation: Dict[str, np.ndarray],
-        joint_positions: np.ndarray,
+        state: EnvironmentState,
         joint_step_idx: int,
         cartesian_action: CartesianAction,
         cartesian_action_start_pose: object,
@@ -195,7 +192,7 @@ class EpisodeRunner:
         duty_action = joint_action * self.duty_limits
         next_state, reward, reward_breakdown = self.env.step(
             duty_action,
-            joint_positions,
+            state,
             joint_action,
             joint_step_idx,
             cartesian_action,
@@ -320,10 +317,7 @@ class EpisodeRunner:
     def grip_failed(self, state: EnvironmentState, primitive: ActionPrimitive) -> bool:
         return bool(
             primitive.desired_gripper_duty_active
-            and (
-                state.end_effector_pose.gripper < self.cfg.waypoint.pick_and_place.gripper_abort_below_radians
-                or self.env.box_too_far(state.end_effector_pose)
-            )
+            and (state.end_effector_pose.gripper < self.cfg.waypoint.pick_and_place.gripper_abort_below_radians or self.env.box_too_far(state.end_effector_pose))
         )
 
     def _sync_weights_if_due(self):
@@ -355,11 +349,10 @@ class EpisodeRunner:
         self.env.reset_cartesian_action_reward_tracking(cartesian_action_start_pose_obj, cartesian_action.cartesian_action)
         cartesian_action_progress = 0.0
         policy_observation = self.joint_observation.build(
-            state.observation,
-            cartesian_action_start_pose_obj.delta_to(desired_pose),
+            state,
+            cartesian_action,
+            desired_pose,
             cartesian_action_progress,
-            cartesian_action.desired_gripper_duty,
-            cartesian_action.desired_gripper_duty_active,
         )
 
         total_reward = 0.0
@@ -371,7 +364,7 @@ class EpisodeRunner:
             cartesian_action_terminated = self.cfg.training.terminate_at_cartesian_action_end and cartesian_action_ends
             joint_action, duty_action, next_state, reward, reward_breakdown = self._step_joint(
                 policy_observation,
-                state.observation["joint_positions"],
+                state,
                 joint_step_idx,
                 cartesian_action,
                 cartesian_action_start_pose_obj,
@@ -382,11 +375,10 @@ class EpisodeRunner:
 
             cartesian_action_progress = joint_step_idx / self.joint_steps_per_cartesian_action
             next_policy_observation = self.joint_observation.build(
-                next_state.observation,
-                next_state.end_effector_pose.delta_to(desired_pose),
+                next_state,
+                cartesian_action,
+                desired_pose,
                 cartesian_action_progress,
-                cartesian_action.desired_gripper_duty,
-                cartesian_action.desired_gripper_duty_active,
             )
 
             self._record_joint_transition(

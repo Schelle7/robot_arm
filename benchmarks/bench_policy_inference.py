@@ -15,10 +15,7 @@ def main():
     args = parser.parse_args()
 
     policy = load_numpy_policy(args.checkpoint)
-    observation = {
-        name: np.zeros(policy.observation_sizes[name], dtype=np.float32)
-        for name in POLICY_OBSERVATION_NAMES
-    }
+    observation = {name: np.zeros(policy.observation_sizes[name], dtype=np.float32) for name in POLICY_OBSERVATION_NAMES}
 
     for _ in range(args.warmup):
         policy.predict(observation, deterministic=True)

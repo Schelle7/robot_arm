@@ -16,14 +16,10 @@ def make_batch(random_key, batch_size, observation_sizes, action_dim):
     group_count = len(POLICY_OBSERVATION_NAMES)
     random_keys = jax.random.split(random_key, group_count * 2 + 3)
     return Batch(
-        observations={
-            name: jax.random.normal(random_keys[index], (batch_size, observation_sizes[name]))
-            for index, name in enumerate(POLICY_OBSERVATION_NAMES)
-        },
+        observations={name: jax.random.normal(random_keys[index], (batch_size, observation_sizes[name])) for index, name in enumerate(POLICY_OBSERVATION_NAMES)},
         actions=jax.random.uniform(random_keys[group_count * 2], (batch_size, action_dim), minval=-1.0, maxval=1.0),
         next_observations={
-            name: jax.random.normal(random_keys[index + group_count], (batch_size, observation_sizes[name]))
-            for index, name in enumerate(POLICY_OBSERVATION_NAMES)
+            name: jax.random.normal(random_keys[index + group_count], (batch_size, observation_sizes[name])) for index, name in enumerate(POLICY_OBSERVATION_NAMES)
         },
         rewards=jax.random.normal(random_keys[group_count * 2 + 1], (batch_size, 1)),
         dones=jax.random.bernoulli(random_keys[group_count * 2 + 2], 0.05, (batch_size, 1)).astype(jnp.float32),
@@ -122,10 +118,7 @@ def benchmark(cfg: DictConfig):
     print(f"Warm-up iterations: {warmup_iterations}")
     print(f"Measured iterations: {measured_iterations}")
     print(f'{"One JIT call per update":<34} {single_update_seconds * 1_000:8.3f} ms  {1.0 / single_update_seconds:8.1f} updates/s')
-    print(
-        f'{f"{updates_per_compiled_block} updates per JIT call":<34} '
-        f"{blocked_update_seconds * 1_000:8.3f} ms  {1.0 / blocked_update_seconds:8.1f} updates/s"
-    )
+    print(f'{f"{updates_per_compiled_block} updates per JIT call":<34} ' f"{blocked_update_seconds * 1_000:8.3f} ms  {1.0 / blocked_update_seconds:8.1f} updates/s")
 
 
 if __name__ == "__main__":

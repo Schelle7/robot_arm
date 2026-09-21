@@ -5,8 +5,7 @@ from omegaconf import DictConfig
 
 from robot_arm.control_types import ActionPrimitive, CartesianAction, EnvironmentState
 from robot_arm.geometry.pose import Pose, axis_angular_distance
-from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES
-
+from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, VLA_ACTION_NAMES
 
 
 def waypoint_action_limits(
@@ -135,15 +134,16 @@ class VLACartesianPolicy(CartesianPolicy):
             processed_batch = self.preprocessor(batch)
             out = self.policy.select_action(processed_batch)
             action = self.postprocessor(out).squeeze(0).cpu().numpy()
+            assert action.shape == (len(VLA_ACTION_NAMES),) and np.isfinite(action).all()
             completion_score = float(action[len(CARTESIAN_ACTION_NAMES)])
+            duty_enable_score = float(action[VLA_ACTION_NAMES.index("desired_gripper_duty_active")])
 
         return CartesianAction(
-            cartesian_action=action[:len(CARTESIAN_ACTION_NAMES)],
-            diagnostics={"completion_score": completion_score},
-            completes_active_primitive=bool(completion_score >= 0.5)
-            and (primitive.prompt != "close gripper" or state.grasp_confirmed),
-            desired_gripper_duty=primitive.desired_gripper_duty,
-            desired_gripper_duty_active=primitive.desired_gripper_duty_active,
+            cartesian_action=action[: len(CARTESIAN_ACTION_NAMES)],
+            diagnostics={"completion_score": completion_score, "duty_enable_score": duty_enable_score},
+            completes_active_primitive=bool(completion_score >= 0.5) and (primitive.prompt != "close gripper" or state.grasp_confirmed),
+            desired_gripper_duty=float(np.clip(action[VLA_ACTION_NAMES.index("desired_gripper_duty")], -1.0, 1.0)),
+            desired_gripper_duty_active=bool(duty_enable_score >= 0.5),
         )
 
 
@@ -240,9 +240,7 @@ class ScriptedCartesianPolicy(CartesianPolicy):
             float(state.observation["gripper_duty"][0]),
             primitive,
         )
-        completes_active_primitive = completes_active_primitive and (
-            primitive.prompt != "close gripper" or state.grasp_confirmed
-        )
+        completes_active_primitive = completes_active_primitive and (primitive.prompt != "close gripper" or state.grasp_confirmed)
         if primitive.prompt == "close gripper" and not state.grasp_confirmed:
             diagnostics["teacher_completion_score"] = 0.0
 

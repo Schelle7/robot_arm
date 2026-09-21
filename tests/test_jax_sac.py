@@ -29,10 +29,7 @@ def test_numpy_actor_distribution_matches_jax():
     )
     numpy_actor_params = jax.tree.map(np.asarray, actor_params)
     random = np.random.default_rng(0)
-    observations = {
-        name: random.standard_normal((8, observation_sizes[name])).astype(np.float32)
-        for name in POLICY_OBSERVATION_NAMES
-    }
+    observations = {name: random.standard_normal((8, observation_sizes[name])).astype(np.float32) for name in POLICY_OBSERVATION_NAMES}
 
     with jax.default_matmul_precision("highest"):
         jax_mean, jax_log_std = jax_actor_distribution(actor_params, jax.tree.map(jnp.asarray, observations))
@@ -53,13 +50,19 @@ def forward_case():
         "forward_head": (16,),
     }
     state, actor_optimizer, critic_optimizer, entropy_optimizer = initialize_state(
-        jax.random.PRNGKey(42), sizes, 6, architecture, 0.0003,
+        jax.random.PRNGKey(42),
+        sizes,
+        6,
+        architecture,
+        0.0003,
     )
     random = np.random.default_rng(42)
     observations = {name: jnp.asarray(random.standard_normal((8, size)), dtype=jnp.float32) for name, size in sizes.items()}
     next_observations = {name: jnp.full((8, size), 99.0) for name, size in sizes.items()}
     next_observations["state"] = next_observations["state"].at[:, 6:12].set(2.0).at[:, 15:21].set(3.0)
-    batch = Batch(observations, jnp.asarray(random.uniform(-1, 1, (8, 6)), dtype=jnp.float32), next_observations, jnp.zeros((8, 1)), jnp.ones((8, 1)), jnp.zeros(8, dtype=bool))
+    batch = Batch(
+        observations, jnp.asarray(random.uniform(-1, 1, (8, 6)), dtype=jnp.float32), next_observations, jnp.zeros((8, 1)), jnp.ones((8, 1)), jnp.zeros(8, dtype=bool)
+    )
     return state, (actor_optimizer, critic_optimizer, entropy_optimizer), batch, sizes, architecture
 
 

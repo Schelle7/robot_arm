@@ -1,4 +1,5 @@
 num_workers: 10
+check_power_profile: true
 detailed_metrics: true
 pose_delta_diagnostics_enabled: true
 sync_weights_every_n_cartesian_actions: 1

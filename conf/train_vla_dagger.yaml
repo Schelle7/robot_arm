@@ -56,5 +56,5 @@ bc:
     device: cuda
     chunk_size: 1
     n_action_steps: 1
-    max_action_dim: 8
+    max_action_dim: 10
     push_to_hub: false

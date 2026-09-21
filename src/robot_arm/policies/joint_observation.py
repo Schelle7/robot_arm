@@ -2,6 +2,8 @@ from typing import Dict
 
 import numpy as np
 
+from robot_arm.control_types import CartesianAction, EnvironmentState
+from robot_arm.geometry.pose import Pose
 from robot_arm.policies.cartesian import waypoint_action_scale
 from robot_arm.robot_schema import HISTORY_JOINT_VELOCITY_SLICE, HISTORY_TCP_VELOCITY_SLICE, policy_observation_sizes
 
@@ -28,18 +30,19 @@ class JointObservationBuilder:
 
     def build(
         self,
-        observation: Dict[str, np.ndarray],
-        remaining_delta: np.ndarray,
+        state: EnvironmentState,
+        cartesian_action: CartesianAction,
+        desired_pose: Pose,
         cartesian_action_progress: float,
-        desired_gripper_duty: float,
-        desired_gripper_duty_active: bool,
     ) -> Dict[str, np.ndarray]:
+        observation = state.observation
+        remaining_delta = state.end_effector_pose.delta_to(desired_pose)
         history_steps = observation["policy_history"].copy()
         history_steps[:, HISTORY_JOINT_VELOCITY_SLICE] /= self.joint_velocity_scale
         history_steps[:, HISTORY_TCP_VELOCITY_SLICE] /= self.tcp_velocity_scale
         history = np.concatenate((observation["joint_positions"], history_steps.reshape(-1))).astype(np.float32)
 
-        state = np.concatenate(
+        policy_state = np.concatenate(
             (
                 observation["joint_positions"],
                 observation["joint_velocities"] / self.joint_velocity_scale,
@@ -54,15 +57,15 @@ class JointObservationBuilder:
                 np.array(
                     [
                         1.0 - cartesian_action_progress,
-                        desired_gripper_duty,
-                        float(desired_gripper_duty_active),
-                        desired_gripper_duty - float(observation["gripper_duty"][0]),
+                        cartesian_action.desired_gripper_duty,
+                        float(cartesian_action.desired_gripper_duty_active),
+                        cartesian_action.desired_gripper_duty - float(observation["gripper_duty"][0]),
                     ],
                     dtype=np.float32,
                 ),
             )
         )
-        policy_observation = {"history": history, "state": state, "goal": goal}
+        policy_observation = {"history": history, "state": policy_state, "goal": goal}
         for name, values in policy_observation.items():
             assert values.shape == (self.policy_observation_sizes[name],)
         return policy_observation

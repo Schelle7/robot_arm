@@ -5,7 +5,6 @@ from omegaconf import DictConfig, OmegaConf
 
 from robot_arm.robot_schema import MOTOR_ORDER, POLICY_OBSERVATION_NAMES
 
-
 COMPATIBILITY_FIELDS = (
     "control.frequencies.cartesian",
     "control.frequencies.joint",

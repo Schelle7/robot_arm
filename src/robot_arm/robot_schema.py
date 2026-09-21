@@ -59,6 +59,7 @@ def policy_observation_sizes(cartesian_action_dim: int, history_steps: int) -> d
         "goal": cartesian_action_dim + 4,
     }
 
+
 BOX_BODY_NAMES = ("box_0",)
 
 TILE_BODY_NAME = "tile"
@@ -77,6 +78,13 @@ CARTESIAN_ACTION_NAMES = (
 )
 
 PRIMITIVE_COMPLETION = "observation.environment_state"  # hacky way to use smolvla
+
+DESIRED_GRIPPER_DUTY_NAMES = (
+    "desired_gripper_duty",
+    "desired_gripper_duty_active",
+)
+
+VLA_ACTION_NAMES = (*CARTESIAN_ACTION_NAMES, PRIMITIVE_COMPLETION, *DESIRED_GRIPPER_DUTY_NAMES)
 
 CURRENT_POSE_NAMES = (
     "current_x",

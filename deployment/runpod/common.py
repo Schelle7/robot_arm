@@ -4,12 +4,43 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
+
+RUN_ID_FORMAT = "%Y-%m-%d_%H-%M-%S"
+
+
+def format_run_id(timestamp):
+    return timestamp.strftime(RUN_ID_FORMAT)
+
+
+def parse_run_id(run_id):
+    return datetime.strptime(run_id, RUN_ID_FORMAT)
 
 
 class PodUnavailable(RuntimeError):
     pass
+
+
+def merge_config(base, overrides):
+    for key, value in overrides.items():
+        if isinstance(value, dict) and key in base:
+            merge_config(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def load_config(path, kind):
+    with Path(__file__).with_suffix(".toml").open("rb") as file:
+        shared = tomllib.load(file)
+    with path.open("rb") as file:
+        overrides = tomllib.load(file)
+    cfg = merge_config(shared["common"], shared[kind])
+    merge_config(cfg, overrides)
+    cfg["pod"]["dataCenterIds"] = [cfg["region"]]
+    return cfg
 
 
 def print_time(message):
@@ -50,7 +81,7 @@ def create_local_run(cfg):
     if status:
         raise RuntimeError(f"Commit and push the deployment changes first:\n{status}")
     cfg["commit"] = subprocess.check_output(["git", "-C", str(repository), "rev-parse", "HEAD"], text=True).strip()
-    cfg["run_id"] = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    cfg["run_id"] = format_run_id(datetime.now(timezone.utc))
     run_dir = repository / cfg["local_run_dir"] / cfg["run_id"]
     run_dir.mkdir(parents=True)
     (run_dir / "config.json").write_text(json.dumps(cfg, indent=2))
@@ -58,7 +89,13 @@ def create_local_run(cfg):
 
 
 def load_api_key(cfg):
-    return subprocess.check_output([
-        "bash", "-c", 'set -e; set -a; source "$1"; printenv RUNPOD_API_KEY',
-        "bash", str(Path(cfg["credentials_file"]).expanduser()),
-    ], text=True).strip()
+    return subprocess.check_output(
+        [
+            "bash",
+            "-c",
+            'set -e; set -a; source "$1"; printenv RUNPOD_API_KEY',
+            "bash",
+            str(Path(cfg["credentials_file"]).expanduser()),
+        ],
+        text=True,
+    ).strip()

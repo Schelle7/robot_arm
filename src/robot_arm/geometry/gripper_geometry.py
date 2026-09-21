@@ -66,9 +66,12 @@ def align_gripper_to_target(
     alignment = np.eye(3) + skew + (skew @ skew) / (1.0 + direction[2])
     orientation = alignment @ orientation
     reference = alignment @ reference
-    return Pose.from_tcp_axes(
-        reference + orientation @ local_pose.position,
-        orientation @ local_pose.closing_axis,
-        orientation @ local_pose.secondary_axis,
-        local_pose.gripper,
-    ), reference
+    return (
+        Pose.from_tcp_axes(
+            reference + orientation @ local_pose.position,
+            orientation @ local_pose.closing_axis,
+            orientation @ local_pose.secondary_axis,
+            local_pose.gripper,
+        ),
+        reference,
+    )

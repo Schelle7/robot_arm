@@ -3,6 +3,7 @@ import numpy as np
 from robot_arm.geometry.gripper_geometry import get_tcp_geometry
 from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES, MOTOR_ORDER
 
+
 def format_value(value):
     return f"{float(value):+.4f}"
 
@@ -70,19 +71,14 @@ def build_replay_display(
     primitive_rows = [["Completes active primitive", str(bool(completes_active_primitive)), "N/A"]]
     primitive_rows.extend(primitive_diagnostic_rows(action_diagnostics))
 
-    observation_rows = [
-        [key, "  ".join(format_vector(value))]
-        for key, value in joint_observation.items()
-        if key != "history"
-    ]
+    observation_rows = [[key, "  ".join(format_vector(value))] for key, value in joint_observation.items() if key != "history"]
     if not observation_rows:
         observation_rows = [["Status", "Not available for this step"]]
 
     if dense_sample:
         reward_rows = [["Total", format_value(dense_sample["reward"])]]
         reward_rows.extend(
-            [key.removesuffix("_reward").removesuffix("_penalty").replace("_", " ").title(), format_value(value)]
-            for key, value in dense_sample["reward_breakdown"].items()
+            [key.removesuffix("_reward").removesuffix("_penalty").replace("_", " ").title(), format_value(value)] for key, value in dense_sample["reward_breakdown"].items()
         )
     else:
         reward_rows = [["Total", "Not available for this step"]]

@@ -17,7 +17,7 @@ from omegaconf import OmegaConf
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.video_utils import _get_codec_options
 from robot_arm.geometry.pose import Pose
-from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, PRIMITIVE_COMPLETION, TARGET_OFFSET_NAMES
+from robot_arm.robot_schema import CAMERA_NAMES, CARTESIAN_ACTION_NAMES, CURRENT_POSE_NAMES, DUTY_NAMES, TARGET_OFFSET_NAMES, VLA_ACTION_NAMES
 
 
 # fix lerobot issue
@@ -107,8 +107,8 @@ def _build_dataset_features(ref_cfg):
         },
         "action": {
             "dtype": "float32",
-            "shape": (cartesian_action_dim + 1,),
-            "names": [*CARTESIAN_ACTION_NAMES, PRIMITIVE_COMPLETION],
+            "shape": (len(VLA_ACTION_NAMES),),
+            "names": list(VLA_ACTION_NAMES),
         },
     }
     return features
@@ -129,7 +129,7 @@ def _reconstruct_vla_input_state(data, frame_idx: int) -> torch.Tensor:
     return torch.from_numpy(state)
 
 
-def teacher_labels(data) -> tuple[np.ndarray, np.ndarray]:
+def teacher_labels(data) -> np.ndarray:
     num_transitions = len(data["step"]) - 1
     actions = np.asarray(data["teacher_cartesian_action"], dtype=np.float32)
     completions = np.asarray(data["teacher_completion_score"], dtype=np.float32)
@@ -137,7 +137,12 @@ def teacher_labels(data) -> tuple[np.ndarray, np.ndarray]:
     assert completions.shape == (num_transitions,), "Every transition requires a teacher completion label."
     assert np.isfinite(actions).all(), "Teacher actions must be finite."
     assert np.isfinite(completions).all() and ((completions >= 0) & (completions <= 1)).all(), "Teacher completion scores must be between zero and one."
-    return actions, completions.astype(np.float32)
+    duties = np.asarray(data["teacher_desired_gripper_duty"], dtype=np.float32)
+    duty_enabled = np.asarray(data["teacher_desired_gripper_duty_active"], dtype=np.float32)
+    assert duties.shape == duty_enabled.shape == (num_transitions,), "Every transition requires teacher gripper duty and enable labels."
+    assert np.isfinite(duties).all() and (np.abs(duties) <= 1.0).all(), "Teacher gripper duties must be between minus one and one."
+    assert ((duty_enabled == 0.0) | (duty_enabled == 1.0)).all(), "Teacher duty enable labels must be zero or one."
+    return np.column_stack((actions, completions, duties, duty_enabled))
 
 
 def write_conversion_report(path: str, report: dict) -> None:
@@ -168,10 +173,7 @@ def convert_to_lerobot(
     ref_cfg = _validate_and_load_configs(episodes, fps)
     features = _build_dataset_features(ref_cfg)
 
-    episode_results = {
-        ep_path: {"source_episode": os.path.abspath(ep_path), "conversion_status": "pending"}
-        for ep_path in episodes
-    }
+    episode_results = {ep_path: {"source_episode": os.path.abspath(ep_path), "conversion_status": "pending"} for ep_path in episodes}
     report_path = os.path.abspath(target_dir) + ".conversion_report.json"
     report = {
         "source_dir": os.path.abspath(source_dir),
@@ -211,21 +213,15 @@ def convert_to_lerobot(
         # Load the numeric data
         data = np.load(ep_path, allow_pickle=True)
         num_frames = len(data["step"])
-        teacher_actions, teacher_completions = teacher_labels(data)
+        teacher_actions = teacher_labels(data)
 
         for frame_idx in range(num_frames - 1):
-            external_camera_image = Image.open(
-                os.path.join(ep_dir, data["external_camera_image_path"][frame_idx])
-            ).convert("RGB")
-            wrist_camera_image = Image.open(
-                os.path.join(ep_dir, data["wrist_camera_image_path"][frame_idx])
-            ).convert("RGB")
+            external_camera_image = Image.open(os.path.join(ep_dir, data["external_camera_image_path"][frame_idx])).convert("RGB")
+            wrist_camera_image = Image.open(os.path.join(ep_dir, data["wrist_camera_image_path"][frame_idx])).convert("RGB")
 
             state = _reconstruct_vla_input_state(data, frame_idx)
 
-            action = torch.from_numpy(np.concatenate([
-                teacher_actions[frame_idx], teacher_completions[frame_idx : frame_idx + 1],
-            ]))
+            action = torch.from_numpy(teacher_actions[frame_idx])
 
             task = str(data["primitive_prompt"][frame_idx])
 

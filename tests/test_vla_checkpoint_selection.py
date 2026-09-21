@@ -11,9 +11,13 @@ def make_checkpoint(training_dir):
     (checkpoint / "model.safetensors").write_bytes(b"weights")
     (checkpoint / "config.json").write_text("{}")
     for name in ("policy_preprocessor", "policy_postprocessor"):
-        (checkpoint / f"{name}.json").write_text(json.dumps({
-            "steps": [{"state_file": f"{name}.safetensors"}],
-        }))
+        (checkpoint / f"{name}.json").write_text(
+            json.dumps(
+                {
+                    "steps": [{"state_file": f"{name}.safetensors"}],
+                }
+            )
+        )
         (checkpoint / f"{name}.safetensors").write_bytes(b"state")
     return checkpoint
 

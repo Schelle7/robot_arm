@@ -32,12 +32,15 @@ def test_requested_opening_preserves_live_state_and_ignores_arm_orientation(scen
     np.testing.assert_allclose(rotated.as_10d(), opened.as_10d(), atol=1e-6)
 
 
-@pytest.mark.parametrize("opening,tilt,roll,distance", [
-    (0.0, 0.0, 0.0, 0.3),
-    (0.8, 45.0, 90.0, 0.25),
-    (1.7, -10.0, -150.0, 0.4),
-    (0.5, 90.0, 0.0, 0.1),
-])
+@pytest.mark.parametrize(
+    "opening,tilt,roll,distance",
+    [
+        (0.0, 0.0, 0.0, 0.3),
+        (0.8, 45.0, 90.0, 0.25),
+        (1.7, -10.0, -150.0, 0.4),
+        (0.5, 90.0, 0.0, 0.1),
+    ],
+)
 def test_spherical_placement_preserves_finger_geometry_and_hits_target(scene, opening, tilt, roll, distance):
     model, data = scene
     local = gripper_geometry_at_opening(model, data, opening)

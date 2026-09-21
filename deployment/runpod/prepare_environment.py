@@ -6,11 +6,10 @@ import shlex
 import subprocess
 import sys
 import time
-import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from deployment.runpod.common import print_time, api_request, run_stage, create_local_run, load_api_key
+from deployment.runpod.common import print_time, api_request, run_stage, create_local_run, load_api_key, load_config
 
 
 def bootstrap():
@@ -37,11 +36,21 @@ def wait_for_ssh(cfg, key, pod_id):
         # Runpod omits the address fields until network provisioning completes.
         if "publicIp" in pod and "portMappings" in pod and "22" in pod["portMappings"]:
             ssh = [
-                "ssh", "-p", str(pod["portMappings"]["22"]),
-                "-i", str(Path(cfg["ssh_identity_file"]).expanduser()),
-                "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-                "-o", f"ConnectTimeout={cfg['poll_seconds']}",
-                "-o", f"ServerAliveInterval={cfg['poll_seconds']}", "-o", "ServerAliveCountMax=3",
+                "ssh",
+                "-p",
+                str(pod["portMappings"]["22"]),
+                "-i",
+                str(Path(cfg["ssh_identity_file"]).expanduser()),
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                f"ConnectTimeout={cfg['poll_seconds']}",
+                "-o",
+                f"ServerAliveInterval={cfg['poll_seconds']}",
+                "-o",
+                "ServerAliveCountMax=3",
                 f"root@{pod['publicIp']}",
             ]
             probe = subprocess.run([*ssh, "true"], capture_output=True, text=True, timeout=cfg["request_timeout_seconds"])
@@ -70,15 +79,19 @@ def create_preparation_directories(cfg):
 
 def installation_environment(cfg, root):
     env = dict(os.environ)
-    env.update({
-        "CONDA_PKGS_DIRS": str(root / "packages"),
-        "PIP_CACHE_DIR": str(root / "pip-cache"),
-        "TMPDIR": str(root / "tmp"),
-        "HF_HOME": cfg["installation"]["hf_home"],
-        "HF_HUB_CACHE": str(Path(cfg["installation"]["hf_home"]) / "hub"),
-        "HF_HUB_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0", "PYTHONUNBUFFERED": "1",
-        "PATH": f"{root / 'environment/bin'}:{root / 'miniforge/bin'}:{env['PATH']}",
-    })
+    env.update(
+        {
+            "CONDA_PKGS_DIRS": str(root / "packages"),
+            "PIP_CACHE_DIR": str(root / "pip-cache"),
+            "TMPDIR": str(root / "tmp"),
+            "HF_HOME": cfg["installation"]["hf_home"],
+            "HF_HUB_CACHE": str(Path(cfg["installation"]["hf_home"]) / "hub"),
+            "HF_HUB_OFFLINE": "0",
+            "TRANSFORMERS_OFFLINE": "0",
+            "PYTHONUNBUFFERED": "1",
+            "PATH": f"{root / 'environment/bin'}:{root / 'miniforge/bin'}:{env['PATH']}",
+        }
+    )
     return env
 
 
@@ -102,10 +115,21 @@ def install_conda_environment(cfg, root, env):
     prefix = str(root / "environment")
     run_stage("download-miniforge", ["curl", "-fL", install["miniforge_url"], "-o", installer], env)
     run_stage("install-miniforge", ["bash", installer, "-b", "-p", str(conda_root)], env)
-    run_stage("create-environment", [
-        str(conda_root / "bin/conda"), "create", "--yes", "--channel", "conda-forge",
-        "--prefix", prefix, f"python={install['python_version']}", *install["conda_packages"],
-    ], env)
+    run_stage(
+        "create-environment",
+        [
+            str(conda_root / "bin/conda"),
+            "create",
+            "--yes",
+            "--channel",
+            "conda-forge",
+            "--prefix",
+            prefix,
+            f"python={install['python_version']}",
+            *install["conda_packages"],
+        ],
+        env,
+    )
     run_stage("install-packer", [str(root / "environment/bin/python"), "-m", "pip", "install", install["pack_package"]], env)
 
 
@@ -147,10 +171,13 @@ def prepare_environment(cfg):
 
 def create_cpu_pod(cfg, key):
     body = dict(cfg["pod"])
-    body.update({
-        "dockerEntrypoint": ["bash", "-lc"], "dockerStartCmd": [bootstrap()],
-        "env": {"PUBLIC_KEY": Path(cfg["ssh_public_key_file"]).expanduser().read_text().strip()},
-    })
+    body.update(
+        {
+            "dockerEntrypoint": ["bash", "-lc"],
+            "dockerStartCmd": [bootstrap()],
+            "env": {"PUBLIC_KEY": Path(cfg["ssh_public_key_file"]).expanduser().read_text().strip()},
+        }
+    )
     print_time(f"Creating CPU Pod in {body['dataCenterIds']}")
     pod = api_request(cfg, key, "POST", "/pods", body)
     return pod["id"]
@@ -205,8 +232,7 @@ def main():
     worker.add_argument("--config", required=True, type=Path)
     args = parser.parse_args()
     if args.command == "create":
-        with args.config.open("rb") as file:
-            launch(tomllib.load(file))
+        launch(load_config(args.config, "prepare"))
     else:
         with args.config.open() as file:
             prepare_environment(json.load(file))

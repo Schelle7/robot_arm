@@ -12,14 +12,20 @@ from robot_arm.training import vla_bc
 
 
 def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path, monkeypatch):
-    cfg = OmegaConf.create({
-        "environment": {}, "seed": 42, "vla_rounds": 2,
-        "initial_episodes": 3, "episodes_per_round": 2,
-        "initial_training_steps": 5, "training_steps_per_round": 4,
-        "keep_last_checkpoints": 2,
-        "data_root": str(tmp_path / "local-data"),
-        "collection": {"backend": "sim", "policy_name": "latest"},
-    })
+    cfg = OmegaConf.create(
+        {
+            "environment": {},
+            "seed": 42,
+            "vla_rounds": 2,
+            "initial_episodes": 3,
+            "episodes_per_round": 2,
+            "initial_training_steps": 5,
+            "training_steps_per_round": 4,
+            "keep_last_checkpoints": 2,
+            "data_root": str(tmp_path / "local-data"),
+            "collection": {"backend": "sim", "policy_name": "latest"},
+        }
+    )
     OmegaConf.set_struct(cfg, True)
     monkeypatch.setattr(checkpoints, "resolve_joint_checkpoint", lambda name: str(tmp_path / "joint.actor.npz"))
     monkeypatch.setattr(dagger, "__file__", str(tmp_path / "src" / "robot_arm" / "training" / "dagger.py"))
@@ -66,10 +72,13 @@ def test_missing_new_checkpoint_preserves_previous_checkpoints(tmp_path):
     previous = tmp_path / "round_000/training/checkpoints/00000005"
     previous.mkdir(parents=True)
     (previous / "model.safetensors").touch()
-    cfg = OmegaConf.create({
-        "training_dir": str(tmp_path / "round_002/training"),
-        "round_index": 2, "keep_last_checkpoints": 2,
-    })
+    cfg = OmegaConf.create(
+        {
+            "training_dir": str(tmp_path / "round_002/training"),
+            "round_index": 2,
+            "keep_last_checkpoints": 2,
+        }
+    )
     with pytest.raises(FileNotFoundError):
         dagger.record_completed_round(cfg, tmp_path, [])
     assert (previous / "model.safetensors").is_file()
@@ -82,12 +91,15 @@ def test_merge_preserves_video_file_limit_and_uses_all_rounds(tmp_path, monkeypa
     calls = []
     monkeypatch.setattr(lerobot_converter, "convert_to_lerobot", lambda **kwargs: calls.append(("convert", kwargs)))
     monkeypatch.setattr(aggregate, "aggregate_datasets", lambda **kwargs: calls.append(("merge", kwargs)))
-    cfg = OmegaConf.create({
-        "round_index": 1, "data_dir": str(tmp_path / "local-data/round_001"),
-        "collection_dir": str(tmp_path / "collection"),
-        "collection": {"control": {"frequencies": {"cartesian": 5}}},
-        "dataset": {"video_files_size_in_mb": 0.000001, "data_files_size_in_mb": 100, "chunk_size": 1000},
-    })
+    cfg = OmegaConf.create(
+        {
+            "round_index": 1,
+            "data_dir": str(tmp_path / "local-data/round_001"),
+            "collection_dir": str(tmp_path / "collection"),
+            "collection": {"control": {"frequencies": {"cartesian": 5}}},
+            "dataset": {"video_files_size_in_mb": 0.000001, "data_files_size_in_mb": 100, "chunk_size": 1000},
+        }
+    )
     datasets = [tmp_path / "round_000/dataset_000"]
     result = dagger.prepare_dataset(cfg, datasets)
     assert result == tmp_path / "local-data/round_001/combined_dataset"
@@ -100,10 +112,15 @@ def test_merge_preserves_video_file_limit_and_uses_all_rounds(tmp_path, monkeypa
 def test_later_round_loads_processors_without_replacing_statistics(monkeypatch):
     calls = []
     monkeypatch.setattr(vla_bc, "make_pre_post_processors", lambda **kwargs: calls.append(kwargs))
-    cfg = OmegaConf.create({
-        "pretrained_path": "/checkpoint/pretrained_model", "device": "cpu",
-        "input_features": {}, "output_features": {}, "normalization_mapping": {},
-    })
+    cfg = OmegaConf.create(
+        {
+            "pretrained_path": "/checkpoint/pretrained_model",
+            "device": "cpu",
+            "input_features": {},
+            "output_features": {},
+            "normalization_mapping": {},
+        }
+    )
     vla_bc.round_processors(cfg, {"new_statistics": 100}, False)
     assert calls == [{"policy_cfg": cfg, "pretrained_path": cfg.pretrained_path}]
 
@@ -112,10 +129,16 @@ def test_vla_round_loads_one_policy_for_all_episodes(tmp_path, monkeypatch):
     from robot_arm.data import collection
     from robot_arm import rollout_config
 
-    cfg = OmegaConf.create({
-        "seed": 42, "round_index": 1, "collection_dir": str(tmp_path),
-        "collection": {}, "previous_checkpoint": str(tmp_path / "previous"), "num_episodes": 10,
-    })
+    cfg = OmegaConf.create(
+        {
+            "seed": 42,
+            "round_index": 1,
+            "collection_dir": str(tmp_path),
+            "collection": {},
+            "previous_checkpoint": str(tmp_path / "previous"),
+            "num_episodes": 10,
+        }
+    )
     policies = []
     calls = []
 

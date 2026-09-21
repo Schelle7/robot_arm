@@ -1,11 +1,12 @@
 import numpy as np
 from collections import deque
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from robot_arm.envs.env import RobotEnv
 from robot_arm.envs.grasp_estimator import GraspEstimator
 from robot_arm.geometry.pose import Pose
-from robot_arm.control_types import CartesianAction
+from robot_arm.control_types import CartesianAction, EnvironmentState
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, MOTOR_ORDER
 
 
@@ -39,6 +40,27 @@ def make_env() -> RobotEnv:
 
 def make_pose(position, angles, gripper=0.0) -> Pose:
     return Pose.from_euler(position, angles, gripper, "XYZ", False)
+
+
+def test_step_submits_timestamp_from_the_policy_state():
+    env = make_env()
+    env.joint_hz = 20
+    env.cartesian_hz = 5
+    env.motor_order = MOTOR_ORDER
+    env.policy_history = deque()
+    duties = dict.fromkeys(MOTOR_ORDER, 0.0)
+    env.arm = SimpleNamespace(submit_duty=Mock(return_value=duties), advance_control_step=Mock())
+    pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    state = EnvironmentState({"joint_positions": np.zeros(6)}, {"sample_time_ns": 123}, pose, None, False)
+    next_state = EnvironmentState({"gripper_duty": np.zeros(1)}, {"sample_time_ns": 456}, pose, None, False)
+    env._read_arm_state = Mock(return_value=(next_state.sensor_state, np.zeros(6), pose))
+    env._consecutive_velocities = Mock(return_value=(np.zeros(6), np.zeros(6)))
+    env._environment_state = Mock(return_value=next_state)
+    env.compute_reward = Mock(return_value=(0.0, {}))
+    cartesian_action = CartesianAction(np.zeros(7), {}, False, 0.0, False)
+    result, _, _ = env.step(np.zeros(6), state, np.zeros(6), 1, cartesian_action, pose)
+    assert result is next_state
+    env.arm.submit_duty.assert_called_once_with(duties, dict.fromkeys(MOTOR_ORDER, 0.0), 123)
 
 
 def test_consecutive_velocity_uses_only_the_previous_sample():
@@ -79,6 +101,21 @@ def test_consecutive_velocity_advances_its_reference():
     np.testing.assert_allclose(tcp_velocity, [0.1, 0.0, 0.0, 0.0, 0.0, 0.0], atol=1e-6)
 
 
+def test_reused_feedback_preserves_velocity_and_motion_reference():
+    env = make_env()
+    first_pose = make_pose([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    second_pose = make_pose([0.01, 0.0, 0.0], [0.0, 0.0, 0.0])
+    env._set_motion_reference(np.zeros(6, dtype=np.float32), first_pose, 1_000_000_000)
+    positions = np.full(6, 0.1, dtype=np.float32)
+    expected = env._consecutive_velocities(positions, second_pose, 1_050_000_000)
+    cached = env._consecutive_velocities(positions, second_pose, 1_050_000_000)
+    np.testing.assert_array_equal(cached[0], expected[0])
+    np.testing.assert_array_equal(cached[1], expected[1])
+    assert env.previous_sample_time_ns == 1_050_000_000
+    next_velocity, _ = env._consecutive_velocities(np.full(6, 0.15, dtype=np.float32), second_pose, 1_100_000_000)
+    np.testing.assert_allclose(next_velocity, np.ones(6), atol=1e-6)
+
+
 def test_reset_policy_history_fills_one_window_with_zeros():
     env = make_env()
     env.policy_history_steps = 10
@@ -95,12 +132,14 @@ def test_box_distance_rejects_grasp_and_restarts_continuous_hold():
     env.backend = "sim"
     env.motor_order = MOTOR_ORDER
     env.max_box_distance_meters = 0.04
-    env.grasp_estimator = GraspEstimator(SimpleNamespace(
-        position_range_radians=(0.3, 0.7),
-        min_closing_duty=0.1,
-        max_velocity_radians_per_second=0.05,
-        hold_seconds=0.2,
-    ))
+    env.grasp_estimator = GraspEstimator(
+        SimpleNamespace(
+            position_range_radians=(0.3, 0.7),
+            min_closing_duty=0.1,
+            max_velocity_radians_per_second=0.05,
+            hold_seconds=0.2,
+        )
+    )
     env.policy_history = deque([np.zeros(len(HISTORY_FEATURE_NAMES))])
     box_pose = SimpleNamespace(position=np.array([0.04, 0.0, 0.0]))
     env.arm = SimpleNamespace(

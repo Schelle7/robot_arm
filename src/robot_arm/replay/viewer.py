@@ -38,11 +38,7 @@ class ReplayViewer:
         self.joint_positions = data["joint_positions"]
         self.joint_velocities = data["joint_velocities"]
         self.dense_trajectory = data["dense_trajectory"]
-        self.action_history = [
-            [float(value) for value in sample["action"]]
-            for trajectory in self.dense_trajectory
-            for sample in trajectory
-        ]
+        self.action_history = [[float(value) for value in sample["action"]] for trajectory in self.dense_trajectory for sample in trajectory]
         self.action_diagnostics = data["cartesian_action_diagnostics"]
         self.completes_active_primitives = data["completes_active_primitive"]
         self.primitive_prompts = data["primitive_prompt"]

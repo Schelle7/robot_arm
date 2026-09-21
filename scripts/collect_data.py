@@ -15,8 +15,9 @@ def main(collect_cfg: DictConfig):
 
     merged_cfg, env, joint_policy = setup_rollout_context(collect_cfg, run_dir)
 
-    cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
-    collect_episodes(merged_cfg, env, joint_policy, cartesian_policy, Path(run_dir), int(collect_cfg.num_episodes))
+    with env:
+        cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
+        collect_episodes(merged_cfg, env, joint_policy, cartesian_policy, Path(run_dir), int(collect_cfg.num_episodes))
 
 
 if __name__ == "__main__":

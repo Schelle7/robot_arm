@@ -5,7 +5,7 @@ from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
 from robot_arm.cartesian_smolvla.configuration_cartesian_smolvla import CartesianSmolVLAConfig
 from robot_arm.cartesian_smolvla.pretrained import load_base_backbone
-from robot_arm.robot_schema import CARTESIAN_ACTION_NAMES
+from robot_arm.robot_schema import VLA_ACTION_NAMES
 
 
 class CartesianSmolVLAPolicy(SmolVLAPolicy):
@@ -14,12 +14,11 @@ class CartesianSmolVLAPolicy(SmolVLAPolicy):
 
     def __init__(self, config: CartesianSmolVLAConfig, **kwargs):
         assert config.chunk_size == config.n_action_steps == 1, (
-            f"Cartesian VLA requires chunk_size=1 and n_action_steps=1; "
-            f"got chunk_size={config.chunk_size}, n_action_steps={config.n_action_steps}"
+            f"Cartesian VLA requires chunk_size=1 and n_action_steps=1; " f"got chunk_size={config.chunk_size}, n_action_steps={config.n_action_steps}"
         )
-        assert config.max_action_dim == config.action_feature.shape[0] == len(CARTESIAN_ACTION_NAMES) + 1, (
-            "Cartesian VLA requires eight action dimensions: seven commands and completion"
-        )
+        assert (
+            config.max_action_dim == config.action_feature.shape[0] == len(VLA_ACTION_NAMES)
+        ), "Cartesian VLA requires ten action dimensions: seven commands, completion, gripper duty, and duty enable"
         super().__init__(config, **kwargs)
 
     @classmethod

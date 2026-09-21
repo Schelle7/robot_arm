@@ -1,4 +1,3 @@
-import mujoco
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
@@ -18,7 +17,7 @@ def assert_matching_policy_constraints(
         current_value = current_cfg.control.frequencies[field]
         saved_value = saved_cfg.control.frequencies[field]
         if current_value != saved_value:
-            raise ValueError(f"Rollout frequency {field!r} ({current_value}) does not match " f"the policy frequency ({saved_value}).")
+            raise ValueError(f"Rollout frequency {field!r} ({current_value}) does not match the policy frequency ({saved_value}).")
 
     safety_fields = (
         "duty_ema_seconds",
@@ -28,7 +27,7 @@ def assert_matching_policy_constraints(
         current_value = current_cfg.safety[field]
         saved_value = saved_cfg.safety[field]
         if current_value != saved_value:
-            raise ValueError(f"Rollout safety constraint {field!r} ({current_value}) does not " f"match the policy constraint ({saved_value}).")
+            raise ValueError(f"Rollout safety constraint {field!r} ({current_value}) does not match the policy constraint ({saved_value}).")
 
 
 def load_policy_config(checkpoint_path: str) -> DictConfig:
@@ -61,6 +60,4 @@ def setup_rollout_context(cfg: DictConfig, run_dir: str):
 
     joint_policy = load_numpy_policy(checkpoint_path)
     env = make_env(merged_cfg, run_dir)
-    mujoco.mj_forward(env.arm.model, env.arm.data)
-
     return merged_cfg, env, joint_policy

@@ -1,15 +1,15 @@
 from pathlib import Path
-import tomllib
 
 import pytest
+
+from deployment.runpod.common import load_config
 
 from deployment.runpod import prepare_environment
 
 
 @pytest.mark.parametrize("failure_stage", ["startup", "preparation"])
 def test_failure_terminates_created_cpu_pod(tmp_path, monkeypatch, failure_stage):
-    with (Path(prepare_environment.__file__).with_name("prepare_environment.toml")).open("rb") as file:
-        cfg = tomllib.load(file)
+    cfg = load_config((Path(prepare_environment.__file__).with_name("prepare_environment.toml")), "prepare")
     public_key = tmp_path / "key.pub"
     public_key.write_text("ssh-ed25519 test")
     cfg["ssh_public_key_file"] = str(public_key)

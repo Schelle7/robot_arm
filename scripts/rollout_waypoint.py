@@ -17,34 +17,35 @@ def main(rollout_cfg: DictConfig):
 
     merged_cfg, env, joint_policy = setup_rollout_context(rollout_cfg, run_dir)
 
-    cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
-    primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
+    with env:
+        cartesian_policy = ScriptedCartesianPolicy(merged_cfg)
+        primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
 
-    if not merged_cfg.runtime.capture_camera:
-        print("WARNING: Camera capture is disabled; recording numeric episode data without images.")
+        if not merged_cfg.runtime.capture_camera:
+            print("WARNING: Camera capture is disabled; recording numeric episode data without images.")
 
-    output_dir = os.path.join(run_dir, "waypoint_recording")
-    recorder = EpisodeRecorder(
-        output_dir=output_dir,
-        cfg=merged_cfg,
-        episode_name="waypoint_sanity_check",
-    )
+        output_dir = os.path.join(run_dir, "waypoint_recording")
+        recorder = EpisodeRecorder(
+            output_dir=output_dir,
+            cfg=merged_cfg,
+            episode_name="waypoint_sanity_check",
+        )
 
-    runner = EpisodeRunner(
-        cfg=merged_cfg,
-        env=env,
-        joint_policy=joint_policy,
-        primitive_policy=primitive_policy,
-        cartesian_policy=cartesian_policy,
-        training=False,
-        recorder=recorder,
-        replay_buffer=None,
-        metrics_queue=None,
-        weights_queue=None,
-        progress=None,
-    )
+        runner = EpisodeRunner(
+            cfg=merged_cfg,
+            env=env,
+            joint_policy=joint_policy,
+            primitive_policy=primitive_policy,
+            cartesian_policy=cartesian_policy,
+            training=False,
+            recorder=recorder,
+            replay_buffer=None,
+            metrics_queue=None,
+            weights_queue=None,
+            progress=None,
+        )
 
-    runner.run_episode(generate_primitives=True)
+        runner.run_episode(generate_primitives=True)
 
 
 if __name__ == "__main__":

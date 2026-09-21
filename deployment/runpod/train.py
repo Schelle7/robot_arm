@@ -4,11 +4,10 @@ import os
 from pathlib import Path
 import shlex
 import sys
-import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from deployment.runpod.common import PodUnavailable, api_request, create_local_run, load_api_key, print_time, run_stage
+from deployment.runpod.common import PodUnavailable, api_request, create_local_run, load_api_key, load_config, print_time, run_stage
 from deployment.runpod.prepare_environment import wait_for_ssh
 
 
@@ -79,6 +78,40 @@ def restore_environment(cfg, env):
     return prefix
 
 
+def training_command(cfg, python, repo, destination):
+    kind = cfg["training"]["type"]
+    if kind == "joint":
+        return [python, "-u", "scripts/train_joint_policy.py", *cfg["training"]["overrides"], f"hydra.run.dir={destination / 'joint'}"]
+    if kind == "vla_dagger":
+        return [
+            python,
+            "-u",
+            "scripts/train_vla_dagger.py",
+            *cfg["training"]["overrides"],
+            f"hydra.run.dir={destination / 'dagger'}",
+            f"data_root={Path(cfg['training']['data_root']) / cfg['run_id']}",
+            f"collection.policy_name={repo / cfg['training']['joint_policy']}",
+        ]
+    raise ValueError(f"Unknown training type: {kind}")
+
+
+def training_result(cfg, destination):
+    kind = cfg["training"]["type"]
+    if kind == "joint":
+        (checkpoint,) = (destination / "joint/checkpoints").glob("jax_sac_final_*.pkl")
+        actor = checkpoint.with_suffix(".actor.npz")
+        if checkpoint.stat().st_size == 0 or actor.stat().st_size == 0:
+            raise ValueError("Final joint checkpoint is empty")
+        return {"training_type": kind, "checkpoint": str(checkpoint)}
+    if kind == "vla_dagger":
+        rounds = json.loads((destination / "dagger/rounds.json").read_text())
+        final = rounds[-1]
+        # S3 does not reliably expose the 'last' symlink.
+        checkpoint = Path(final["checkpoint"]).parent / f"{final['training_step']:08d}"
+        return {"training_type": kind, "checkpoint": str(checkpoint), "training_step": final["training_step"]}
+    raise ValueError(f"Unknown training type: {kind}")
+
+
 def train(cfg):
     env = dict(os.environ)
     del env["RUNPOD_API_KEY"]
@@ -88,30 +121,33 @@ def train(cfg):
     repo = Path(cfg["training"]["local_root"]) / "repo"
     os.chdir(repo)
     python = str(prefix / "bin/python")
-    run_stage("install-project", [python, "-m", "pip", "install", "--no-deps", "--no-build-isolation", "--no-index", "--editable", str(repo)], env)
+    run_stage("install-project", [python, "-m", "pip", "install", "--no-build-isolation", "--editable", str(repo)], env)
     run_stage("check-dependencies", [python, "-m", "pip", "check"], env)
     destination = Path(cfg["training"]["persistent_root"]) / cfg["run_id"]
-    run_stage("train-dagger", [
-        python, "-u", "scripts/train_vla_dagger.py", *cfg["training"]["overrides"],
-        f"hydra.run.dir={destination / 'dagger'}",
-        f"data_root={Path(cfg['training']['data_root']) / cfg['run_id']}",
-        f"collection.policy_name={repo / cfg['training']['joint_policy']}",
-    ], env)
+    run_stage(f"train-{cfg['training']['type']}", training_command(cfg, python, repo, destination), env)
+    (destination / "result.json").write_text(json.dumps(training_result(cfg, destination), indent=2) + "\n")
 
 
 def launch(cfg):
+    if cfg["training"]["type"] not in ("joint", "vla_dagger"):
+        raise ValueError(f"Unknown training type: {cfg['training']['type']}")
     if cfg["pod"]["computeType"] != "GPU":
         raise ValueError("Training requires a GPU Pod")
     run_dir = create_local_run(cfg)
     key = load_api_key(cfg)
     body = dict(cfg["pod"])
-    body.update({
-        "dockerEntrypoint": ["bash", "-lc"], "dockerStartCmd": [bootstrap(cfg)],
-        "env": {
-            **cfg["environment"], "TRAIN_CONFIG": json.dumps(cfg), "RUNPOD_API_KEY": key,
-            "PUBLIC_KEY": Path(cfg["ssh_public_key_file"]).expanduser().read_text().strip(),
-        },
-    })
+    body.update(
+        {
+            "dockerEntrypoint": ["bash", "-lc"],
+            "dockerStartCmd": [bootstrap(cfg)],
+            "env": {
+                **cfg["environment"],
+                "TRAIN_CONFIG": json.dumps(cfg),
+                "RUNPOD_API_KEY": key,
+                "PUBLIC_KEY": Path(cfg["ssh_public_key_file"]).expanduser().read_text().strip(),
+            },
+        }
+    )
     for gpu in cfg["pod"]["gpuTypeIds"]:
         body["gpuTypeIds"] = [gpu]
         print_time(f"Trying {gpu} in {body['dataCenterIds']}")
@@ -141,8 +177,7 @@ def main():
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "create":
-        with args.config.open("rb") as file:
-            launch(tomllib.load(file))
+        launch(load_config(args.config, "train"))
     else:
         with args.config.open() as file:
             train(json.load(file))

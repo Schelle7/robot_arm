@@ -50,9 +50,15 @@ def latest_vla_checkpoint_path() -> str:
 
 
 def _vla_checkpoint_available(checkpoint: Path) -> bool:
-    required = [checkpoint / name for name in (
-        "model.safetensors", "config.json", "policy_preprocessor.json", "policy_postprocessor.json",
-    )]
+    required = [
+        checkpoint / name
+        for name in (
+            "model.safetensors",
+            "config.json",
+            "policy_preprocessor.json",
+            "policy_postprocessor.json",
+        )
+    ]
     if not all(path.is_file() and path.stat().st_size > 0 for path in required):
         return False
     for name in ("policy_preprocessor.json", "policy_postprocessor.json"):

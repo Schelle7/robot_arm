@@ -22,10 +22,7 @@ def test_rollout_observation_matches_the_recorded_training_frame():
     frame = load_recorded_frame()
     recorded_state = frame["observation.state"].numpy()
     recorded_images = {camera_name: frame[f"observation.images.{camera_name}"].numpy() for camera_name in CAMERA_NAMES}
-    camera_frames = {
-        camera_name: np.transpose(recorded_image * 255.0, (1, 2, 0)).round().astype(np.uint8)
-        for camera_name, recorded_image in recorded_images.items()
-    }
+    camera_frames = {camera_name: np.transpose(recorded_image * 255.0, (1, 2, 0)).round().astype(np.uint8) for camera_name, recorded_image in recorded_images.items()}
 
     observation = build_vla_observation(camera_frames, recorded_state, frame["task"])
 

@@ -1,13 +1,9 @@
 import abc
-import math
 from typing import Dict, final
+import mujoco
 import numpy as np
 from robot_arm.geometry.pose import Pose
 from robot_arm.robot_schema import MOTOR_ORDER
-
-
-class SafetyException(Exception):
-    pass
 
 
 class Arm(abc.ABC):
@@ -17,47 +13,23 @@ class Arm(abc.ABC):
 
     def __init_subclass__(cls):
         super().__init_subclass__()
-        for name in ("read_state", "write_duty"):
+        for name in ("get_state", "submit_duty"):
             if name in cls.__dict__:
-                raise TypeError(f"{cls.__name__} must implement _{name} instead of overriding {name}")
+                raise TypeError(f"{cls.__name__} cannot override final method Arm.{name}")
 
     def __init__(self, cfg):
-        self.max_temperature = float(cfg.safety.max_temperature_celsius)
-        self.max_smoothed_duty = float(cfg.safety.max_smoothed_duty)
+        self.model = mujoco.MjModel.from_xml_path(cfg.model_path)
+        self.data = mujoco.MjData(self.model)
+        self.joint_indices = {name: self.model.joint(name).id for name in MOTOR_ORDER}
         self.control_step_seconds = 1.0 / cfg.control.frequencies.joint
-        self.duty_ema_alpha = 1.0 - math.exp(-self.control_step_seconds / float(cfg.safety.duty_ema_seconds))
-        self.smoothed_duties = dict.fromkeys(MOTOR_ORDER, 0.0)
 
     @property
     def joint_limits(self) -> Dict[str, tuple[float, float]]:
         return {name: tuple(map(float, self.model.jnt_range[index])) for name, index in self.joint_indices.items()}
 
     @final
-    def read_state(self) -> Dict[str, Dict[str, float]]:
-        state = self._read_state()
-        for motor in state["Present_Load"]:
-            self._check_temperature(motor, state)
-            self._check_duty(motor, state)
-        return state
-
-    def _check_temperature(self, motor: str, state: Dict[str, Dict[str, float]]) -> None:
-        temperature = state["Present_Temperature"][motor]
-        if temperature > self.max_temperature:
-            self._trigger_emergency_stop(f"Motor {motor} temperature {temperature}C exceeds limit {self.max_temperature}C")
-
-    def _check_duty(self, motor: str, state: Dict[str, Dict[str, float]]) -> None:
-        smoothed = self.duty_ema_alpha * abs(state["Present_Load"][motor]) + (1 - self.duty_ema_alpha) * self.smoothed_duties[motor]
-        self.smoothed_duties[motor] = smoothed
-        if smoothed > self.max_smoothed_duty:
-            self._trigger_emergency_stop(f"Motor {motor} sustained duty {smoothed:.2f} exceeds limit {self.max_smoothed_duty:.2f}")
-
-    @abc.abstractmethod
-    def _read_state(self) -> Dict[str, Dict[str, float]]:
-        pass
-
-    def _trigger_emergency_stop(self, reason: str) -> None:
-        self.disconnect()
-        raise SafetyException(f"EMERGENCY STOP TRIGGERED: {reason}")
+    def get_state(self) -> Dict[str, Dict[str, float]]:
+        return self.communication.get_state()
 
     @abc.abstractmethod
     def get_tcp(self) -> np.ndarray:
@@ -97,7 +69,7 @@ class Arm(abc.ABC):
         pass
 
     @final
-    def write_duty(self, duties: Dict[str, float], positions: Dict[str, float]) -> Dict[str, float]:
+    def submit_duty(self, duties: Dict[str, float], positions: Dict[str, float], sample_time_ns: int) -> Dict[str, float]:
         # Suppress only outward duties at a limit, so the arm can still move back.
         safe_duties = {}
         for motor, duty in duties.items():
@@ -107,12 +79,8 @@ class Arm(abc.ABC):
             if (position <= lower and duty < 0.0) or (position >= upper and duty > 0.0):
                 duty = 0.0
             safe_duties[motor] = duty
-        self._write_duty(safe_duties)
+        self.communication.submit_duty(safe_duties, sample_time_ns)
         return safe_duties
-
-    @abc.abstractmethod
-    def _write_duty(self, duties: Dict[str, float]) -> None:
-        pass
 
     @abc.abstractmethod
     def advance_control_step(self) -> None:

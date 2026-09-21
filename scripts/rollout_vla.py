@@ -19,38 +19,39 @@ def main(rollout_cfg: DictConfig):
 
     merged_cfg, env, joint_policy = setup_rollout_context(rollout_cfg, run_dir)
 
-    vla_checkpoint_path = latest_vla_checkpoint_path()
-    print(f"Loading VLA policy from: {vla_checkpoint_path}")
-    cartesian_policy = VLACartesianPolicy(vla_checkpoint_path)
-    primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
+    with env:
+        vla_checkpoint_path = latest_vla_checkpoint_path()
+        print(f"Loading VLA policy from: {vla_checkpoint_path}")
+        cartesian_policy = VLACartesianPolicy(vla_checkpoint_path)
+        primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
 
-    output_dir = os.path.join(run_dir, "recordings")
-    recorder = EpisodeRecorder(
-        output_dir=output_dir,
-        cfg=merged_cfg,
-        episode_name="vla_run_01",
-    )
-
-    with tqdm(
-        total=int(merged_cfg.control.max_seconds * merged_cfg.control.frequencies.cartesian),
-        desc="VLA rollout",
-        unit="action",
-    ) as progress:
-        runner = EpisodeRunner(
+        output_dir = os.path.join(run_dir, "recordings")
+        recorder = EpisodeRecorder(
+            output_dir=output_dir,
             cfg=merged_cfg,
-            env=env,
-            joint_policy=joint_policy,
-            primitive_policy=primitive_policy,
-            cartesian_policy=cartesian_policy,
-            training=False,
-            recorder=recorder,
-            replay_buffer=None,
-            metrics_queue=None,
-            weights_queue=None,
-            progress=progress,
+            episode_name="vla_run_01",
         )
 
-        runner.run_episode(generate_primitives=True)
+        with tqdm(
+            total=int(merged_cfg.control.max_seconds * merged_cfg.control.frequencies.cartesian),
+            desc="VLA rollout",
+            unit="action",
+        ) as progress:
+            runner = EpisodeRunner(
+                cfg=merged_cfg,
+                env=env,
+                joint_policy=joint_policy,
+                primitive_policy=primitive_policy,
+                cartesian_policy=cartesian_policy,
+                training=False,
+                recorder=recorder,
+                replay_buffer=None,
+                metrics_queue=None,
+                weights_queue=None,
+                progress=progress,
+            )
+
+            runner.run_episode(generate_primitives=True)
 
 
 if __name__ == "__main__":

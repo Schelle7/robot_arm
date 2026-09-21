@@ -81,20 +81,23 @@ def build_round_config(cfg, run_dir: Path, round_index: int):
     start_step = 0 if initial else cfg.initial_training_steps + (round_index - 1) * cfg.training_steps_per_round
     updates = cfg.initial_training_steps if initial else cfg.training_steps_per_round
     previous_checkpoint = "" if initial else str(run_dir / f"round_{round_index - 1:03d}/training/checkpoints/last")
-    return OmegaConf.merge(OmegaConf.to_container(cfg, resolve=True), {
-        "round_index": round_index,
-        "round_dir": str(round_dir),
-        "data_dir": str(data_dir),
-        "collection_dir": str(data_dir / "collection"),
-        "training_dir": str(round_dir / "training"),
-        "previous_checkpoint": previous_checkpoint,
-        "dataset_root": "",
-        "num_episodes": cfg.initial_episodes if initial else cfg.episodes_per_round,
-        "start_step": start_step,
-        "end_step": start_step + updates,
-        "total_steps": cfg.initial_training_steps + cfg.vla_rounds * cfg.training_steps_per_round,
-        "seed": cfg.seed + round_index,
-    })
+    return OmegaConf.merge(
+        OmegaConf.to_container(cfg, resolve=True),
+        {
+            "round_index": round_index,
+            "round_dir": str(round_dir),
+            "data_dir": str(data_dir),
+            "collection_dir": str(data_dir / "collection"),
+            "training_dir": str(round_dir / "training"),
+            "previous_checkpoint": previous_checkpoint,
+            "dataset_root": "",
+            "num_episodes": cfg.initial_episodes if initial else cfg.episodes_per_round,
+            "start_step": start_step,
+            "end_step": start_step + updates,
+            "total_steps": cfg.initial_training_steps + cfg.vla_rounds * cfg.training_steps_per_round,
+            "seed": cfg.seed + round_index,
+        },
+    )
 
 
 def record_completed_round(cfg, run_dir: Path, report: list[dict]) -> None:
@@ -102,14 +105,16 @@ def record_completed_round(cfg, run_dir: Path, report: list[dict]) -> None:
     model_path = checkpoint / "pretrained_model" / "model.safetensors"
     if not model_path.is_file():
         raise FileNotFoundError(model_path)
-    report.append({
-        "round": cfg.round_index,
-        "episodes": cfg.num_episodes,
-        "dataset": cfg.dataset_root,
-        "training_step": cfg.end_step,
-        "checkpoint": str(checkpoint),
-        "checkpoint_retained": True,
-    })
+    report.append(
+        {
+            "round": cfg.round_index,
+            "episodes": cfg.num_episodes,
+            "dataset": cfg.dataset_root,
+            "training_step": cfg.end_step,
+            "checkpoint": str(checkpoint),
+            "checkpoint_retained": True,
+        }
+    )
     expired_round = cfg.round_index - cfg.keep_last_checkpoints
     if expired_round >= 0:
         expired_checkpoints = run_dir / f"round_{expired_round:03d}" / "training" / "checkpoints"

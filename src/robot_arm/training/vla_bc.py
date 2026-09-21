@@ -97,19 +97,27 @@ class RoundTrainer:
         dataset = make_dataset(train_cfg)
         cartesian_policy = make_policy(train_cfg.policy, ds_meta=dataset.meta)
         self.preprocessor, self.postprocessor = round_processors(
-            cartesian_policy.config, dataset.meta.stats, cfg.round_index == 0,
+            cartesian_policy.config,
+            dataset.meta.stats,
+            cfg.round_index == 0,
         )
         optimizer, self.scheduler = make_optimizer_and_scheduler(train_cfg, cartesian_policy)
         self.step = 0
         if cfg.round_index != 0:
             self.step, optimizer, self.scheduler = load_training_state(
-                Path(cfg.previous_checkpoint), optimizer, self.scheduler,
+                Path(cfg.previous_checkpoint),
+                optimizer,
+                self.scheduler,
             )
         if self.step != cfg.start_step:
             raise ValueError(f"Checkpoint step {self.step} does not match start_step {cfg.start_step}.")
         loader = DataLoader(
-            dataset, batch_size=train_cfg.batch_size, num_workers=train_cfg.num_workers,
-            shuffle=True, pin_memory=train_cfg.policy.device == "cuda", drop_last=False,
+            dataset,
+            batch_size=train_cfg.batch_size,
+            num_workers=train_cfg.num_workers,
+            shuffle=True,
+            pin_memory=train_cfg.policy.device == "cuda",
+            drop_last=False,
             # PyTorch requires zero timeout when loading in the main process.
             timeout=cfg.bc.dataloader_timeout_seconds if train_cfg.num_workers > 0 else 0,
         )
@@ -124,13 +132,16 @@ class RoundTrainer:
             raise FloatingPointError("VLA training loss is non-finite.")
         self.accelerator.backward(loss)
         grad_norm = self.accelerator.clip_grad_norm_(
-            self.cartesian_policy.parameters(), self.train_cfg.optimizer.grad_clip_norm,
+            self.cartesian_policy.parameters(),
+            self.train_cfg.optimizer.grad_clip_norm,
         )
         self.optimizer.step()
         self.scheduler.step()
         self.step += 1
         return {
-            "step": self.step, **diagnostics, "grad_norm": float(grad_norm),
+            "step": self.step,
+            **diagnostics,
+            "grad_norm": float(grad_norm),
             "learning_rate": self.scheduler.get_last_lr()[0],
         }
 
@@ -138,9 +149,14 @@ class RoundTrainer:
         self.cartesian_policy.train()
         self.train_cfg.output_dir.mkdir(parents=True, exist_ok=False)
         batches = batches_forever(self.loader)
-        with (self.train_cfg.output_dir / "metrics.jsonl").open("w") as metrics, tqdm(
-            total=self.cfg.end_step - self.step, desc=f"Train round {self.cfg.round_index}", unit="update",
-        ) as progress:
+        with (
+            (self.train_cfg.output_dir / "metrics.jsonl").open("w") as metrics,
+            tqdm(
+                total=self.cfg.end_step - self.step,
+                desc=f"Train round {self.cfg.round_index}",
+                unit="update",
+            ) as progress,
+        ):
             while self.step < self.cfg.end_step:
                 diagnostics = self.update(next(batches))
                 progress.update(1)
@@ -152,9 +168,14 @@ class RoundTrainer:
     def save(self) -> None:
         checkpoint = self.train_cfg.output_dir / "checkpoints" / f"{self.step:08d}"
         save_checkpoint(
-            checkpoint_dir=checkpoint, step=self.step, cfg=self.train_cfg,
-            policy=self.accelerator.unwrap_model(self.cartesian_policy), optimizer=self.optimizer, scheduler=self.scheduler,
-            preprocessor=self.preprocessor, postprocessor=self.postprocessor,
+            checkpoint_dir=checkpoint,
+            step=self.step,
+            cfg=self.train_cfg,
+            policy=self.accelerator.unwrap_model(self.cartesian_policy),
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            preprocessor=self.preprocessor,
+            postprocessor=self.postprocessor,
         )
         update_last_checkpoint(checkpoint)
 

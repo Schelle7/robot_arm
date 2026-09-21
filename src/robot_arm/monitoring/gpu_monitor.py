@@ -4,11 +4,7 @@ import pynvml
 
 # The software bits are routine clock management and sit active most of the time on a laptop GPU,
 # so they are kept apart from the hardware bits, which only fire when the card protects itself.
-HW_SLOWDOWN = (
-    pynvml.nvmlClocksThrottleReasonHwSlowdown
-    | pynvml.nvmlClocksThrottleReasonHwThermalSlowdown
-    | pynvml.nvmlClocksThrottleReasonHwPowerBrakeSlowdown
-)
+HW_SLOWDOWN = pynvml.nvmlClocksThrottleReasonHwSlowdown | pynvml.nvmlClocksThrottleReasonHwThermalSlowdown | pynvml.nvmlClocksThrottleReasonHwPowerBrakeSlowdown
 
 
 class GpuMonitor:

@@ -17,6 +17,12 @@ class RobotEnv:
     Standard driver wrapper for the robotic arm.
     """
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.arm.disconnect()
+
     def __init__(
         self,
         arm: Arm,
@@ -89,17 +95,23 @@ class RobotEnv:
         self.previous_joint_positions = joint_positions.copy()
         self.previous_tcp_pose = tcp_pose
         self.previous_sample_time_ns = sample_time_ns
+        self.previous_joint_velocity = np.zeros(len(MOTOR_ORDER), dtype=np.float32)
+        self.previous_tcp_velocity = np.zeros(6, dtype=np.float32)
 
     def _consecutive_velocities(self, joint_positions: np.ndarray, tcp_pose: Pose, sample_time_ns: int) -> tuple[np.ndarray, np.ndarray]:
+        if sample_time_ns == self.previous_sample_time_ns:
+            return self.previous_joint_velocity.copy(), self.previous_tcp_velocity.copy()
         elapsed_seconds = (sample_time_ns - self.previous_sample_time_ns) / 1_000_000_000
         assert elapsed_seconds > 0.0, "Sensor sample timestamps must increase"
         joint_velocity = (joint_positions - self.previous_joint_positions) / elapsed_seconds
         tcp_velocity = self.previous_tcp_pose.delta_to(tcp_pose)[:6] / elapsed_seconds
         self._set_motion_reference(joint_positions, tcp_pose, sample_time_ns)
-        return joint_velocity.astype(np.float32), tcp_velocity.astype(np.float32)
+        self.previous_joint_velocity = joint_velocity.astype(np.float32)
+        self.previous_tcp_velocity = tcp_velocity.astype(np.float32)
+        return self.previous_joint_velocity.copy(), self.previous_tcp_velocity.copy()
 
     def _read_arm_state(self):
-        state_dict = self.arm.read_state()
+        state_dict = self.arm.get_state()
         joint_positions = np.array(
             [state_dict["Present_Position"][m] for m in self.motor_order],
             dtype=np.float32,
@@ -154,10 +166,7 @@ class RobotEnv:
 
     def box_too_far(self, end_effector_pose: Pose) -> bool:
         return bool(
-            self.backend == "sim"
-            and np.linalg.norm(
-                self.arm.get_privileged_box_pose(BOX_BODY_NAMES[0]).position - end_effector_pose.position
-            ) > self.max_box_distance_meters
+            self.backend == "sim" and np.linalg.norm(self.arm.get_privileged_box_pose(BOX_BODY_NAMES[0]).position - end_effector_pose.position) > self.max_box_distance_meters
         )
 
     def _initial_environment_state(self) -> EnvironmentState:
@@ -210,7 +219,7 @@ class RobotEnv:
         only interpretable if you know what the hardware was configured to do while it happened.
         """
         configuration_path = Path(self.output_dir) / "servo_configuration.json"
-        configuration_path.write_text(json.dumps(self.arm.configuration, indent=2, sort_keys=True) + "\n")
+        configuration_path.write_text(json.dumps(self.arm.communication.configuration, indent=2, sort_keys=True) + "\n")
 
     def reset_reward_tracking(self) -> None:
         self.previous_position_distance = 0.0
@@ -422,7 +431,7 @@ class RobotEnv:
     def step(
         self,
         action: np.ndarray,
-        joint_positions: np.ndarray,
+        state: EnvironmentState,
         policy_action: np.ndarray,
         joint_step_idx: int,
         cartesian_action: CartesianAction,
@@ -433,10 +442,10 @@ class RobotEnv:
         cartesian_action_ends = joint_step_idx == joint_steps_per_cartesian_action
 
         action_dict = {motor: float(duty) for motor, duty in zip(self.motor_order, action)}
-        position_dict = {motor: float(pos) for motor, pos in zip(self.motor_order, joint_positions)}
+        position_dict = {motor: float(pos) for motor, pos in zip(self.motor_order, state.observation["joint_positions"])}
 
         # 2. Command the duty, then let one control period elapse against it
-        safe_action_dict = self.arm.write_duty(action_dict, position_dict)
+        safe_action_dict = self.arm.submit_duty(action_dict, position_dict, state.sensor_state["sample_time_ns"])
         self.arm.advance_control_step()
 
         state_dict, current_positions, end_effector_pose = self._read_arm_state()

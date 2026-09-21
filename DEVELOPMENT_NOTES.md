@@ -22,7 +22,15 @@ The Cartesian runner aborts closing and holding phases below 0.30 rad gripper po
 - Hardware position, velocity, load, temperature, voltage, and current reads are available.
 - Real-arm direct PWM duty output is implemented.
 
+Stationary hardware measurements showed that PWM mode reports encoder ticks without the homing offset, whereas position mode applies it in firmware.
+`RealArm` therefore corrects PWM feedback with `(raw_tick - homing_offset) % 4096` before LeRobot normalization, including gripper clipping, while leaving position-mode feedback unchanged.
+
 ## Training and data workflows
+
+VLA targets contain seven pose-delta values followed by completion score, desired gripper duty,
+and duty-enable label. Recordings store teacher and executed duty settings separately; dataset
+conversion uses the teacher settings, and the dataset's action statistics normalize all ten channels.
+Inference thresholds the duty-enable score at 0.5 and clips predicted duty to [-1, 1].
 
 SAC training includes independent forward dynamics heads for the actor and both critics.
 Each predicts six joint and six TCP interval velocities from its own history and state encodings

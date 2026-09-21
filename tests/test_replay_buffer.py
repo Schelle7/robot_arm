@@ -4,7 +4,6 @@ import pytest
 
 from robot_arm.training.replay_buffer import MixedReplayBuffer, NumpyReplayBuffer
 
-
 SIZES = {"history": 3, "state": 2, "goal": 1}
 
 

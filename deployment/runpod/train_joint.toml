@@ -1,0 +1,6 @@
+[pod]
+name = "robot-arm-joint"
+
+[training]
+type = "joint"
+overrides = ["training.check_power_profile=false"]
