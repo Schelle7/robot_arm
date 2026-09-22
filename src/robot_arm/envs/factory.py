@@ -26,6 +26,8 @@ def make_env(cfg: DictConfig, output_dir: str):
     with ExitStack() as cleanup:
         cleanup.callback(arm.disconnect)
         if cfg.arm_type == "real":
+            if cfg.runtime.capture_camera:
+                arm.connect_cameras(cfg.camera)
             arm.communication.start(Path(output_dir) / "hardware_communication.jsonl")
         env = RobotEnv(arm=arm, cfg=cfg, output_dir=output_dir)
         cleanup.pop_all()

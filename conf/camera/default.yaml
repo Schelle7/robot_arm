@@ -1,10 +1,19 @@
 jpeg_quality: 90
+fps: 30
+fourcc: MJPG
+color_mode: rgb
+rotation: 0
+warmup_seconds: 1
+read_timeout_seconds: 0.2
+backend: 200
 cameras:
   external_camera:
+    device: /dev/v4l/by-id/usb-Google_Pixel_10_Pro_5C150DLCH0044J-video-index0
     mujoco_name: pixel_cam
     height: 480
     width: 640
   wrist_camera:
+    device: /dev/v4l/by-id/usb-Innomaker_Innomaker-U20CAM-720P_SN0001-video-index0
     mujoco_name: wrist_cam
-    height: 360
+    height: 480
     width: 640

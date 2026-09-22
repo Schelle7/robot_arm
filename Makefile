@@ -2,11 +2,16 @@ PORT ?= /dev/ttyACM0
 ID ?= my_follower
 ITERATIONS ?= 500
 WARMUP ?= 20
+CAMERA ?= wrist_camera
 
 .PHONY: install find-port test test-hardware bench lint format rollout_sim try_joint_policy_real try_joint_policy_sim rollout_real train_joint_policy train_runpod train_joint_runpod download_trained_vla download_trained_joint_policy download_pretrained
 
 install:
 	pip install -e .
+
+.PHONY: test_camera
+test_camera:
+	python diagnostics/capture_camera.py camera_name=$(CAMERA)
 
 find-port:
 	lerobot-find-port

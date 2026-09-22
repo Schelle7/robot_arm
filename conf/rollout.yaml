@@ -1,4 +1,5 @@
 defaults:
+  - camera: default
   - _self_
 
 hydra:

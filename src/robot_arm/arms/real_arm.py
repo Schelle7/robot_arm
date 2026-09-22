@@ -1,11 +1,13 @@
 import logging
 import time
+from contextlib import ExitStack
 from typing import Dict
 
 import mujoco
 import numpy as np
 
 from robot_arm.arms.arm import Arm
+from robot_arm.arms.camera_capture import CameraCapture
 from robot_arm.arms.real_communication import RealCommunication
 from robot_arm.geometry.gripper_geometry import get_tcp_geometry
 from robot_arm.geometry.pose import Pose
@@ -21,6 +23,11 @@ class RealArm(Arm):
         self.control_step_overruns = 0
         self.qpos_indices = self.model.jnt_qposadr[np.array([self.joint_indices[name] for name in MOTOR_ORDER])]
         self.communication = RealCommunication(cfg, self.joint_limits)
+        self.camera_cleanup = ExitStack()
+
+    def connect_cameras(self, cfg):
+        self.cameras = CameraCapture(cfg)
+        self.camera_cleanup.callback(self.cameras.close)
 
     def _forward_kinematics_pose(self, present_positions: dict) -> Pose:
         self.data.qpos[self.qpos_indices] = np.array([present_positions[name] for name in MOTOR_ORDER])
@@ -39,7 +46,7 @@ class RealArm(Arm):
         raise NotImplementedError("Real arm does not have access to pinch point")
 
     def read_cameras(self) -> dict[str, np.ndarray]:
-        raise NotImplementedError("Real camera capture is not implemented.")
+        return self.cameras.read()
 
     def advance_control_step(self) -> None:
         # The servos run their own loop, so a control period is wall-clock time rather than steps.
@@ -59,4 +66,7 @@ class RealArm(Arm):
         self.last_control_step_end = time.perf_counter()
 
     def disconnect(self):
-        self.communication.close()
+        try:
+            self.communication.close()
+        finally:
+            self.camera_cleanup.close()

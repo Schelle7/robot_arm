@@ -1,0 +1,11 @@
+defaults:
+  - camera: default
+  - _self_
+
+camera_name: wrist_camera
+frames: 90
+video_codec: MJPG
+
+hydra:
+  run:
+    dir: outputs/camera_test/${camera_name}/${now:%Y-%m-%d_%H-%M-%S}
