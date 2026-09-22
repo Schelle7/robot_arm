@@ -5,7 +5,7 @@ defaults:
 arm_type: real
 
 runtime:
-  capture_camera: true
+  capture_camera: false
   draw_waypoints: false
   draw_tcp: false
   record_sim_state: false
