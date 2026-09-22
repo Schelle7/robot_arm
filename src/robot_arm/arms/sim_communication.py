@@ -27,6 +27,9 @@ class SimCommunication(Communication):
     def reset(self):
         self.last_safety_read_ns = None
         self.smoothed_duties = dict.fromkeys(MOTOR_ORDER, 0.0)
+        for samples in self.temperature_samples.values():
+            samples.clear()
+        self.temperature_totals = dict.fromkeys(MOTOR_ORDER, 0.0)
         self.commanded_duty[:] = 0.0
 
     def read_sensors(self) -> Dict[str, Dict[str, float]]:

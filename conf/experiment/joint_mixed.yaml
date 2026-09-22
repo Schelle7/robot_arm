@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - default
+  - _self_
+
+training:
+  total_training_steps: 1000000
+  real_data:
+    fraction: 0.1
+    episode_paths:
+      - /workspace/real_recordings/2026-09-22/13-48-57/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-22/14-11-37/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-22/14-12-24/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-22/14-13-09/waypoint_recording/joint_policy_rollout/episode.npz

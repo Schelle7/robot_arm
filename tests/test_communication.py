@@ -95,12 +95,15 @@ def test_sim_reset_clears_command_and_safety_history(sim):
     sim.submit_duty({"gripper": 0.5}, 0)
     sim.get_state()
     assert sim.smoothed_duties["gripper"] > 0
+    assert len(sim.temperature_samples["gripper"]) == 1
 
     sim.reset()
 
     np.testing.assert_array_equal(sim.commanded_duty, 0.0)
     assert sim.last_safety_read_ns is None
     assert all(value == 0 for value in sim.smoothed_duties.values())
+    assert all(len(samples) == 0 for samples in sim.temperature_samples.values())
+    assert all(value == 0 for value in sim.temperature_totals.values())
 
 
 @pytest.fixture

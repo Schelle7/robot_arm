@@ -1,9 +1,11 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
 from robot_arm.episode_runner import EpisodeRunner
+from robot_arm.arms.communication import SafetyException
 from robot_arm.control_types import CartesianAction, EnvironmentState
 from robot_arm.geometry.pose import Pose
 from robot_arm.policies.joint_observation import JointObservationBuilder
@@ -11,6 +13,39 @@ from robot_arm.recording.recorder import EpisodeRecorder
 from robot_arm.robot_schema import HISTORY_FEATURE_NAMES, POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 HISTORY_STEPS = 10
+
+
+@pytest.mark.parametrize("from_sim_state", [False, True])
+def test_safety_stop_is_saved_without_completed_transition(tmp_path, from_sim_state):
+    cfg = SimpleNamespace(
+        camera=SimpleNamespace(jpeg_quality=90),
+        control=SimpleNamespace(frequencies=SimpleNamespace(joint=20, cartesian=5)),
+        runtime=SimpleNamespace(record_sim_state=False, record_policy_debug=False, capture_camera=False),
+    )
+    runner = EpisodeRunner.__new__(EpisodeRunner)
+    runner.recorder = EpisodeRecorder(str(tmp_path), cfg, "stopped")
+    runner.primitive_policy = SimpleNamespace(task="pick_and_place")
+    runner.env = SimpleNamespace(reset=Mock(), reset_from_sim_state=Mock())
+    sample = {"Present_Temperature": {"wrist_roll": 70}, "sample_time_ns": 123}
+    error = SafetyException("temperature limit", sample)
+    runner._run_episode = Mock(side_effect=error)
+
+    with pytest.raises(SafetyException) as caught:
+        if from_sim_state:
+            runner.run_episode_from_sim_state(False, np.zeros(6), np.zeros(6))
+        else:
+            runner.run_episode(False)
+
+    assert caught.value is error
+    sample["Present_Temperature"]["wrist_roll"] = 28
+    with np.load(tmp_path / "stopped/episode.npz", allow_pickle=True) as data:
+        event = data["safety_stops"][0]
+        assert event["sensor_state"]["Present_Temperature"]["wrist_roll"] == 70
+        assert event["sensor_state"]["sample_time_ns"] == 123
+        assert event["reason"] == str(error)
+        assert len(data["cartesian_action"]) == 0
+        assert len(data["joint_positions"]) == 0
+    assert runner.recorder.safety_stops[0]["sensor_state"]["Present_Temperature"]["wrist_roll"] == 70
 
 
 def test_recording_keeps_teacher_labels_separate_from_executed_actions():

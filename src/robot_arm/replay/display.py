@@ -52,6 +52,7 @@ def build_replay_display(
     mdata,
     joint_positions,
     joint_velocities,
+    temperatures,
     cartesian_action,
     dense_trajectory,
     observed_pose_delta,
@@ -104,6 +105,7 @@ def build_replay_display(
             [
                 vector_row("Position", joint_positions, len(MOTOR_ORDER)),
                 vector_row("Velocity", joint_velocities, len(MOTOR_ORDER)),
+                ["Temperature (°C)", *[f"{value:.1f}" for value in temperatures]],
                 vector_row("Policy action", joint_action, len(MOTOR_ORDER)),
                 vector_row("Requested duty", requested_duty, len(MOTOR_ORDER)),
             ],

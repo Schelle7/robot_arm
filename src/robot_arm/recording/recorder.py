@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 import numpy as np
 from typing import Dict, List, Any
 from PIL import Image
@@ -32,11 +33,15 @@ class EpisodeRecorder:
         self.transitions: List[Dict[str, Any]] = []
         self.dense_trajectory_buffer: List[Dict[str, Any]] = []
         self.waypoints = None
+        self.safety_stops = []
 
         os.makedirs(self.episode_dir, exist_ok=True)
         if self.capture_camera:
             os.makedirs(self.external_camera_images_dir, exist_ok=True)
             os.makedirs(self.wrist_camera_images_dir, exist_ok=True)
+
+    def record_safety_stop(self, error):
+        self.safety_stops.append({"reason": str(error), "sensor_state": deepcopy(error.sensor_state)})
 
     def save_waypoints(self, waypoints: list[np.ndarray]):
         """
@@ -189,6 +194,7 @@ class EpisodeRecorder:
         # TODO(lerobot): Review this state/transition layout against LeRobot's dataset schema.
 
         data_dict = {
+            "safety_stops": np.array(self.safety_stops, dtype=object),
             "box_gripped": np.array([s["grasp_confirmed"] for s in self.states], dtype=bool),
             "step": np.array([s["step"] for s in self.states], dtype=np.int32),
             "primitive_prompt": np.array([t["primitive_prompt"] for t in self.transitions], dtype=str),

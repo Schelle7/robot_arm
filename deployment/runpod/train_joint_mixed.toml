@@ -1,0 +1,10 @@
+[pod]
+name = "robot-arm-joint-mixed"
+
+[training]
+type = "joint"
+overrides = [
+    "experiment=joint_mixed",
+    "training.check_power_profile=false",
+    "training.tensorboard_enabled=true",
+]

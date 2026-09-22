@@ -37,6 +37,22 @@ class ReplayViewer:
         self.desired_actions = data["cartesian_action"]
         self.joint_positions = data["joint_positions"]
         self.joint_velocities = data["joint_velocities"]
+        self.temperatures = data["sensor_temperature"]
+        self.safety_stops = data["safety_stops"].tolist()
+        self.sensor_history = {
+            "temperatures": self.temperatures.tolist(),
+            "voltages": data["sensor_voltage"].tolist(),
+            "times": ((data["sensor_sample_time_ns"] - data["sensor_sample_time_ns"][0]) / 1e9).tolist(),
+            "temperature_limit": float(recorded_cfg.safety.max_temperature_celsius),
+            "safety_stops": [],
+        }
+        for event in self.safety_stops:
+            sample = event["sensor_state"]
+            sample_time = (sample["sample_time_ns"] - data["sensor_sample_time_ns"][0]) / 1e9
+            self.sensor_history["times"].append(float(sample_time))
+            self.sensor_history["temperatures"].append([float(sample["Present_Temperature"][motor]) for motor in MOTOR_ORDER])
+            self.sensor_history["voltages"].append([float(sample["Present_Voltage"][motor]) for motor in MOTOR_ORDER])
+            self.sensor_history["safety_stops"].append({"time": float(sample_time), "reason": event["reason"]})
         self.dense_trajectory = data["dense_trajectory"]
         self.action_history = [[float(value) for value in sample["action"]] for trajectory in self.dense_trajectory for sample in trajectory]
         self.action_diagnostics = data["cartesian_action_diagnostics"]
@@ -137,6 +153,7 @@ class ReplayViewer:
             self.mdata,
             self.joint_positions[self.current_frame],
             self.joint_velocities[self.current_frame],
+            self.temperatures[self.current_frame],
             self.desired_actions[self.current_frame] if self.current_frame < self.num_actions else None,
             self.dense_trajectory[self.current_frame] if self.current_frame < self.num_actions else [],
             observed_pose_delta,
@@ -151,6 +168,7 @@ class ReplayViewer:
         history_end_time = (
             sum(len(trajectory) for trajectory in self.dense_trajectory[: self.current_frame]) + self.current_joint_step
         ) / self.recorded_cfg.control.frequencies.joint
+        warnings.extend(event["reason"] for event in self.safety_stops)
         display(
             display_lines,
             warnings,

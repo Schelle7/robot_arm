@@ -230,6 +230,7 @@ def test_fresh_feedback_checks_temperature_and_uses_elapsed_time_for_duty(offlin
     arm.communication.check_safety(arm.communication.read_sensors())
     assert arm.communication.smoothed_duties["gripper"] == pytest.approx(0.5 * (1 - math.exp(-0.01 / CFG.safety.duty_ema_seconds)))
     state["Present_Temperature"]["gripper"] = CFG.safety.max_temperature_celsius + 1
+    state["read_completed_ns"] += round(CFG.safety.temperature_average_seconds * 1_000_000_000)
     arm.communication.close = Mock()
     with pytest.raises(SafetyException, match="temperature"):
         arm.communication.check_safety(arm.communication.read_sensors())

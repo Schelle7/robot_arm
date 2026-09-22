@@ -1,3 +1,4 @@
 max_temperature_celsius: 45.0
+temperature_average_seconds: 0.2
 duty_ema_seconds: 1.0
 max_smoothed_duty: 1  # disabled

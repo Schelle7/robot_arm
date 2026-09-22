@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 from typing import Dict
 
 from robot_arm.policies.cartesian import CartesianPolicy, ScriptedCartesianPolicy
+from robot_arm.arms.communication import SafetyException
 from robot_arm.policies.primitive_generator import ScriptedPrimitiveGeneratorPolicy
 from robot_arm.envs.env import RobotEnv
 from robot_arm.control_types import ActionPrimitive, CartesianAction, EnvironmentState
@@ -222,6 +223,10 @@ class EpisodeRunner:
                 self.primitive_policy.select_task()
             state = self.env.reset(enable_added_weight=self.primitive_policy.task != "pick_and_place")
             self._run_episode(generate_primitives, state)
+        except SafetyException as error:
+            if self.recorder:
+                self.recorder.record_safety_stop(error)
+            raise
         finally:
             if self.recorder:
                 self.recorder.save()
@@ -231,6 +236,10 @@ class EpisodeRunner:
             if generate_primitives:
                 self.primitive_policy.select_task()
             self._run_episode(generate_primitives, self.env.reset_from_sim_state(qpos, qvel))
+        except SafetyException as error:
+            if self.recorder:
+                self.recorder.record_safety_stop(error)
+            raise
         finally:
             if self.recorder:
                 self.recorder.save()

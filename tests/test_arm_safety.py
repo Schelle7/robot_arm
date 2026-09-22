@@ -92,20 +92,37 @@ def test_each_read_updates_duty_average_once(cfg):
 def test_temperature_violation_disconnects_and_raises(cfg):
     arm = TestArm(cfg)
     arm.state["Present_Temperature"]["shoulder_pan"] = cfg.safety.max_temperature_celsius + 1
-    with pytest.raises(SafetyException, match="temperature"):
+    with pytest.raises(SafetyException, match="temperature") as caught:
         arm.get_state()
+    assert caught.value.sensor_state is arm.state
     arm.communication.close.assert_called_once()
 
 
-def test_rechecking_sample_preserves_duty_average_but_checks_temperature(cfg):
+def test_rechecking_sample_does_not_count_it_again(cfg):
     arm = TestArm(cfg)
     arm.state["Present_Load"]["shoulder_pan"] = 0.5
     state = arm.get_state()
     smoothed = arm.communication.smoothed_duties.copy()
     arm.communication.check_safety(state)
     assert arm.communication.smoothed_duties == smoothed
-    state["Present_Temperature"]["shoulder_pan"] = cfg.safety.max_temperature_celsius + 1
-    with pytest.raises(SafetyException, match="temperature"):
+    assert len(arm.communication.temperature_samples["shoulder_pan"]) == 1
+    arm.communication.close.assert_not_called()
+
+
+def test_temperature_mean_uses_only_samples_within_window(cfg):
+    cfg.safety.max_temperature_celsius = 45
+    arm = TestArm(cfg)
+    state = arm.state
+    for timestamp, temperature in [(0, 20), (100_000_000, 20), (150_000_000, 70)]:
+        state["read_completed_ns"] = timestamp
+        state["Present_Temperature"]["shoulder_pan"] = temperature
+        arm.communication.check_safety(state)
+    arm.communication.close.assert_not_called()
+    assert state["Present_Temperature"]["shoulder_pan"] == 70
+
+    state["read_completed_ns"] = 300_000_000
+    state["Present_Temperature"]["shoulder_pan"] = 30
+    with pytest.raises(SafetyException, match="mean temperature 50.00C"):
         arm.communication.check_safety(state)
     arm.communication.close.assert_called_once()
 

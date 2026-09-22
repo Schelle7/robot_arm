@@ -23,4 +23,4 @@ implement action chunks? of cartesian actions.
 # eventually proper rl for vla
 
 
-try to run smolvla at lower precision during inference?
+I am currently not saving all sensor readings.

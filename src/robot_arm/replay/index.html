@@ -42,6 +42,7 @@
     .action-plot { padding: 12px 0; border-bottom: 1px solid var(--line); }
     .action-plot h3 { margin: 0 0 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
     .action-plot canvas { display: block; width: 100%; height: 150px; background: rgba(255, 255, 255, 0.72); }
+    #temperatureCanvas, #voltageCanvas { height: 260px; }
     .plot-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 6px; color: var(--muted); font: 11px "DejaVu Sans Mono", monospace; }
     .plot-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; background: var(--series-color); }
     #warnings { margin: 18px 0 0; color: var(--warn); white-space: pre-wrap; }
@@ -86,6 +87,16 @@
     <div id="actionPlots" class="action-plots"></div>
 </section>
 <pre id="warnings"></pre>
+<section class="action-plot">
+    <h2>Motor temperatures (°C)</h2>
+    <div id="temperatureLegend" class="plot-legend"></div>
+    <canvas id="temperatureCanvas"></canvas>
+</section>
+<section class="action-plot">
+    <h2>Motor supply voltages (V)</h2>
+    <div id="voltageLegend" class="plot-legend"></div>
+    <canvas id="voltageCanvas"></canvas>
+</section>
 </main>
 <script>
     const frameRange = document.getElementById("frameRange");
@@ -107,6 +118,11 @@
     const historySection = document.getElementById("historySection");
     const historyPlots = document.getElementById("historyPlots");
     const actionPlots = document.getElementById("actionPlots");
+    const temperatureCanvas = document.getElementById("temperatureCanvas");
+    const temperatureLegend = document.getElementById("temperatureLegend");
+    const voltageCanvas = document.getElementById("voltageCanvas");
+    const voltageLegend = document.getElementById("voltageLegend");
+    let sensorHistory;
     const status = document.getElementById("status");
     let overviewStructure = "";
     let tableStructure = "";
@@ -404,6 +420,104 @@
         }
     }
 
+    function drawSensorPlot(canvas, values, times, referenceLines, safetyStops, frameIndex) {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        const pixelRatio = window.devicePixelRatio || 1;
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        const context = canvas.getContext("2d");
+        context.scale(pixelRatio, pixelRatio);
+        const left = 48;
+        const right = width - 12;
+        const top = 16;
+        const bottom = height - 28;
+        let minimum = Math.min(values[0][0], ...referenceLines);
+        let maximum = Math.max(values[0][0], ...referenceLines);
+        for (const sample of values) {
+            for (const value of sample) {
+                minimum = Math.min(minimum, value);
+                maximum = Math.max(maximum, value);
+            }
+        }
+        const padding = Math.max((maximum - minimum) * 0.1, 0.2);
+        minimum = Math.max(0, minimum - padding);
+        maximum += padding;
+        const duration = times[times.length - 1];
+        const x = time => left + time / Math.max(duration, 0.001) * (right - left);
+        const y = value => bottom - (value - minimum) / (maximum - minimum) * (bottom - top);
+        context.font = '11px "DejaVu Sans Mono", monospace';
+        context.textAlign = "right";
+        context.textBaseline = "middle";
+        for (let tick = 0; tick <= 4; tick += 1) {
+            const value = minimum + tick * (maximum - minimum) / 4;
+            context.strokeStyle = "#ccd5d1";
+            context.beginPath();
+            context.moveTo(left, y(value));
+            context.lineTo(right, y(value));
+            context.stroke();
+            context.fillStyle = "#61706a";
+            context.fillText(value.toFixed(1), left - 6, y(value));
+        }
+        context.strokeStyle = "#a33b20";
+        context.setLineDash([6, 4]);
+        for (const limit of referenceLines) {
+            context.beginPath();
+            context.moveTo(left, y(limit));
+            context.lineTo(right, y(limit));
+            context.stroke();
+        }
+        context.setLineDash([]);
+        for (let motor = 0; motor < values[0].length; motor += 1) {
+            context.strokeStyle = plotColors[motor];
+            context.fillStyle = plotColors[motor];
+            context.lineWidth = 1.5;
+            context.beginPath();
+            values.forEach((sample, index) => {
+                if (index === 0) context.moveTo(x(times[index]), y(sample[motor]));
+                else context.lineTo(x(times[index]), y(sample[motor]));
+            });
+            context.stroke();
+            context.beginPath();
+            context.arc(x(times[frameIndex]), y(values[frameIndex][motor]), 3, 0, 2 * Math.PI);
+            context.fill();
+        }
+        context.strokeStyle = "#17201d";
+        context.lineWidth = 1;
+        context.setLineDash([3, 3]);
+        context.beginPath();
+        context.moveTo(x(times[frameIndex]), top);
+        context.lineTo(x(times[frameIndex]), bottom);
+        context.stroke();
+        context.setLineDash([]);
+        safetyStops.forEach((event, eventIndex) => {
+            const sample = values[values.length - safetyStops.length + eventIndex];
+            context.strokeStyle = "#a33b20";
+            context.setLineDash([6, 4]);
+            context.beginPath();
+            context.moveTo(x(event.time), top);
+            context.lineTo(x(event.time), bottom);
+            context.stroke();
+            context.setLineDash([]);
+            sample.forEach((value, motor) => {
+                context.fillStyle = plotColors[motor];
+                context.beginPath();
+                context.arc(x(event.time), y(value), 4, 0, 2 * Math.PI);
+                context.fill();
+            });
+            context.fillStyle = "#a33b20";
+            context.textAlign = "right";
+            context.fillText("Safety stop", x(event.time) - 6, top);
+        });
+        context.fillStyle = "#61706a";
+        context.textAlign = "left";
+        context.fillText("0 s", left, height - 10);
+        context.textAlign = "center";
+        context.fillText("Time since first sensor sample", (left + right) / 2, height - 10);
+        context.textAlign = "right";
+        context.fillText(`${duration.toFixed(2)} s`, right, height - 10);
+    }
+
     frameRange.addEventListener("input", () => requestFrame(frameRange.value));
     frameNumber.addEventListener("change", () => requestFrame(frameNumber.value));
     jointRange.addEventListener("input", () => requestJointStep(jointRange.value));
@@ -420,7 +534,7 @@
         overviewStructure = "";
         tableStructure = "";
         dutyInputsCreated = false;
-        for (const container of [overviewTable, tables, dutyGrid, historyPlots, actionPlots]) {
+        for (const container of [overviewTable, tables, dutyGrid, historyPlots, actionPlots, temperatureLegend, voltageLegend]) {
             container.replaceChildren();
         }
         generationStatus.textContent = "";
@@ -433,6 +547,15 @@
             input.value = 0;
         }
         createActionPlots(actionData);
+        sensorHistory = actionData.sensors;
+        const labels = [...actionData.motor_names, `Limit: ${sensorHistory.temperature_limit} °C`];
+        labels.forEach((label, index) => {
+            const item = document.createElement("span");
+            item.textContent = label.replaceAll("_", " ");
+            item.style.setProperty("--series-color", index < plotColors.length ? plotColors[index] : "#a33b20");
+            temperatureLegend.appendChild(item);
+            if (index < actionData.motor_names.length) voltageLegend.appendChild(item.cloneNode(true));
+        });
         episodeId = state.episode_id;
     }
 
@@ -472,6 +595,8 @@
             createDutyInputs(state.motor_names, state.duty_limits);
         }
         renderTables(state.sections);
+        drawSensorPlot(temperatureCanvas, sensorHistory.temperatures, sensorHistory.times, [sensorHistory.temperature_limit], sensorHistory.safety_stops, state.current_frame);
+        drawSensorPlot(voltageCanvas, sensorHistory.voltages, sensorHistory.times, [], sensorHistory.safety_stops, state.current_frame);
     document.getElementById("warnings").textContent = state.warnings.join("\n");
     }
 
