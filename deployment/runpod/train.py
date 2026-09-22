@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -81,7 +82,14 @@ def restore_environment(cfg, env):
 def training_command(cfg, python, repo, destination):
     kind = cfg["training"]["type"]
     if kind == "joint":
-        return [python, "-u", "scripts/train_joint_policy.py", *cfg["training"]["overrides"], f"hydra.run.dir={destination / 'joint'}"]
+        return [
+            python,
+            "-u",
+            "scripts/train_joint_policy.py",
+            *cfg["training"]["overrides"],
+            f"hydra.run.dir={destination / 'joint'}",
+            f"training.tensorboard_dir={Path(cfg['training']['local_root']) / cfg['run_id'] / 'tensorboard'}",
+        ]
     if kind == "vla_dagger":
         return [
             python,
@@ -125,6 +133,9 @@ def train(cfg):
     run_stage("check-dependencies", [python, "-m", "pip", "check"], env)
     destination = Path(cfg["training"]["persistent_root"]) / cfg["run_id"]
     run_stage(f"train-{cfg['training']['type']}", training_command(cfg, python, repo, destination), env)
+    if cfg["training"]["type"] == "joint":
+        print_time("Copying TensorBoard events to the training volume")
+        shutil.copytree(Path(cfg["training"]["local_root"]) / cfg["run_id"] / "tensorboard", destination / "joint", dirs_exist_ok=True)
     (destination / "result.json").write_text(json.dumps(training_result(cfg, destination), indent=2) + "\n")
 
 
@@ -175,9 +186,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["create", "worker"])
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--joint-policy", default=argparse.SUPPRESS, help="Joint checkpoint path available on the pod (VLA deployment only)")
     args = parser.parse_args()
+    if "joint_policy" in vars(args) and args.command != "create":
+        parser.error("--joint-policy is only supported when creating a VLA training pod")
     if args.command == "create":
-        launch(load_config(args.config, "train"))
+        cfg = load_config(args.config, "train")
+        if "joint_policy" in vars(args):
+            if cfg["training"]["type"] != "vla_dagger":
+                parser.error("--joint-policy requires VLA training")
+            cfg["training"]["joint_policy"] = args.joint_policy
+        launch(cfg)
     else:
         with args.config.open() as file:
             train(json.load(file))

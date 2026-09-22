@@ -129,7 +129,7 @@ def test_reset_policy_history_fills_one_window_with_zeros():
 
 def test_box_distance_rejects_grasp_and_restarts_continuous_hold():
     env = make_env()
-    env.backend = "sim"
+    env.arm_type = "sim"
     env.motor_order = MOTOR_ORDER
     env.max_box_distance_meters = 0.04
     env.grasp_estimator = GraspEstimator(
@@ -354,7 +354,7 @@ def test_action_change_penalty_uses_actor_action_before_duty_scaling():
 def test_reset_clears_tracking_state():
     env = make_env()
     env._initial_environment_state = lambda: object()
-    env.backend = "real"
+    env.arm_type = "real"
     env.motor_order = MOTOR_ORDER
     env.policy_history_steps = 10
     env.policy_history = deque(maxlen=10)

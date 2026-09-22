@@ -12,7 +12,7 @@ def test_training_configs_share_infrastructure():
     joint = load_config(CONFIG_DIR / "train_joint.toml", "train")
     assert vla["training"]["type"] == "vla_dagger"
     assert joint["training"]["type"] == "joint"
-    assert joint["training"]["overrides"] == ["training.check_power_profile=false"]
+    assert joint["training"]["overrides"] == ["training.check_power_profile=false", "training.tensorboard_enabled=true"]
     assert vla["training"]["archive"] == joint["training"]["archive"]
     assert vla["environment"] == joint["environment"]
     vla["pod"].pop("name")

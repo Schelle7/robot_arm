@@ -57,7 +57,8 @@ run's saved configuration with [conf/rollout.yaml](conf/rollout.yaml).
 | --- | --- |
 | `make train_joint_policy` | Train the joint duty controller in simulation. |
 | `make train_runpod` | Launch VLA training on RunPod using `deployment/runpod/train.toml`. |
-| `make sanity_check_sim` | Roll out scripted Cartesian targets through the learned duty controller. |
+| `make try_joint_policy_sim` | Roll out scripted Cartesian targets through the learned duty controller in simulation. |
+| `make try_joint_policy_real` | Run the joint controller on the physical arm using `conf/rollout_real.yaml`. |
 | `make rollout_sim` | Roll out the VLA through the learned duty controller. |
 | `make download_trained_vla` | Download the latest locally tracked RunPod run's log and, when available, final VLA checkpoint. |
 | `make download_pretrained` | Download the pretrained VLA and joint controller checkpoints. |

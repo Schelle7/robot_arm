@@ -104,14 +104,16 @@ class VLACartesianPolicy(CartesianPolicy):
     the problem is that not every pose can be reached
     """
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, precision: str):
         from robot_arm.cartesian_smolvla.modeling_cartesian_smolvla import CartesianSmolVLAPolicy
         from lerobot.policies.factory import make_pre_post_processors
         import torch
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.policy = CartesianSmolVLAPolicy.from_pretrained(model_path, strict=True).to(self.device)
+        self.inference_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}[precision]
+        self.policy = CartesianSmolVLAPolicy.from_pretrained(model_path, strict=True).to(device=self.device, dtype=torch.float32)
         self.policy.eval()
+        print(f"VLA inference: {precision} on {self.device}")
 
         self.preprocessor, self.postprocessor = make_pre_post_processors(
             policy_cfg=self.policy.config,
@@ -132,8 +134,9 @@ class VLACartesianPolicy(CartesianPolicy):
         with torch.inference_mode():
             batch = {k: (torch.tensor(v).unsqueeze(0).to(self.device) if isinstance(v, np.ndarray) else [v]) for k, v in raw_obs.items()}
             processed_batch = self.preprocessor(batch)
-            out = self.policy.select_action(processed_batch)
-            action = self.postprocessor(out).squeeze(0).cpu().numpy()
+            with torch.autocast(device_type=self.device, dtype=self.inference_dtype, enabled=self.inference_dtype != torch.float32):
+                out = self.policy.select_action(processed_batch)
+            action = self.postprocessor(out.float()).squeeze(0).float().cpu().numpy()
             assert action.shape == (len(VLA_ACTION_NAMES),) and np.isfinite(action).all()
             completion_score = float(action[len(CARTESIAN_ACTION_NAMES)])
             duty_enable_score = float(action[VLA_ACTION_NAMES.index("desired_gripper_duty_active")])

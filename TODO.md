@@ -21,3 +21,6 @@ and train and evaluate the VLA's predicted duty and duty-enable outputs.
 implement action chunks? of cartesian actions.
 
 # eventually proper rl for vla
+
+
+try to run smolvla at lower precision during inference?

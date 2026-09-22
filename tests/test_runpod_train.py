@@ -9,6 +9,21 @@ from deployment.runpod.common import load_config
 from deployment.runpod import train
 
 
+@pytest.mark.parametrize("override", [[], ["--joint-policy", "/workspace/training/new/joint/checkpoints/final.actor.npz"]])
+def test_create_joint_policy_override_reaches_training_command(monkeypatch, override):
+    config = Path(train.__file__).with_suffix(".toml")
+    expected = override[-1] if override else load_config(config, "train")["training"]["joint_policy"]
+    launched = []
+    monkeypatch.setattr(train.sys, "argv", ["train.py", "create", "--config", str(config), *override])
+    monkeypatch.setattr(train, "launch", launched.append)
+    train.main()
+    assert launched[0]["training"]["joint_policy"] == expected
+    launched[0]["run_id"] = "test-run"
+    repo = Path("/opt/repo")
+    command = train.training_command(launched[0], "/environment/bin/python", repo, Path("/workspace/training/test-run"))
+    assert f"collection.policy_name={repo / expected}" in command
+
+
 @pytest.mark.parametrize("available_index", [0, 2, 4])
 def test_launch_tries_gpus_in_order(tmp_path, monkeypatch, capsys, available_index):
     cfg = load_config(Path(train.__file__).with_suffix(".toml"), "train")
@@ -117,11 +132,47 @@ def test_training_uses_archive_environment_and_persistent_output(tmp_path, monke
 
 def test_joint_command_has_no_dagger_inputs(tmp_path):
     cfg = load_config((Path(train.__file__).parent / "train_joint.toml"), "train")
+    cfg["run_id"] = "test-run"
     command = train.training_command(cfg, "/environment/bin/python", tmp_path / "repo", tmp_path / "run")
     assert command[:3] == ["/environment/bin/python", "-u", "scripts/train_joint_policy.py"]
     assert "training.check_power_profile=false" in command
     assert f"hydra.run.dir={tmp_path / 'run/joint'}" in command
+    assert f"training.tensorboard_dir={Path(cfg['training']['local_root']) / 'test-run/tensorboard'}" in command
     assert not any(arg.startswith(("data_root=", "collection.")) for arg in command)
+
+
+@pytest.mark.parametrize("training_succeeds", [True, False])
+def test_joint_tensorboard_is_copied_only_after_success(tmp_path, monkeypatch, training_succeeds):
+    cfg = load_config(Path(train.__file__).parent / "train_joint.toml", "train")
+    cfg["run_id"] = "test-run"
+    cfg["training"]["local_root"] = str(tmp_path / "local")
+    cfg["training"]["persistent_root"] = str(tmp_path / "volume")
+    (tmp_path / "local/repo").mkdir(parents=True)
+    events = tmp_path / "local/test-run/tensorboard"
+    events.mkdir(parents=True)
+    (events / "events.out.tfevents.test").write_bytes(b"metrics")
+    destination = tmp_path / "volume/test-run/joint"
+    destination.mkdir(parents=True)
+    (destination / "checkpoint.pkl").write_bytes(b"checkpoint")
+    monkeypatch.setenv("RUNPOD_API_KEY", "secret")
+    monkeypatch.setenv("TRAIN_CONFIG", "{}")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(train, "restore_environment", lambda cfg, env: tmp_path / "environment")
+    monkeypatch.setattr(train, "training_result", lambda cfg, destination: {"checkpoint": "final"})
+
+    def run_stage(name, command, env):
+        if name == "train-joint" and not training_succeeds:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(train, "run_stage", run_stage)
+    if training_succeeds:
+        train.train(cfg)
+        assert (destination / "events.out.tfevents.test").read_bytes() == b"metrics"
+    else:
+        with pytest.raises(subprocess.CalledProcessError):
+            train.train(cfg)
+        assert not (destination / "events.out.tfevents.test").exists()
+    assert (destination / "checkpoint.pkl").read_bytes() == b"checkpoint"
 
 
 def test_joint_result_requires_both_final_checkpoint_files(tmp_path):

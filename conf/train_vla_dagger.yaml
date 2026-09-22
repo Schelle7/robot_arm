@@ -22,7 +22,8 @@ keep_last_checkpoints: 2
 data_root: ${hydra:runtime.output_dir}/data
 
 collection:
-  backend: sim
+  vla_precision: fp32
+  arm_type: sim
   policy_name: latest
   waypoint:
     primitive_probabilities:

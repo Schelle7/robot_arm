@@ -22,7 +22,7 @@ def main(rollout_cfg: DictConfig):
     with env:
         vla_checkpoint_path = latest_vla_checkpoint_path()
         print(f"Loading VLA policy from: {vla_checkpoint_path}")
-        cartesian_policy = VLACartesianPolicy(vla_checkpoint_path)
+        cartesian_policy = VLACartesianPolicy(vla_checkpoint_path, merged_cfg.vla_precision)
         primitive_policy = ScriptedPrimitiveGeneratorPolicy(merged_cfg)
 
         output_dir = os.path.join(run_dir, "recordings")

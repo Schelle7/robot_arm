@@ -65,6 +65,7 @@ def test_rollout_splits_completion_after_denormalizing(score, duty, enable_score
 
     policy = cartesian.VLACartesianPolicy.__new__(cartesian.VLACartesianPolicy)
     policy.device = "cpu"
+    policy.inference_dtype = torch.float32
     normalized = torch.tensor([[0.0] * 7 + [score - 1.0, duty - 1.0, enable_score - 1.0]])
     policy.policy = SimpleNamespace(select_action=lambda batch: normalized)
     policy.preprocessor = lambda batch: batch
@@ -80,3 +81,28 @@ def test_rollout_splits_completion_after_denormalizing(score, duty, enable_score
     assert action.desired_gripper_duty == pytest.approx(np.clip(duty, -1.0, 1.0))
     assert action.desired_gripper_duty_active == (enable_score >= 0.5)
     assert action.diagnostics["duty_enable_score"] == pytest.approx(enable_score)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
+def test_rollout_precision_keeps_postprocessing_and_numpy_actions_float32(monkeypatch, dtype):
+    from robot_arm.policies import cartesian
+
+    policy = cartesian.VLACartesianPolicy.__new__(cartesian.VLACartesianPolicy)
+    policy.device = "cpu"
+    policy.inference_dtype = dtype
+
+    def select_action(batch):
+        output = torch.ones((1, 2)) @ torch.ones((2, 10))
+        assert output.dtype == dtype
+        return output
+
+    def postprocess(output):
+        assert output.dtype == torch.float32
+        return output
+
+    policy.policy = SimpleNamespace(select_action=select_action)
+    policy.preprocessor = lambda batch: batch
+    policy.postprocessor = postprocess
+    monkeypatch.setattr(cartesian, "build_vla_observation", lambda images, state, prompt: {})
+    action = policy.get_action(SimpleNamespace(grasp_confirmed=False), {}, np.zeros(16), SimpleNamespace(prompt="open gripper"))
+    assert action.cartesian_action.dtype == np.float32

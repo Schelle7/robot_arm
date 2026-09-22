@@ -28,7 +28,7 @@ def main(rollout_cfg: DictConfig):
         recorder = EpisodeRecorder(
             output_dir=output_dir,
             cfg=merged_cfg,
-            episode_name="waypoint_sanity_check",
+            episode_name="joint_policy_rollout",
         )
 
         runner = EpisodeRunner(

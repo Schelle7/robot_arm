@@ -15,9 +15,9 @@ def recording_case(tmp_path):
             for name in ("control", "waypoint", "servo", "safety", "reward", "training", "runtime")
         }
     )
-    cfg.backend = "sim"
+    cfg.arm_type = "sim"
     recorded_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
-    recorded_cfg.backend = "real"
+    recorded_cfg.arm_type = "real"
     recorded_cfg.runtime.record_policy_debug = True
     run = tmp_path / "session"
     (run / ".hydra").mkdir(parents=True)
@@ -47,7 +47,7 @@ def test_loads_current_real_transition(recording_case):
     np.testing.assert_array_equal(buffer.actions[0], np.full(6, 0.5))
 
 
-@pytest.mark.parametrize("field,value", [("backend", "sim"), ("control.frequencies.joint", 123), ("reward.action_change_penalty_factor", 123)])
+@pytest.mark.parametrize("field,value", [("arm_type", "sim"), ("control.frequencies.joint", 123), ("reward.action_change_penalty_factor", 123)])
 def test_rejects_incompatible_recording_configuration(recording_case, field, value):
     cfg, recorded_cfg, config_path, episode, _, buffer = recording_case
     OmegaConf.update(recorded_cfg, field, value)

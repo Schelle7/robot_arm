@@ -29,6 +29,7 @@ class RealCommunication(Communication):
         self.max_feedback_age_ns = int(cfg.max_feedback_age_seconds * 1_000_000_000)
         assert self.max_feedback_age_ns > 0
         assert cfg.read_timeout_seconds > 0
+        self.read_timeout_seconds = cfg.read_timeout_seconds
         assert cfg.read_history_size > 0
         self.read_attempts = deque(maxlen=cfg.read_history_size)
         self.last_successful_read_ns = None
@@ -41,12 +42,6 @@ class RealCommunication(Communication):
         self.stop_requested = Event()
         self.thread = Thread(target=self._run, name="arm-communication", daemon=True)
         self.started = False
-        port = self.bus.port_handler
-
-        def set_packet_timeout(packet_length):
-            port.setPacketTimeoutMillis(cfg.read_timeout_seconds * 1000.0)
-
-        port.setPacketTimeout = set_packet_timeout
 
     def setup(self):
         self.follower.connect(calibrate=True)
@@ -55,6 +50,12 @@ class RealCommunication(Communication):
             raise RuntimeError("Bus has no calibration registered. Cannot convert units.")
         self.configuration = read_configuration(self.bus)
         self._set_pwm_mode()
+        port = self.bus.port_handler
+
+        def set_packet_timeout(packet_length):
+            port.setPacketTimeoutMillis(self.read_timeout_seconds * 1000.0)
+
+        port.setPacketTimeout = set_packet_timeout
 
     def _tick_to_rad(self, name: str, tick: int) -> float:
         """

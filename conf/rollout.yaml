@@ -6,6 +6,8 @@ hydra:
     dir: outputs/rollout/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 policy_name: latest
+arm_type: sim
+vla_precision: fp32
 
 control:
   max_seconds: 45

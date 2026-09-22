@@ -60,7 +60,7 @@ def train_joint_policy(cfg: DictConfig):
     if cfg.training.check_power_profile:
         warn_if_not_performance_mode()
     print(f"Hydra run directory: {output_dir}", flush=True)
-    print(f"tensorboard --logdir={output_dir}", flush=True)
+    print(f"tensorboard --logdir={cfg.training.tensorboard_dir}", flush=True)
 
     run_distributed_training(cfg)
 

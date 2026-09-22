@@ -31,7 +31,7 @@ def _config_value(cfg: DictConfig, field: str):
 
 
 def validate_real_recording_config(recorded_cfg: DictConfig, training_cfg: DictConfig) -> None:
-    assert recorded_cfg.backend == "real", "Real replay data must come from a real backend"
+    assert recorded_cfg.arm_type == "real", "Real replay data must come from a real arm"
     assert recorded_cfg.runtime.record_policy_debug, "Real recordings must include joint debug transitions"
     for field in COMPATIBILITY_FIELDS:
         recorded = _config_value(recorded_cfg, field)

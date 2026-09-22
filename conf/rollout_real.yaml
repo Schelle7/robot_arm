@@ -2,7 +2,7 @@ defaults:
   - rollout
   - _self_
 
-backend: real
+arm_type: real
 
 runtime:
   capture_camera: false

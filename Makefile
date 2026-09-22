@@ -3,7 +3,7 @@ ID ?= my_follower
 ITERATIONS ?= 500
 WARMUP ?= 20
 
-.PHONY: install find-port test test-hardware bench lint format rollout_sim sanity_check_real sanity_check_sim rollout_real train_joint_policy train_runpod train_joint_runpod download_trained_vla download_trained_joint_policy download_pretrained
+.PHONY: install find-port test test-hardware bench lint format rollout_sim try_joint_policy_real try_joint_policy_sim rollout_real train_joint_policy train_runpod train_joint_runpod download_trained_vla download_trained_joint_policy download_pretrained
 
 install:
 	pip install -e .
@@ -12,16 +12,16 @@ find-port:
 	lerobot-find-port
 
 rollout_sim:
-	python scripts/rollout_vla.py backend=sim
+	python scripts/rollout_vla.py arm_type=sim
 
-sanity_check_real:
-	python scripts/rollout_waypoint.py backend=real
+try_joint_policy_real:
+	python scripts/rollout_waypoint.py --config-name rollout_real
 
-sanity_check_sim:
-	python scripts/rollout_waypoint.py backend=sim
+try_joint_policy_sim:
+	python scripts/rollout_waypoint.py arm_type=sim
 
 rollout_real:
-	python scripts/rollout_vla.py backend=real
+	python scripts/rollout_vla.py arm_type=real
 
 test:
 	pytest tests/ --ignore=tests/test_sensors.py
@@ -44,7 +44,7 @@ train_joint_policy:
 	python scripts/train_joint_policy.py
 
 train_runpod:
-	python deployment/runpod/train.py create --config deployment/runpod/train.toml
+	python deployment/runpod/train.py create --config deployment/runpod/train.toml $(if $(JOINT_POLICY),--joint-policy '$(JOINT_POLICY)')
 
 train_joint_runpod:
 	python deployment/runpod/train.py create --config deployment/runpod/train_joint.toml

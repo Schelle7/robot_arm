@@ -106,8 +106,8 @@ def test_sim_reset_clears_command_and_safety_history(sim):
 @pytest.fixture
 def worker(tmp_path, monkeypatch, cfg):
     cfg.hardware = {"port": "/unused", "calibration_id": "test", "read_timeout_seconds": 0.01, "max_feedback_age_seconds": 1.0, "read_history_size": 3}
-    port = SimpleNamespace(setPacketTimeoutMillis=Mock())
-    follower = SimpleNamespace(bus=SimpleNamespace(port_handler=port))
+    port = SimpleNamespace(setPacketTimeout=Mock(), setPacketTimeoutMillis=Mock())
+    follower = SimpleNamespace(bus=SimpleNamespace(port_handler=port, calibration=True), connect=Mock())
     monkeypatch.setattr("robot_arm.arms.real_communication.SO101Follower", lambda cfg: follower)
     worker = RealCommunication(cfg, {})
     worker.check_safety = Mock()
@@ -119,8 +119,19 @@ def worker(tmp_path, monkeypatch, cfg):
     return worker
 
 
-def test_timeout_is_total_not_dependent_on_packet_length(worker):
+def test_short_timeout_applies_only_after_setup(worker, monkeypatch):
     port = worker.bus.port_handler
+    original_timeout = port.setPacketTimeout
+
+    def check_setup_timeout(*args, **kwargs):
+        assert port.setPacketTimeout is original_timeout
+
+    worker.follower.connect.side_effect = check_setup_timeout
+    monkeypatch.setattr("robot_arm.arms.real_communication.read_configuration", check_setup_timeout)
+    worker._set_pwm_mode = Mock(side_effect=check_setup_timeout)
+    RealCommunication.setup(worker)
+    worker.follower.connect.assert_called_once_with(calibrate=True)
+    worker._set_pwm_mode.assert_called_once_with()
     port.setPacketTimeout(126)
     port.setPacketTimeout(21)
     assert [call.args for call in port.setPacketTimeoutMillis.call_args_list] == [(10.0,), (10.0,)]

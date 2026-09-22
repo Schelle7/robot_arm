@@ -1,4 +1,6 @@
 num_workers: 10
+tensorboard_enabled: true
+tensorboard_dir: ${hydra:runtime.output_dir}
 check_power_profile: true
 detailed_metrics: true
 pose_delta_diagnostics_enabled: true

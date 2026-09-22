@@ -2,11 +2,11 @@ temporary_dir = "outputs/temp"
 
 [[policies]]
 name = "VLA"
-url = "https://drive.google.com/file/d/1rqgv66dYJfVdd4bUdPDVtRuYHcr_t3Xq/view?usp=drive_link"
-sha256 = "05ca00d4bec3fa97e406fc81ba60b7432d18ddc5a0b9d09bcdbe71b5de6d258b"
-archive = "vla_2026-09-15_16-06-33.zip"
-archive_root = "outputs/train_vla/runpod_2026-09-15_16-06-33"
-destination = "outputs/train_vla/runpod_2026-09-15_16-06-33"
+url = "https://drive.google.com/file/d/1RnYFMlAvIGsnJnsU6TtI_L-aEO0iDEGl/view?usp=sharing"
+sha256 = "572379e37f6d544c5d88c5a987c49397a7b0f8f888eaaa76863f468c34f658f9"
+archive = "vla_2026-09-21_09-29-43.zip"
+archive_root = "runpod_2026-09-21_09-29-43"
+destination = "outputs/train_vla/runpod_2026-09-21_09-29-43"
 required_files = [
     "checkpoints/last/pretrained_model/model.safetensors",
     "checkpoints/last/pretrained_model/config.json",
@@ -18,14 +18,14 @@ required_files = [
 
 [[policies]]
 name = "Joint controller"
-url = "https://drive.google.com/file/d/1f-SPtYkqjtqvYYzvLIm7FaVeEhDJsr_6/view?usp=drive_link"
-sha256 = "9e80725e54079aab7291e55311110936d737c8971436d6e4799db6edda7349fe"
-archive = "joint_policy.zip"
-archive_root = "2026-09-09/19-51-55"
-destination = "outputs/train_joint_policy/2026-09-09/19-51-55"
+url = "https://drive.google.com/file/d/10dWnLcdE1nC3IHoxLa0oA0edLcSV9d9l/view?usp=sharing"
+sha256 = "d736ef0f442ca2660c3257c06d7be9dd3c5e2b2fc98b592f018ef4fab7eaf128"
+archive = "joint_policy_2026-09-21_08-22-20.zip"
+archive_root = "2026-09-21/08-22-20"
+destination = "outputs/train_joint_policy/2026-09-21/08-22-20"
 required_files = [
-    "checkpoints/jax_sac_final_1000208.pkl",
-    "checkpoints/jax_sac_final_1000208.actor.npz",
+    "checkpoints/jax_sac_final_1000464.pkl",
+    "checkpoints/jax_sac_final_1000464.actor.npz",
     ".hydra/config.yaml",
     "model/scene.xml",
     "model/so101.xml",

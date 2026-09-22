@@ -16,16 +16,16 @@ def make_env(cfg: DictConfig, output_dir: str):
     based on the loaded DictConfig. Helper to avoid duplicating this setup between
     the learner and the workers.
     """
-    if cfg.backend == "sim":
+    if cfg.arm_type == "sim":
         arm = SimArm(cfg)
-    elif cfg.backend == "real":
+    elif cfg.arm_type == "real":
         arm = RealArm(cfg)
     else:
-        raise ValueError(f"Unknown backend requested: {cfg.backend}")
+        raise ValueError(f"Unknown arm type requested: {cfg.arm_type}")
 
     with ExitStack() as cleanup:
         cleanup.callback(arm.disconnect)
-        if cfg.backend == "real":
+        if cfg.arm_type == "real":
             arm.communication.start(Path(output_dir) / "hardware_communication.jsonl")
         env = RobotEnv(arm=arm, cfg=cfg, output_dir=output_dir)
         cleanup.pop_all()

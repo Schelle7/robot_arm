@@ -33,7 +33,7 @@ def collect_round(cfg) -> None:
     if cfg.round_index == 0:
         policy = ScriptedCartesianPolicy(merged)
     else:
-        policy = VLACartesianPolicy(str(Path(cfg.previous_checkpoint) / "pretrained_model"))
+        policy = VLACartesianPolicy(str(Path(cfg.previous_checkpoint) / "pretrained_model"), cfg.collection.vla_precision)
     collection.collect_episodes(merged, env, joint_policy, policy, run_dir, cfg.num_episodes)
 
 
@@ -70,8 +70,8 @@ def validate_config(cfg) -> None:
         raise ValueError("Training step counts must be positive.")
     if cfg.vla_rounds < 0:
         raise ValueError("VLA round count must be nonnegative.")
-    if cfg.collection.backend != "sim":
-        raise ValueError("DAgger collection requires the sim backend.")
+    if cfg.collection.arm_type != "sim":
+        raise ValueError("DAgger collection requires a simulated arm.")
 
 
 def build_round_config(cfg, run_dir: Path, round_index: int):

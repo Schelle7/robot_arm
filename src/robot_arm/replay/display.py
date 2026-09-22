@@ -88,7 +88,7 @@ def build_replay_display(
             "Overview",
             ["Metric", "Value"],
             [
-                ["Replay type", str(recorded_cfg.backend)],
+                ["Replay type", str(recorded_cfg.arm_type)],
                 ["Policy", str(recorded_cfg.policy_name)],
                 ["Episode time", f"{episode_time:.2f} s"],
             ],

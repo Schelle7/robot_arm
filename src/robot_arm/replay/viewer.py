@@ -22,7 +22,7 @@ class ReplayViewer:
         floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         self.model.geom_rgba[floor_id, 3] = 0.25
         self.mdata = mujoco.MjData(self.model)
-        self.has_sim_state = recorded_cfg.backend == "sim"
+        self.has_sim_state = recorded_cfg.arm_type == "sim"
         if self.has_sim_state:
             self.model.body_pos[:] = data["body_pos"]
             self.model.geom_matid[:] = data["geom_matid"]

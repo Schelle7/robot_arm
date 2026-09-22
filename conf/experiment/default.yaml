@@ -21,9 +21,9 @@ waypoint:
   rotation_speed_radians_per_second: 0.2
   gripper_speed_radians_per_second: 0.5
   primitive_probabilities:
-    pick_and_place: 0.0
+    pick_and_place: 0.5
     relative_move: 0.0
-    random_waypoint: 1.0
+    random_waypoint: 0.5
 
 training:
-  total_training_steps: 240000
+  total_training_steps: 1000000

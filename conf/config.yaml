@@ -17,12 +17,12 @@ hydra:
     dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 model_path: "models/so101/scene.xml"
-backend: "sim" # "sim" or "real"
+arm_type: "sim" # "sim" or "real"
 seed: 0
 conversion:
   video_files_size_in_mb: 100
 
-# Hardware parameters used if backend == "real"
+# Hardware parameters used if arm_type == "real"
 hardware:
   port: "/dev/ttyACM0"
   calibration_id: "my_follower"

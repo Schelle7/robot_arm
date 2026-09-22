@@ -41,7 +41,7 @@ class RobotEnv:
         self.arm = arm
         self.grasp_estimator = GraspEstimator(cfg.control.grasp_estimation)
         self.max_box_distance_meters = float(cfg.control.grasp_estimation.max_box_distance_meters)
-        self.backend = cfg.backend
+        self.arm_type = cfg.arm_type
         self.joint_limit_penalty_factor = joint_limit_penalty_factor
         self.joint_hz = joint_hz
         self.cartesian_hz = cfg.control.frequencies.cartesian
@@ -56,7 +56,7 @@ class RobotEnv:
         self.pose_delta_diagnostics_enabled = cfg.training.pose_delta_diagnostics_enabled
         self.initial_joint_range_percent = cfg.control.initial_joints.range_percent
         self.output_dir = output_dir
-        if self.backend == "real":
+        if self.arm_type == "real":
             self._save_servo_configuration()
 
         self.position_distance_weight = float(cfg.reward.pose_weights.position)
@@ -142,7 +142,7 @@ class RobotEnv:
             observation=obs,
             sensor_state=state_dict,
             end_effector_pose=end_effector_pose,
-            sim_state=self.arm.sim_state() if self.backend == "sim" else None,
+            sim_state=self.arm.sim_state() if self.arm_type == "sim" else None,
             grasp_confirmed=grasp_confirmed,
         )
 
@@ -166,7 +166,7 @@ class RobotEnv:
 
     def box_too_far(self, end_effector_pose: Pose) -> bool:
         return bool(
-            self.backend == "sim" and np.linalg.norm(self.arm.get_privileged_box_pose(BOX_BODY_NAMES[0]).position - end_effector_pose.position) > self.max_box_distance_meters
+            self.arm_type == "sim" and np.linalg.norm(self.arm.get_privileged_box_pose(BOX_BODY_NAMES[0]).position - end_effector_pose.position) > self.max_box_distance_meters
         )
 
     def _initial_environment_state(self) -> EnvironmentState:
@@ -188,15 +188,15 @@ class RobotEnv:
         self.previous_action[:] = 0.0
         self._reset_policy_history()
 
-        if self.backend == "sim":
+        if self.arm_type == "sim":
             self.arm.reset_sim(enable_added_weight)
 
         return self._initial_environment_state()
 
     def reset_from_sim_state(self, qpos: np.ndarray, qvel: np.ndarray) -> EnvironmentState:
         self.grasp_estimator.reset()
-        if self.backend != "sim":
-            raise ValueError("A recorded MuJoCo state can only initialize the simulation backend.")
+        if self.arm_type != "sim":
+            raise ValueError("A recorded MuJoCo state can only initialize the simulated arm.")
 
         self.reset_reward_tracking()
         self.previous_action[:] = 0.0

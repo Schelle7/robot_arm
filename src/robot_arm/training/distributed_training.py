@@ -77,7 +77,7 @@ def setup_run_outputs(cfg):
 
     snapshot_model_files(cfg.model_path, output_dir)
     snapshot_git_state(output_dir)
-    writer = ScalarWriter(output_dir)
+    writer = ScalarWriter(cfg.training.tensorboard_dir, enabled=cfg.training.tensorboard_enabled)
     return output_dir, writer
 
 
@@ -216,7 +216,6 @@ def _log_metrics(metrics_queue, writer, sac_training_step, recent_rewards):
                     if key == "total_reward":
                         recent_rewards.append(float(val))
                     writer.add_scalar(f"rollout/{key}", val, sac_training_step)
-    writer.flush()
 
 
 def _add_transition_and_train(episode, model, sac_training_step, worker_queues, writer):
@@ -336,7 +335,7 @@ def run_distributed_training(cfg: DictConfig):
     Spawns worker processes to collect data using inference, while the main process
     updates a central target model and distributes updated weights.
     """
-    assert cfg.backend == "sim", "Online training workers must use simulation; real data is loaded from recordings"
+    assert cfg.arm_type == "sim", "Online training workers must use simulation; real data is loaded from recordings"
     print_training_info(cfg)
 
     mp.set_start_method("spawn", force=True)

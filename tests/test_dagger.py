@@ -23,7 +23,7 @@ def test_rounds_collect_then_train_and_continue_the_previous_checkpoint(tmp_path
             "training_steps_per_round": 4,
             "keep_last_checkpoints": 2,
             "data_root": str(tmp_path / "local-data"),
-            "collection": {"backend": "sim", "policy_name": "latest"},
+            "collection": {"arm_type": "sim", "policy_name": "latest"},
         }
     )
     OmegaConf.set_struct(cfg, True)
@@ -134,7 +134,7 @@ def test_vla_round_loads_one_policy_for_all_episodes(tmp_path, monkeypatch):
             "seed": 42,
             "round_index": 1,
             "collection_dir": str(tmp_path),
-            "collection": {},
+            "collection": {"vla_precision": "fp32"},
             "previous_checkpoint": str(tmp_path / "previous"),
             "num_episodes": 10,
         }
@@ -142,7 +142,8 @@ def test_vla_round_loads_one_policy_for_all_episodes(tmp_path, monkeypatch):
     policies = []
     calls = []
 
-    def make_vla(path):
+    def make_vla(path, precision):
+        assert precision == "fp32"
         policies.append(path)
         return "vla"
 
@@ -163,7 +164,7 @@ def test_dagger_config_exposes_teacher_accuracy():
     config_dir = Path(__file__).resolve().parents[1] / "conf"
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
         cfg = compose(config_name="train_vla_dagger")
-    assert cfg.collection.backend == "sim"
+    assert cfg.collection.arm_type == "sim"
     assert cfg.collection.waypoint.primitive_probabilities.pick_and_place == 1.0
     assert cfg.collection.waypoint.completion_tolerance.position_meters == 0.015
     assert cfg.collection.waypoint.completion_tolerance.primary_rotation_radians == 0.2
