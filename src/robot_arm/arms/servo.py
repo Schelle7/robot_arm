@@ -52,13 +52,17 @@ def duty_to_torque(
     stall_torque_newton_meters: float,
     no_load_speed_radians_per_second: float,
     voltage_ratio: float,
+    braking_multiplier: np.ndarray,
 ) -> np.ndarray:
     """
     A duty sets voltage across the motor, not force. The motor generates an opposing voltage in
     proportion to its own speed, so the same duty yields full torque when blocked and none at the
     top speed that duty can reach.
     """
-    return stall_torque_newton_meters * (duty / FULL_SCALE_DUTY * voltage_ratio - joint_velocity_radians_per_second / no_load_speed_radians_per_second)
+    return stall_torque_newton_meters * (
+        duty / FULL_SCALE_DUTY * voltage_ratio
+        - braking_multiplier * joint_velocity_radians_per_second / no_load_speed_radians_per_second
+    )
 
 
 def supply_voltage_and_current(duty, velocity, source_voltage, voltage_drop, current_scale, back_emf):

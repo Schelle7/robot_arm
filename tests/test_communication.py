@@ -85,6 +85,7 @@ def test_sim_held_duty_torque_decreases_as_motor_accelerates(sim, cfg):
     joint_id = sim.model.joint("gripper").id
     duty_fraction = cfg.servo.max_duty.gripper / cfg.servo.full_scale_duty
     speed_per_volt = duty_fraction * cfg.servo.no_load_speed_radians_per_second / cfg.servo.nominal_voltage_volts
+    speed_per_volt /= sim.braking_multiplier[actuator_id]
     # Solve supply sag at the zero-torque speed, rather than assuming nominal voltage.
     current_per_volt = sim.current_scale[actuator_id] * abs(duty_fraction - sim.back_emf[actuator_id] * speed_per_volt)
     voltage = sim.source_voltage / (1 + sim.voltage_drop * current_per_volt)
@@ -104,6 +105,23 @@ def test_sim_held_duty_torque_decreases_as_motor_accelerates(sim, cfg):
     sim.data.qvel[dof_id] = 1.5 * no_load_speed
     sim.apply_servo_torques()
     assert sim.data.ctrl[actuator_id] < 0
+
+
+def test_sim_motor_strength_scales_torque_and_is_held_between_steps(sim):
+    sim.submit_duty(dict.fromkeys(sim.actuator_order, 0.4), 0)
+    sim.data.qvel[sim.actuator_dof_indices] = np.linspace(-1.0, 1.0, sim.model.nu)
+    sampled = sim.motor_strength_multiplier.copy()
+    assert np.all((sampled >= 0.8) & (sampled <= 1.1))
+    sim.apply_servo_torques()
+    sampled_torque = sim.data.ctrl.copy()
+    sim.read_sensors()
+    sim.apply_servo_torques()
+    np.testing.assert_array_equal(sim.motor_strength_multiplier, sampled)
+    np.testing.assert_allclose(sim.data.ctrl, sampled_torque)
+
+    sim.motor_strength_multiplier[:] = 1.0
+    sim.apply_servo_torques()
+    np.testing.assert_allclose(sampled_torque, sampled * sim.data.ctrl)
 
 
 def test_sim_reset_clears_command_and_safety_history(sim):

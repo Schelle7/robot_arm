@@ -32,6 +32,10 @@ class SimCommunication(Communication):
             samples.clear()
         self.temperature_totals = dict.fromkeys(MOTOR_ORDER, 0.0)
         self.commanded_duty[:] = 0.0
+        self.braking_multiplier = np.random.uniform(*self.servo.physics_randomization.braking_multiplier, size=self.model.nu)
+        assert np.all(self.braking_multiplier >= 0)
+        self.motor_strength_multiplier = np.random.uniform(*self.servo.physics_randomization.motor_strength_multiplier, size=self.model.nu)
+        assert np.all(self.motor_strength_multiplier > 0)
         ranges = self.servo.physics_randomization.supply
         self.source_voltage = np.random.uniform(*ranges.source_voltage_volts)
         self.voltage_drop = np.random.uniform(*ranges.voltage_drop_volts_per_amp)
@@ -103,12 +107,13 @@ class SimCommunication(Communication):
         Recompute supply sag as motor speeds change even while the command is held constant.
         """
         voltage, _ = self._supply_state()
-        self.data.ctrl[:] = duty_to_torque(
+        self.data.ctrl[:] = self.motor_strength_multiplier * duty_to_torque(
             self.commanded_duty,
             self.data.qvel[self.actuator_dof_indices],
             self.servo.stall_torque_newton_meters,
             self.servo.no_load_speed_radians_per_second,
             voltage / self.servo.nominal_voltage_volts,
+            self.braking_multiplier,
         )
 
     def get_state(self):

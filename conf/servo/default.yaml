@@ -30,6 +30,8 @@ physics_randomization:
   damping: [0.04, 0.15]
   frictionloss: [0.015, 0.06]
   armature: [0.008, 0.03]
+  braking_multiplier: [0.25, 1.0]
+  motor_strength_multiplier: [0.8, 1.1]
   # Empirical fit to 2026-09-25/10-56-07; coefficients predict reported current, not calibrated motor constants.
   supply:
     source_voltage_volts: [5.1, 5.3]
@@ -50,4 +52,4 @@ physics_randomization:
       gripper: [0.950, 0.950]
   added_weight:
     # Relative to the scene box so the training load follows changes to its mass; [0, 0] disables it.
-    box_mass_fraction: [0.0, 1.3]
+    box_mass_fraction: [0.0, 2.0]

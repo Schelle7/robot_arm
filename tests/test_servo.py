@@ -49,15 +49,15 @@ def test_torque_is_full_at_stall_and_zero_at_no_load_speed():
     stall_torque = 1.31
     no_load_speed = 3.35
 
-    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([0.0]), stall_torque, no_load_speed, 1.0), [stall_torque])
-    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([no_load_speed]), stall_torque, no_load_speed, 1.0), [0.0], atol=1e-12)
+    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([0.0]), stall_torque, no_load_speed, 1.0, np.ones(1)), [stall_torque])
+    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([no_load_speed]), stall_torque, no_load_speed, 1.0, np.ones(1)), [0.0], atol=1e-12)
 
 
 def test_torque_brakes_when_moving_faster_than_the_duty_commands():
     stall_torque = 1.31
     no_load_speed = 3.35
 
-    torque = duty_to_torque(np.array([0.0]), np.array([1.0]), stall_torque, no_load_speed, 1.0)
+    torque = duty_to_torque(np.array([0.0]), np.array([1.0]), stall_torque, no_load_speed, 1.0, np.ones(1))
     assert torque[0] < 0.0
 
 
@@ -85,6 +85,15 @@ def test_supply_solves_back_emf_and_zero_duty_braking():
 def test_voltage_scales_drive_torque_but_not_back_emf():
     duty = np.array([1000.0, 0.0])
     velocity = np.array([0.0, 1.0])
-    nominal = duty_to_torque(duty, velocity, 1.31, 3.3, 1.0)
-    reduced = duty_to_torque(duty, velocity, 1.31, 3.3, 0.8)
+    nominal = duty_to_torque(duty, velocity, 1.31, 3.3, 1.0, np.ones(2))
+    reduced = duty_to_torque(duty, velocity, 1.31, 3.3, 0.8, np.ones(2))
     np.testing.assert_allclose(reduced, [nominal[0] * 0.8, nominal[1]])
+
+
+def test_braking_randomization_preserves_stall_torque_and_opposes_motion():
+    duty = np.array([1000.0, 0.0, 0.0])
+    velocity = np.array([0.0, 1.0, -1.0])
+    nominal = duty_to_torque(duty, velocity, 1.31, 3.3, 1.0, np.ones(3))
+    reduced = duty_to_torque(duty, velocity, 1.31, 3.3, 1.0, np.array([0.25, 0.25, 0.5]))
+    np.testing.assert_allclose(reduced, nominal * [1.0, 0.25, 0.5])
+    assert reduced[1] < 0 < reduced[2]
