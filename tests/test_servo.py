@@ -1,6 +1,6 @@
 import numpy as np
 
-from robot_arm.arms.servo import commanded_duty, duty_to_torque, encoder_tick_radians
+from robot_arm.arms.servo import commanded_duty, duty_to_torque, encoder_tick_radians, supply_voltage_and_current
 
 # The values read off the arm in outputs/characterize_gripper/2026-08-31/17-47-08.
 TICKS_PER_REVOLUTION = 4096
@@ -49,13 +49,42 @@ def test_torque_is_full_at_stall_and_zero_at_no_load_speed():
     stall_torque = 1.31
     no_load_speed = 3.35
 
-    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([0.0]), stall_torque, no_load_speed), [stall_torque])
-    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([no_load_speed]), stall_torque, no_load_speed), [0.0], atol=1e-12)
+    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([0.0]), stall_torque, no_load_speed, 1.0), [stall_torque])
+    np.testing.assert_allclose(duty_to_torque(np.array([1000.0]), np.array([no_load_speed]), stall_torque, no_load_speed, 1.0), [0.0], atol=1e-12)
 
 
 def test_torque_brakes_when_moving_faster_than_the_duty_commands():
     stall_torque = 1.31
     no_load_speed = 3.35
 
-    torque = duty_to_torque(np.array([0.0]), np.array([1.0]), stall_torque, no_load_speed)
+    torque = duty_to_torque(np.array([0.0]), np.array([1.0]), stall_torque, no_load_speed, 1.0)
     assert torque[0] < 0.0
+
+
+def test_supply_at_stall_matches_closed_form():
+    duty = np.array([0.8, -0.4, 0.0])
+    scale = np.array([0.25, 0.2, 0.1])
+    voltage, currents = supply_voltage_and_current(duty, np.zeros(3), 5.2, 0.226, scale, np.ones(3))
+    expected_voltage = 5.2 / (1 + 0.226 * np.sum(scale * np.abs(duty)))
+    np.testing.assert_allclose(voltage, expected_voltage)
+    np.testing.assert_allclose(currents, scale * np.abs(duty) * expected_voltage)
+
+
+def test_supply_solves_back_emf_and_zero_duty_braking():
+    duty = np.array([0.8, -0.4, 0.0])
+    velocity = np.array([5.0, -0.5, 1.0])
+    scale = np.array([0.25, 0.2, 0.1])
+    voltage, currents = supply_voltage_and_current(duty, velocity, 5.2, 0.226, scale, np.ones(3))
+    np.testing.assert_allclose(voltage, 5.2 - 0.226 * currents.sum())
+    np.testing.assert_allclose(currents, scale * np.abs(duty * voltage - velocity))
+    reverse_voltage, reverse_currents = supply_voltage_and_current(-duty, -velocity, 5.2, 0.226, scale, np.ones(3))
+    np.testing.assert_allclose(reverse_voltage, voltage)
+    np.testing.assert_allclose(reverse_currents, currents)
+
+
+def test_voltage_scales_drive_torque_but_not_back_emf():
+    duty = np.array([1000.0, 0.0])
+    velocity = np.array([0.0, 1.0])
+    nominal = duty_to_torque(duty, velocity, 1.31, 3.3, 1.0)
+    reduced = duty_to_torque(duty, velocity, 1.31, 3.3, 0.8)
+    np.testing.assert_allclose(reduced, [nominal[0] * 0.8, nominal[1]])

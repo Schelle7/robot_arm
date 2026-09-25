@@ -51,10 +51,23 @@ def duty_to_torque(
     joint_velocity_radians_per_second: np.ndarray,
     stall_torque_newton_meters: float,
     no_load_speed_radians_per_second: float,
+    voltage_ratio: float,
 ) -> np.ndarray:
     """
     A duty sets voltage across the motor, not force. The motor generates an opposing voltage in
     proportion to its own speed, so the same duty yields full torque when blocked and none at the
     top speed that duty can reach.
     """
-    return stall_torque_newton_meters * (duty / FULL_SCALE_DUTY - joint_velocity_radians_per_second / no_load_speed_radians_per_second)
+    return stall_torque_newton_meters * (duty / FULL_SCALE_DUTY * voltage_ratio - joint_velocity_radians_per_second / no_load_speed_radians_per_second)
+
+
+def supply_voltage_and_current(duty, velocity, source_voltage, voltage_drop, current_scale, back_emf):
+    """Solve the empirical current/supply equations at their piecewise-linear breakpoints."""
+    emf = back_emf * velocity
+    crossings = np.divide(emf, duty, out=np.zeros_like(emf), where=duty != 0)
+    voltages = np.sort(np.concatenate(([0.0, source_voltage], np.clip(crossings, 0.0, source_voltage))))
+    currents = current_scale * np.abs(voltages[:, None] * duty - emf)
+    residual = voltages - source_voltage + voltage_drop * currents.sum(axis=1)
+    # Interpolation also clamps an overloaded empirical supply at zero volts.
+    voltage = float(np.interp(0.0, residual, voltages))
+    return voltage, current_scale * np.abs(voltage * duty - emf)

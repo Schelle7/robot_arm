@@ -20,6 +20,7 @@ duty_per_tick: 4.6
 
 # DERIVED, not read: 19 kg-cm at 7.4 V, scaled to the 5.2 V measured on the rail.
 stall_torque_newton_meters: 1.31
+nominal_voltage_volts: 5.2
 
 # ESTIMATED, not measured: ~0.22 s/60 deg at 7.4 V scaled to 5.2 V, biased low for gearbox friction
 # in the 1/345 train. Only matters while a joint is moving quickly; it vanishes at stall.
@@ -29,6 +30,24 @@ physics_randomization:
   damping: [0.04, 0.15]
   frictionloss: [0.015, 0.06]
   armature: [0.008, 0.03]
+  # Empirical fit to 2026-09-25/10-56-07; coefficients predict reported current, not calibrated motor constants.
+  supply:
+    source_voltage_volts: [5.1, 5.3]
+    voltage_drop_volts_per_amp: [0.20, 0.25]
+    current_scale_amps_per_volt:
+      shoulder_pan: [0.247423, 0.247423]
+      shoulder_lift: [0.208028, 0.208028]
+      elbow_flex: [0.219108, 0.219108]
+      wrist_flex: [0.186551, 0.186551]
+      wrist_roll: [0.174129, 0.174129]
+      gripper: [0.089634, 0.089634]
+    back_emf_volts_per_radian_per_second:
+      shoulder_pan: [0.875, 0.875]
+      shoulder_lift: [0.750, 0.750]
+      elbow_flex: [0.900, 0.900]
+      wrist_flex: [0.925, 0.925]
+      wrist_roll: [0.850, 0.850]
+      gripper: [0.950, 0.950]
   added_weight:
     # Relative to the scene box so the training load follows changes to its mass; [0, 0] disables it.
     box_mass_fraction: [0.0, 1.3]

@@ -42,6 +42,8 @@ class ReplayViewer:
         self.sensor_history = {
             "temperatures": self.temperatures.tolist(),
             "voltages": data["sensor_voltage"].tolist(),
+            "currents": data["sensor_current"].tolist(),
+            "mean_absolute_duty": np.mean(np.abs(data["sensor_load"]), axis=1).tolist(),
             "times": ((data["sensor_sample_time_ns"] - data["sensor_sample_time_ns"][0]) / 1e9).tolist(),
             "temperature_limit": float(recorded_cfg.safety.max_temperature_celsius),
             "safety_stops": [],
@@ -52,6 +54,8 @@ class ReplayViewer:
             self.sensor_history["times"].append(float(sample_time))
             self.sensor_history["temperatures"].append([float(sample["Present_Temperature"][motor]) for motor in MOTOR_ORDER])
             self.sensor_history["voltages"].append([float(sample["Present_Voltage"][motor]) for motor in MOTOR_ORDER])
+            self.sensor_history["currents"].append([float(sample["Present_Current"][motor]) for motor in MOTOR_ORDER])
+            self.sensor_history["mean_absolute_duty"].append(float(np.mean(np.abs([sample["Present_Load"][motor] for motor in MOTOR_ORDER]))))
             self.sensor_history["safety_stops"].append({"time": float(sample_time), "reason": event["reason"]})
         self.dense_trajectory = data["dense_trajectory"]
         self.action_history = [[float(value) for value in sample["action"]] for trajectory in self.dense_trajectory for sample in trajectory]

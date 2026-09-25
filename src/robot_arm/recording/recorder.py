@@ -242,7 +242,7 @@ class EpisodeRecorder:
                 dtype=str,
             )
 
-        sensor_names = ("Present_Temperature", "Present_Load", "Present_Voltage")
+        sensor_names = ("Present_Temperature", "Present_Load", "Present_Voltage", "Present_Current")
         for sensor_name in sensor_names:
             data_dict[f"sensor_{sensor_name.removeprefix('Present_').lower()}"] = np.array(
                 [[s["sensor_state"][sensor_name][motor] for motor in self.motor_order] for s in self.states],

@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 
 from robot_arm.arms.communication import Communication
-from robot_arm.arms.servo import duty_from_action, duty_to_torque
+from robot_arm.arms.servo import duty_from_action, duty_to_torque, supply_voltage_and_current
 from robot_arm.robot_schema import MOTOR_ORDER
 
 
@@ -23,6 +23,7 @@ class SimCommunication(Communication):
         self.actuator_dof_indices = np.array([self.model.jnt_dofadr[self.joint_indices[name]] for name in self.actuator_order])
         self.max_duty = np.array([float(cfg.servo.max_duty[name]) for name in self.actuator_order])
         self.commanded_duty = np.zeros(self.model.nu)
+        self.reset()
 
     def reset(self):
         self.last_safety_read_ns = None
@@ -31,15 +32,38 @@ class SimCommunication(Communication):
             samples.clear()
         self.temperature_totals = dict.fromkeys(MOTOR_ORDER, 0.0)
         self.commanded_duty[:] = 0.0
+        ranges = self.servo.physics_randomization.supply
+        self.source_voltage = np.random.uniform(*ranges.source_voltage_volts)
+        self.voltage_drop = np.random.uniform(*ranges.voltage_drop_volts_per_amp)
+        current_ranges = np.array([ranges.current_scale_amps_per_volt[name] for name in self.actuator_order])
+        emf_ranges = np.array([ranges.back_emf_volts_per_radian_per_second[name] for name in self.actuator_order])
+        self.current_scale = np.random.uniform(current_ranges[:, 0], current_ranges[:, 1])
+        self.back_emf = np.random.uniform(emf_ranges[:, 0], emf_ranges[:, 1])
+        assert self.source_voltage > 0 and self.servo.nominal_voltage_volts > 0
+        assert self.voltage_drop >= 0 and np.all(self.current_scale >= 0) and np.all(self.back_emf >= 0)
+        # Ensures the coupled supply equation is monotonic and has a unique clamped solution.
+        assert self.voltage_drop * np.sum(self.current_scale * self.max_duty / self.servo.full_scale_duty) < 1
+
+    def _supply_state(self):
+        return supply_voltage_and_current(
+            self.commanded_duty / self.servo.full_scale_duty,
+            self.data.qvel[self.actuator_dof_indices],
+            self.source_voltage,
+            self.voltage_drop,
+            self.current_scale,
+            self.back_emf,
+        )
 
     def read_sensors(self) -> Dict[str, Dict[str, float]]:
         # Map MuJoCo qpos, qvel and the commanded duty to our expected dictionary format
         sample_time_ns = round(self.data.time * 1_000_000_000)
+        voltage, currents = self._supply_state()
         state = {
             "Present_Position": {},
             "Present_Velocity": {},
             "Present_Load": {},  # Returning actuator control effort as load
-            "Present_Voltage": {},  # Dummy data
+            "Present_Current": {},
+            "Present_Voltage": {},
             "Present_Temperature": {},  # Dummy data
             "read_started_ns": sample_time_ns,
             "read_completed_ns": sample_time_ns,
@@ -57,7 +81,8 @@ class SimCommunication(Communication):
             # a fraction of full output, not a torque.
             state["Present_Load"][name] = float(self.commanded_duty[actuator_idx] / self.servo.full_scale_duty)
 
-            state["Present_Voltage"][name] = 12.0
+            state["Present_Voltage"][name] = voltage
+            state["Present_Current"][name] = float(currents[actuator_idx])
             state["Present_Temperature"][name] = 40.0
 
         return state
@@ -75,14 +100,15 @@ class SimCommunication(Communication):
 
     def apply_servo_torques(self) -> None:
         """
-        The duty is held for the whole control period the way the servo's open loop PWM mode holds
-        it, so only the back-EMF term varies as the joint picks up speed.
+        Recompute supply sag as motor speeds change even while the command is held constant.
         """
+        voltage, _ = self._supply_state()
         self.data.ctrl[:] = duty_to_torque(
             self.commanded_duty,
             self.data.qvel[self.actuator_dof_indices],
             self.servo.stall_torque_newton_meters,
             self.servo.no_load_speed_radians_per_second,
+            voltage / self.servo.nominal_voltage_volts,
         )
 
     def get_state(self):

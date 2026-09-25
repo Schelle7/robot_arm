@@ -42,7 +42,7 @@
     .action-plot { padding: 12px 0; border-bottom: 1px solid var(--line); }
     .action-plot h3 { margin: 0 0 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
     .action-plot canvas { display: block; width: 100%; height: 150px; background: rgba(255, 255, 255, 0.72); }
-    #temperatureCanvas, #voltageCanvas { height: 260px; }
+    #temperatureCanvas, #voltageCanvas, #currentCanvas { height: 260px; }
     .plot-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 6px; color: var(--muted); font: 11px "DejaVu Sans Mono", monospace; }
     .plot-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; background: var(--series-color); }
     #warnings { margin: 18px 0 0; color: var(--warn); white-space: pre-wrap; }
@@ -97,6 +97,11 @@
     <div id="voltageLegend" class="plot-legend"></div>
     <canvas id="voltageCanvas"></canvas>
 </section>
+<section class="action-plot">
+    <h2>Motor currents (A)</h2>
+    <div id="currentLegend" class="plot-legend"></div>
+    <canvas id="currentCanvas"></canvas>
+</section>
 </main>
 <script>
     const frameRange = document.getElementById("frameRange");
@@ -122,6 +127,8 @@
     const temperatureLegend = document.getElementById("temperatureLegend");
     const voltageCanvas = document.getElementById("voltageCanvas");
     const voltageLegend = document.getElementById("voltageLegend");
+    const currentCanvas = document.getElementById("currentCanvas");
+    const currentLegend = document.getElementById("currentLegend");
     let sensorHistory;
     const status = document.getElementById("status");
     let overviewStructure = "";
@@ -420,7 +427,7 @@
         }
     }
 
-    function drawSensorPlot(canvas, values, times, referenceLines, safetyStops, frameIndex) {
+    function drawSensorPlot(canvas, values, times, referenceLines, safetyStops, frameIndex, dutyValues) {
         const width = canvas.clientWidth;
         const height = canvas.clientHeight;
         const pixelRatio = window.devicePixelRatio || 1;
@@ -429,7 +436,7 @@
         const context = canvas.getContext("2d");
         context.scale(pixelRatio, pixelRatio);
         const left = 48;
-        const right = width - 12;
+        const right = width - (dutyValues.length ? 54 : 12);
         const top = 16;
         const bottom = height - 28;
         let minimum = Math.min(values[0][0], ...referenceLines);
@@ -480,6 +487,27 @@
             context.stroke();
             context.beginPath();
             context.arc(x(times[frameIndex]), y(values[frameIndex][motor]), 3, 0, 2 * Math.PI);
+            context.fill();
+        }
+        if (dutyValues.length) {
+            const dutyY = value => bottom - value * (bottom - top);
+            context.fillStyle = "#17201d";
+            context.textAlign = "left";
+            for (let tick = 0; tick <= 4; tick += 1) {
+                context.fillText(`${tick * 25}%`, right + 6, dutyY(tick / 4));
+            }
+            context.strokeStyle = "#17201d";
+            context.lineWidth = 2;
+            context.setLineDash([7, 4]);
+            context.beginPath();
+            dutyValues.forEach((value, index) => {
+                if (index === 0) context.moveTo(x(times[index]), dutyY(value));
+                else context.lineTo(x(times[index]), dutyY(value));
+            });
+            context.stroke();
+            context.setLineDash([]);
+            context.beginPath();
+            context.arc(x(times[frameIndex]), dutyY(dutyValues[frameIndex]), 3, 0, 2 * Math.PI);
             context.fill();
         }
         context.strokeStyle = "#17201d";
@@ -534,7 +562,7 @@
         overviewStructure = "";
         tableStructure = "";
         dutyInputsCreated = false;
-        for (const container of [overviewTable, tables, dutyGrid, historyPlots, actionPlots, temperatureLegend, voltageLegend]) {
+        for (const container of [overviewTable, tables, dutyGrid, historyPlots, actionPlots, temperatureLegend, voltageLegend, currentLegend]) {
             container.replaceChildren();
         }
         generationStatus.textContent = "";
@@ -548,14 +576,22 @@
         }
         createActionPlots(actionData);
         sensorHistory = actionData.sensors;
+        currentCanvas.parentElement.hidden = sensorHistory.currents.length === 0;
         const labels = [...actionData.motor_names, `Limit: ${sensorHistory.temperature_limit} °C`];
         labels.forEach((label, index) => {
             const item = document.createElement("span");
             item.textContent = label.replaceAll("_", " ");
             item.style.setProperty("--series-color", index < plotColors.length ? plotColors[index] : "#a33b20");
             temperatureLegend.appendChild(item);
-            if (index < actionData.motor_names.length) voltageLegend.appendChild(item.cloneNode(true));
+            if (index < actionData.motor_names.length) {
+                voltageLegend.appendChild(item.cloneNode(true));
+                currentLegend.appendChild(item.cloneNode(true));
+            }
         });
+        const dutyLabel = document.createElement("span");
+        dutyLabel.textContent = "Mean absolute reported duty (dashed, right axis %)";
+        dutyLabel.style.setProperty("--series-color", "#17201d");
+        voltageLegend.appendChild(dutyLabel);
         episodeId = state.episode_id;
     }
 
@@ -595,8 +631,11 @@
             createDutyInputs(state.motor_names, state.duty_limits);
         }
         renderTables(state.sections);
-        drawSensorPlot(temperatureCanvas, sensorHistory.temperatures, sensorHistory.times, [sensorHistory.temperature_limit], sensorHistory.safety_stops, state.current_frame);
-        drawSensorPlot(voltageCanvas, sensorHistory.voltages, sensorHistory.times, [], sensorHistory.safety_stops, state.current_frame);
+        drawSensorPlot(temperatureCanvas, sensorHistory.temperatures, sensorHistory.times, [sensorHistory.temperature_limit], sensorHistory.safety_stops, state.current_frame, []);
+        drawSensorPlot(voltageCanvas, sensorHistory.voltages, sensorHistory.times, [], sensorHistory.safety_stops, state.current_frame, sensorHistory.mean_absolute_duty);
+        if (sensorHistory.currents.length) {
+            drawSensorPlot(currentCanvas, sensorHistory.currents, sensorHistory.times, [], sensorHistory.safety_stops, state.current_frame, []);
+        }
     document.getElementById("warnings").textContent = state.warnings.join("\n");
     }
 
