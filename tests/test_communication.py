@@ -84,11 +84,26 @@ def test_sim_held_duty_torque_decreases_as_motor_accelerates(sim, cfg):
 
     joint_id = sim.model.joint("gripper").id
     duty_fraction = cfg.servo.max_duty.gripper / cfg.servo.full_scale_duty
-    sim.data.qvel[sim.model.jnt_dofadr[joint_id]] = duty_fraction * cfg.servo.no_load_speed_radians_per_second
+    speed_per_volt = duty_fraction * cfg.servo.no_load_speed_radians_per_second / cfg.servo.nominal_voltage_volts
+    # Solve supply sag at the zero-torque speed, rather than assuming nominal voltage.
+    current_per_volt = sim.current_scale[actuator_id] * abs(duty_fraction - sim.back_emf[actuator_id] * speed_per_volt)
+    voltage = sim.source_voltage / (1 + sim.voltage_drop * current_per_volt)
+    no_load_speed = speed_per_volt * voltage
+    dof_id = sim.model.jnt_dofadr[joint_id]
+    sim.data.qvel[dof_id] = no_load_speed
     sim.apply_servo_torques()
 
     assert sim.data.ctrl[actuator_id] == pytest.approx(0.0)
+    assert sim.read_sensors()["Present_Voltage"]["gripper"] == pytest.approx(voltage)
     assert sim.read_sensors()["Present_Load"]["gripper"] == pytest.approx(duty_fraction)
+
+    sim.data.qvel[dof_id] = 0.5 * no_load_speed
+    sim.apply_servo_torques()
+    assert 0 < sim.data.ctrl[actuator_id] < initial_torque
+
+    sim.data.qvel[dof_id] = 1.5 * no_load_speed
+    sim.apply_servo_torques()
+    assert sim.data.ctrl[actuator_id] < 0
 
 
 def test_sim_reset_clears_command_and_safety_history(sim):
