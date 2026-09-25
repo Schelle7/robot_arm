@@ -47,6 +47,25 @@ exec > >(tee -a {log_file}) 2>&1
 printf '%s\\n' "$TRAIN_CONFIG" > {config_file}
 """
 
+    hardware = """echo 'CPU hardware and container allocation'
+lscpu
+printf 'Available logical CPUs: '
+nproc
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+    echo 'cgroup v2 CPU quota and period (max means unlimited):'
+    cat /sys/fs/cgroup/cpu.max
+    echo 'Effective CPU set:'
+    cat /sys/fs/cgroup/cpuset.cpus.effective
+else
+    echo 'cgroup v1 CPU quota in microseconds (-1 means unlimited):'
+    cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us
+    echo 'CPU period in microseconds (quota / period = CPU equivalents):'
+    cat /sys/fs/cgroup/cpu/cpu.cfs_period_us
+    echo 'CPU set:'
+    cat /sys/fs/cgroup/cpuset/cpuset.cpus
+fi
+"""
+
     installation = f"""echo 'Installing system libraries for headless rendering and Git'
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates libegl1 libgl1 libopengl0 openssh-server
@@ -64,7 +83,7 @@ git checkout --detach {commit}
 """
     training = f"python3 -u deployment/runpod/train.py worker --config {config_file}\n"
 
-    return "\n".join(["set -euo pipefail", cleanup, logging, installation, training])
+    return "\n".join(["set -euo pipefail", cleanup, logging, hardware, installation, training])
 
 
 def restore_environment(cfg, env):
