@@ -41,6 +41,15 @@ class NumpySACPolicy:
     def set_actor_params(self, actor_params: dict) -> None:
         self.actor_params = actor_params
 
+    def predict_forward_motion(self, observation: dict[str, np.ndarray], actions: np.ndarray) -> np.ndarray:
+        """Return normalized interval velocities: six joints, then TCP translation and rotation."""
+        history = apply_hidden_layers(self.actor_params["history_encoder"], np.asarray(observation["history"], dtype=np.float32))
+        state = apply_hidden_layers(self.actor_params["state_encoder"], np.asarray(observation["state"], dtype=np.float32))
+        latent = apply_hidden_layers(
+            self.actor_params["forward_head"], np.concatenate((history, state, np.asarray(actions, dtype=np.float32)), axis=-1)
+        )
+        return apply_linear(self.actor_params["forward_output"], latent)
+
     def predict(self, observation: dict[str, np.ndarray], deterministic: bool) -> tuple[np.ndarray, None]:
         policy_observation = {name: np.asarray(observation[name], dtype=np.float32) for name in POLICY_OBSERVATION_NAMES}
         mean, log_std = actor_distribution(self.actor_params, policy_observation)
@@ -73,6 +82,8 @@ def load_numpy_policy(checkpoint_path: str) -> NumpySACPolicy:
         "state_encoder": load_actor_layers(arrays, "state_encoder"),
         "goal_encoder": load_actor_layers(arrays, "goal_encoder"),
         "fusion": load_actor_layers(arrays, "fusion"),
+        "forward_head": load_actor_layers(arrays, "forward_head"),
+        "forward_output": {"weight": arrays["forward_output_weight"], "bias": arrays["forward_output_bias"]},
         "mean": {"weight": arrays["mean_weight"], "bias": arrays["mean_bias"]},
         "log_std": {"weight": arrays["log_std_weight"], "bias": arrays["log_std_bias"]},
     }

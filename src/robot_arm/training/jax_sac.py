@@ -9,7 +9,8 @@ import numpy as np
 import optax
 from omegaconf import DictConfig
 
-from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, STATE_JOINT_VELOCITY_SLICE, STATE_TCP_VELOCITY_SLICE, policy_observation_sizes
+from robot_arm.policies.policy_export import save_numpy_policy
+from robot_arm.robot_schema import STATE_JOINT_VELOCITY_SLICE, STATE_TCP_VELOCITY_SLICE, policy_observation_sizes
 from robot_arm.training.replay_buffer import Batch, MixedReplayBuffer
 
 # jax.config.update("jax_default_matmul_precision", "highest")
@@ -437,19 +438,7 @@ class JaxSAC:
             "random_seed": self.random_seed,
         }
         checkpoint_path.write_bytes(pickle.dumps(checkpoint))
-        actor_params = self.actor_params_numpy()
-        actor_arrays = {}
-        for branch in ("history_encoder", "state_encoder", "goal_encoder", "fusion"):
-            for index, layer in enumerate(actor_params[branch]):
-                for name, value in layer.items():
-                    actor_arrays[f"{branch}_{index}_{name}"] = value
-        for head in ("mean", "log_std"):
-            for name, value in actor_params[head].items():
-                actor_arrays[f"{head}_{name}"] = value
-        for name in POLICY_OBSERVATION_NAMES:
-            actor_arrays[f"observation_size_{name}"] = np.array(self.observation_sizes[name], dtype=np.int64)
-        actor_arrays["random_seed"] = np.array(self.random_seed, dtype=np.int64)
-        np.savez(checkpoint_path.with_suffix(".actor.npz"), **actor_arrays)
+        save_numpy_policy(checkpoint_path.with_suffix(".actor.npz"), self.actor_params_numpy(), self.observation_sizes, self.random_seed)
         return checkpoint_path
 
     def load(self, path: str) -> None:

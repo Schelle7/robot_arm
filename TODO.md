@@ -1,11 +1,7 @@
 # improve sim to real
-record more data and train new policy
+randomize delay next
 
-I have to address the frequent packet failures on the real robot arm.
-my idea right now is to just do a viewer that shows response or no response as a graph
-just as the current joint actions are displayed.
-
-probably record and eventually add to joint policy whether a read has failed.
+add a new replay version were you can compare the behavior fo sim and real / sim and sim with changed parameters
 
 
 inverse dynamics head?
@@ -21,6 +17,5 @@ and train and evaluate the VLA's predicted duty and duty-enable outputs.
 implement action chunks? of cartesian actions.
 
 # eventually proper rl for vla
-
 
 I am currently not saving all sensor readings.

@@ -10,6 +10,7 @@ from robot_arm.training.jax_sac import JaxSAC, apply_q_network, build_update_ste
 from robot_arm.training.replay_buffer import Batch
 from robot_arm.policies.numpy_policy import actor_distribution as numpy_actor_distribution
 from robot_arm.policies.numpy_policy import load_numpy_policy
+from robot_arm.policies.policy_export import convert_joint_checkpoint
 from robot_arm.robot_schema import POLICY_OBSERVATION_NAMES, policy_observation_sizes
 
 
@@ -141,12 +142,24 @@ def test_forward_checkpoint_roundtrip_and_inference_export(forward_case, tmp_pat
     model.device = jax.devices()[0]
     checkpoint_path = model.save(str(tmp_path / "policy"))
     policy = load_numpy_policy(str(checkpoint_path.with_suffix(".actor.npz")))
-    assert "forward_head" not in policy.actor_params
+    numpy_observations = jax.tree.map(np.asarray, batch.observations)
+    numpy_actions = np.asarray(batch.actions)
     with jax.default_matmul_precision("highest"):
         expected = jax_actor_distribution(state.actor_params, batch.observations)
+        expected_motion = predict_forward_motion(state.actor_params, batch.observations, batch.actions)
     actual = numpy_actor_distribution(policy.actor_params, jax.tree.map(np.asarray, batch.observations))
     for expected_value, actual_value in zip(expected, actual):
         np.testing.assert_allclose(actual_value, expected_value, rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(policy.predict_forward_motion(numpy_observations, numpy_actions), expected_motion, rtol=1e-4, atol=1e-5)
+    single_observation = {name: values[0] for name, values in numpy_observations.items()}
+    np.testing.assert_allclose(policy.predict_forward_motion(single_observation, numpy_actions[0]), expected_motion[0], rtol=1e-4, atol=1e-5)
+    converted_path = tmp_path / "converted.actor.npz"
+    convert_joint_checkpoint(checkpoint_path, converted_path)
+    converted = load_numpy_policy(str(converted_path))
+    np.testing.assert_array_equal(
+        converted.predict_forward_motion(numpy_observations, numpy_actions), policy.predict_forward_motion(numpy_observations, numpy_actions)
+    )
+    np.testing.assert_array_equal(converted.predict(numpy_observations, True)[0], policy.predict(numpy_observations, True)[0])
     model.load(str(checkpoint_path))
     for original, restored in zip(jax.tree.leaves(state), jax.tree.leaves(model.state)):
         np.testing.assert_array_equal(original, restored)
