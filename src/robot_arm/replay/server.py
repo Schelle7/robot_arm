@@ -16,7 +16,7 @@ class ReplayServer:
     viewer loop never waits on the browser and the MuJoCo window keeps responding on its own.
     """
 
-    def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits, joint_hz, actions, branch_available, sensor_history):
+    def __init__(self, port, frame_count, cartesian_hz, episode_path, branch_request_path, duty_limits, joint_hz, actions, branch_available, sensor_history, motion):
         self.episode_id = uuid4().hex
         self.state = {
             "episode_id": self.episode_id,
@@ -46,6 +46,7 @@ class ReplayServer:
             "joint_hz": joint_hz,
             "actions": actions,
             "sensors": sensor_history,
+            "motion": motion,
         }
         self.command_queue = queue.SimpleQueue()
 

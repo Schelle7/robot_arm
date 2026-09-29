@@ -27,11 +27,11 @@ nominal_voltage_volts: 5.2
 no_load_speed_radians_per_second: 3.3
 
 physics_randomization:
-  damping: [0.04, 0.15]
-  frictionloss: [0.015, 0.06]
+  damping: [0.02, 0.15]
+  frictionloss: [0.005, 0.08]
   armature: [0.008, 0.03]
-  braking_multiplier: [0.25, 1.0]
-  motor_strength_multiplier: [0.8, 1.1]
+  braking_multiplier: [0.15, 1.0]
+  motor_strength_multiplier: [0.7, 1.6]
   # Empirical fit to 2026-09-25/10-56-07; coefficients predict reported current, not calibrated motor constants.
   supply:
     source_voltage_volts: [5.1, 5.3]

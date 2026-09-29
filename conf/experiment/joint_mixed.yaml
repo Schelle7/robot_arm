@@ -12,3 +12,9 @@ training:
       - /workspace/real_recordings/2026-09-22/14-11-37/waypoint_recording/joint_policy_rollout/episode.npz
       - /workspace/real_recordings/2026-09-22/14-12-24/waypoint_recording/joint_policy_rollout/episode.npz
       - /workspace/real_recordings/2026-09-22/14-13-09/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-22/15-37-07/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-25/10-56-07/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-25/13-10-16/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-25/13-28-14/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-28/13-04-28/waypoint_recording/joint_policy_rollout/episode.npz
+      - /workspace/real_recordings/2026-09-28/13-06-04/waypoint_recording/joint_policy_rollout/episode.npz

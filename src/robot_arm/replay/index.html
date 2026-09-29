@@ -87,6 +87,11 @@
     <div id="actionPlots" class="action-plots"></div>
 </section>
 <pre id="warnings"></pre>
+<section id="motionSection">
+    <h2>One-step TCP velocity predictions (m/s)</h2>
+    <p>Each prediction uses the recorded state and action. Time is nominal joint-step time.</p>
+    <div id="motionPlots" class="action-plots"></div>
+</section>
 <section class="action-plot">
     <h2>Motor temperatures (°C)</h2>
     <div id="temperatureLegend" class="plot-legend"></div>
@@ -130,6 +135,8 @@
     const currentCanvas = document.getElementById("currentCanvas");
     const currentLegend = document.getElementById("currentLegend");
     let sensorHistory;
+    let motionComparison;
+    const motionPlots = document.getElementById("motionPlots");
     const status = document.getElementById("status");
     let overviewStructure = "";
     let tableStructure = "";
@@ -427,6 +434,52 @@
         }
     }
 
+    function drawMotionPlots(currentTime) {
+        if (motionComparison === null) return;
+        motionPlots.querySelectorAll("canvas").forEach((canvas, plotIndex) => {
+            const values = plotIndex < 3
+                ? motionComparison.predicted.map((value, index) => [value[plotIndex], motionComparison.actual[index][plotIndex]])
+                : motionComparison.error;
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width = Math.round(width * ratio);
+            canvas.height = Math.round(height * ratio);
+            const ctx = canvas.getContext("2d");
+            ctx.scale(ratio, ratio);
+            const left = 65, right = width - 12, top = 15, bottom = height - 28;
+            let magnitude = 0.001;
+            values.forEach(row => row.forEach(value => { magnitude = Math.max(magnitude, Math.abs(value)); }));
+            magnitude *= 1.1;
+            const duration = Math.max(motionComparison.times.at(-1), 0.001);
+            const x = time => left + time / duration * (right - left);
+            const y = value => (top + bottom) / 2 - value / magnitude * (bottom - top) / 2;
+            ctx.font = "11px monospace";
+            for (let tick = -2; tick <= 2; tick++) {
+                const value = tick * magnitude / 2;
+                ctx.strokeStyle = "#d6dfdb";
+                ctx.beginPath(); ctx.moveTo(left, y(value)); ctx.lineTo(right, y(value)); ctx.stroke();
+                ctx.fillStyle = "#61706a"; ctx.textAlign = "right";
+                ctx.fillText(value.toFixed(3), left - 7, y(value) + 4);
+            }
+            for (let series = 0; series < values[0].length; series++) {
+                ctx.strokeStyle = plotIndex < 3 ? ["rgba(25, 113, 194, 0.7)", "rgba(201, 42, 42, 0.7)"][series] : plotColors[series];
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                values.forEach((row, index) => {
+                    if (index === 0) ctx.moveTo(x(motionComparison.times[index]), y(row[series]));
+                    else ctx.lineTo(x(motionComparison.times[index]), y(row[series]));
+                });
+                ctx.stroke();
+            }
+            ctx.setLineDash([3, 3]); ctx.strokeStyle = "#17201d";
+            ctx.beginPath(); ctx.moveTo(x(currentTime), top); ctx.lineTo(x(currentTime), bottom); ctx.stroke();
+            ctx.setLineDash([]); ctx.fillStyle = "#61706a";
+            ctx.textAlign = "left"; ctx.fillText("0 s", left, height - 8);
+            ctx.textAlign = "right"; ctx.fillText(`${duration.toFixed(2)} s`, right, height - 8);
+        });
+    }
+
     function drawSensorPlot(canvas, values, times, referenceLines, safetyStops, frameIndex, dutyValues) {
         const width = canvas.clientWidth;
         const height = canvas.clientHeight;
@@ -575,6 +628,27 @@
             input.value = 0;
         }
         createActionPlots(actionData);
+        motionComparison = actionData.motion;
+        motionPlots.replaceChildren();
+        document.getElementById("motionSection").hidden = motionComparison === null;
+        if (motionComparison !== null) {
+            ["x", "y", "z", "Error: predicted minus actual"].forEach((name, index) => {
+                const plot = document.createElement("div");
+                plot.className = "action-plot";
+                const heading = document.createElement("h3");
+                heading.textContent = name;
+                const legend = document.createElement("div");
+                legend.className = "plot-legend";
+                (index < 3 ? ["Predicted", "Actual"] : ["x", "y", "z"]).forEach((label, series) => {
+                    const item = document.createElement("span");
+                    item.textContent = label;
+                    item.style.setProperty("--series-color", index < 3 ? ["rgba(25, 113, 194, 0.7)", "rgba(201, 42, 42, 0.7)"][series] : plotColors[series]);
+                    legend.appendChild(item);
+                });
+                plot.append(heading, legend, document.createElement("canvas"));
+                motionPlots.appendChild(plot);
+            });
+        }
         sensorHistory = actionData.sensors;
         currentCanvas.parentElement.hidden = sensorHistory.currents.length === 0;
         const labels = [...actionData.motor_names, `Limit: ${sensorHistory.temperature_limit} °C`];
@@ -602,6 +676,7 @@
             if (actionData.episode_id !== state.episode_id) return;
             resetEpisode(state, actionData);
         }
+        drawMotionPlots(state.history_end_time);
         const maxFrame = state.frame_count - 1;
         frameRange.max = maxFrame;
         frameNumber.max = maxFrame;

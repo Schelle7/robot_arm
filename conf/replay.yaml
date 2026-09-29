@@ -3,3 +3,4 @@ draw_waypoints: true
 draw_tcp: true
 display_port: 8000
 branch_request_path: outputs/replay_branch_request.json
+motion_predictions: true

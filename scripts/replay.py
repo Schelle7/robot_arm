@@ -7,6 +7,8 @@ from omegaconf import DictConfig
 from robot_arm.replay.recording import load_replay_recording, recorded_model_path, rollout_timestamp
 from robot_arm.replay.server import ReplayServer
 from robot_arm.replay.viewer import ReplayViewer
+from robot_arm.policies.numpy_policy import load_numpy_policy
+from robot_arm.replay.motion import build_motion_comparison
 
 
 def format_rollout_age(episode_path: str) -> str:
@@ -34,6 +36,10 @@ def main(cfg: DictConfig):
         recorded_model_path(episode_path, recorded_cfg),
         window_title,
     )
+    motion = None
+    if cfg.motion_predictions:
+        policy = load_numpy_policy(recorded_cfg.policy_name)
+        motion = build_motion_comparison(policy, data["dense_trajectory"], recorded_cfg)
     server = ReplayServer(
         cfg.display_port,
         viewer.num_states,
@@ -45,6 +51,7 @@ def main(cfg: DictConfig):
         viewer.action_history,
         viewer.has_sim_state,
         viewer.sensor_history,
+        motion,
     )
     server.start()
     viewer.run(server.display, server.take_commands)
